@@ -19,6 +19,7 @@
     "jsr:@std/path@1.0.0-rc.1": "1.0.0-rc.1",
     "jsr:@std/path@^1.0.8": "1.0.8",
     "jsr:@std/path@~0.225.2": "0.225.2",
+    "jsr:@std/path@~1.0.4": "1.0.8",
     "jsr:@ts-morph/bootstrap@0.24": "0.24.0",
     "jsr:@ts-morph/common@0.24": "0.24.0",
     "npm:@flowcore/sdk-transformer-core@*": "2.3.6",
@@ -26,6 +27,9 @@
     "npm:@flowcore/sdk@*": "1.11.10",
     "npm:@sinclair/typebox@*": "0.34.27",
     "npm:@sinclair/typebox@~0.34.27": "0.34.27",
+    "npm:bun-sqlite-key-value@*": "1.13.1_typescript@5.6.3",
+    "npm:node-cache@*": "5.1.2",
+    "npm:node-cache@^5.1.2": "5.1.2",
     "npm:rxjs@^7.8.1": "7.8.1"
   },
   "jsr": {
@@ -158,8 +162,23 @@
     "@sinclair/typebox@0.34.27": {
       "integrity": "sha512-C7mxE1VC3WC2McOufZXEU48IfRVI+BcKxk4NOyNn3+JMUNdJHEWGS5CqjuDX+ij2NCCz8/nse1mT7yn8Fv2GHg=="
     },
+    "bun-sqlite-key-value@1.13.1_typescript@5.6.3": {
+      "integrity": "sha512-cb3thB8QXPeXB6B7NhObpADEYvtVNwqg/0ED7PgKt2OxVAxPSejkiTsy1+byQDC0AwLYajw3nhtr/ubKvcLcKw==",
+      "dependencies": [
+        "typescript"
+      ]
+    },
+    "clone@2.1.2": {
+      "integrity": "sha512-3Pe/CF1Nn94hyhIYpjtiLhdCoEoz0DqQ+988E9gmeEdQZlojxnOb74wctFyuwWQHzqyf9X7C7MG8juUpqBJT8w=="
+    },
     "isexe@3.1.1": {
       "integrity": "sha512-LpB/54B+/2J5hqQ7imZHfdU31OlgQqx7ZicVlkm9kzg9/w8GKLEcFfJl/t7DCEDueOyBAD6zCCwTO6Fzs0NoEQ=="
+    },
+    "node-cache@5.1.2": {
+      "integrity": "sha512-t1QzWwnk4sjLWaQAS8CHgOJ+RAfmHpxFWmc36IWTiWHQfs0w5JDMBS1b1ZxQteo0vVVuWJvIUKHDkkeK7vIGCg==",
+      "dependencies": [
+        "clone"
+      ]
     },
     "radash@12.1.0": {
       "integrity": "sha512-b0Zcf09AhqKS83btmUeYBS8tFK7XL2e3RvLmZcm0sTdF1/UUlHSsjXdCcWNxe7yfmAlPve5ym0DmKGtTzP6kVQ=="
@@ -172,6 +191,9 @@
     },
     "tslib@2.8.1": {
       "integrity": "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="
+    },
+    "typescript@5.6.3": {
+      "integrity": "sha512-hjcS1mhfuyi4WW8IWtjP7brDrG2cuDZukyrYrSauoXGNgx0S7zceP07adYkJycEr56BOUTNPzbInooiN3fn1qw=="
     },
     "which@4.0.0": {
       "integrity": "sha512-GlaYyEb07DPxYCKhKzplCWBJtvxZcZMrL+4UkrTSJHHPyZU4mYYTv3qaOe77H7EODLSSopAUFAc6W8U4yqvscg==",
@@ -195,6 +217,7 @@
       "jsr:@deno/dnt@~0.41.3",
       "npm:@flowcore/sdk-transformer-core@^2.3.6",
       "npm:@sinclair/typebox@~0.34.27",
+      "npm:node-cache@^5.1.2",
       "npm:rxjs@^7.8.1"
     ]
   }

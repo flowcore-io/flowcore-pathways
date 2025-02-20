@@ -26,6 +26,9 @@ await build({
     bugs: {
       url: "https://github.com/flowcore-io/flowcore-sdk/issues",
     },
+    optionalDependencies: {
+      "bun-sqlite-key-value": "1.13.1",
+    },
     devDependencies: {
       "@types/ws": "^8.5.10"
     }

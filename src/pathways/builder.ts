@@ -4,7 +4,10 @@ import { Value } from "@sinclair/typebox/value"
 import { Subject } from "rxjs"
 import { WebhookBuilder } from "../compatibility/flowcore-transformer-core.sdk.ts"
 import type { FlowcoreEvent } from "../contracts/event.ts"
-import type { EventMetadata, PathwayContract, PathwayKey, SendWebhook, WritablePathway } from "./types.ts"
+import { InternalPathwayState } from "./internal-pathway.state.ts"
+import type { EventMetadata, PathwayContract, PathwayKey, PathwayState, PathwayWriteOptions, SendWebhook, WritablePathway } from "./types.ts"
+
+const DEFAULT_PATHWAY_TIMEOUT_MS = 10000
 
 export class PathwaysBuilder<
   // deno-lint-ignore ban-types
@@ -30,18 +33,23 @@ export class PathwaysBuilder<
   >
   private readonly schemas: Record<keyof TPathway, TSchema> = {} as Record<keyof TPathway, TSchema>
   private readonly writable: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
+  private readonly timeouts: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
   private readonly webhookBuilderFactory: () => WebhookBuilderType
+  private pathwayState: PathwayState = new InternalPathwayState()
+  private pathwayTimeoutMs: number = DEFAULT_PATHWAY_TIMEOUT_MS
 
   constructor({
     baseUrl,
     tenant,
     dataCore,
     apiKey,
+    pathwayTimeoutMs,
   }: {
     baseUrl: string
     tenant: string
     dataCore: string
     apiKey: string
+    pathwayTimeoutMs?: number
   }) {
     this.webhookBuilderFactory = new WebhookBuilder({
       baseUrl,
@@ -54,6 +62,15 @@ export class PathwaysBuilder<
       attemptDelayMs: 250,
     })
     .factory()
+
+    if (pathwayTimeoutMs) {
+      this.pathwayTimeoutMs = pathwayTimeoutMs
+    }
+  }
+
+  withPathwayState(state: PathwayState) {
+    this.pathwayState = state
+    return this
   }
 
   public async processPathway(pathway: keyof TPathway, data: FlowcoreEvent) {
@@ -69,6 +86,8 @@ export class PathwaysBuilder<
       await handle
 
       this.afterObservers[pathway].next(data)
+
+      await this.pathwayState.setProcessed(data.eventId)
     } else {
       this.beforeObservable[pathway].next(data)
     }
@@ -95,6 +114,11 @@ export class PathwaysBuilder<
       this.writers[path as TWritablePaths] = this.webhookBuilderFactory()
         .buildWebhook<TPathway[keyof TPathway]>(contract.flowType, contract.eventType).send as SendWebhook<TPathway[keyof TPathway]>
     }
+
+    if (contract.timeoutMs) {
+      this.timeouts[path] = contract.timeoutMs
+    }
+
     this.schemas[path] = contract.schema
     this.writable[path] = writable
     return this as PathwaysBuilder<
@@ -139,7 +163,7 @@ export class PathwaysBuilder<
     path: TPath,
     data: TPathway[TPath],
     metadata?: EventMetadata,
-    options?: WebhookSendOptions
+    options?: PathwayWriteOptions
   ): Promise<void> {
     if (!this.pathways[path]) {
       throw new Error(`Pathway ${String(path)} not found`)
@@ -154,6 +178,27 @@ export class PathwaysBuilder<
       throw new Error(`Invalid data for pathway ${String(path)}`)
     }
 
-    await this.writers[path](data, metadata, options)
+    if (options?.fireAndForget) {
+      this.writers[path](data, metadata, options).catch((error) => {
+        console.error(`Error writing to pathway ${String(path)}`, error)
+      })
+      return
+    }
+
+    const result = await this.writers[path](data, metadata, options)
+
+    await this.waitForPathwayToBeProcessed(result)
+  }
+
+  private async waitForPathwayToBeProcessed(eventId: string): Promise<void> {
+    const startTime = Date.now()
+    const timeoutMs = this.timeouts[eventId] ?? this.pathwayTimeoutMs
+
+    while (!(await this.pathwayState.isProcessed(eventId))) {
+      if (Date.now() - startTime > timeoutMs) {
+        throw new Error(`Pathway processing timed out after ${timeoutMs}ms for event ${eventId}`)
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
   }
 }

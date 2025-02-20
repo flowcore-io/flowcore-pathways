@@ -1,5 +1,6 @@
 import type { WebhookSendOptions } from "@flowcore/sdk-transformer-core"
 import type { TSchema } from "@sinclair/typebox"
+import { FlowcoreEvent } from "../contracts/index.ts"
 
 /**
  * Helper type to create a custom type error for non-writable pathways
@@ -40,6 +41,7 @@ export interface PathwayContract<F extends string, E extends string, T extends T
    * @default true
    */
   writable?: boolean
+  timeoutMs?: number
 }
 
 export type PathwayKey<F extends string, E extends string> = `${F}/${E}`
@@ -52,3 +54,12 @@ export type SendWebhook<EventPayload> = (payload: EventPayload, metadata?: Event
  * Helper type to create a better error message for non-writable pathways
  */
 export type WritablePathway<T extends string, IsWritable extends boolean> = IsWritable extends false ? NonWritablePathwayError<T> : T
+
+export type PathwayState = {
+  isProcessed: (eventId: string) => (boolean | Promise<boolean>)
+  setProcessed: (eventId: string) => (void | Promise<void>)
+}
+
+export type PathwayWriteOptions = WebhookSendOptions & {
+  fireAndForget?: boolean
+}
