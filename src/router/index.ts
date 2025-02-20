@@ -20,3 +20,6 @@ export class PathwayRouter {
     await this.pathways.processPathway(pathwayKey, compatibleEvent)
   }
 }
+
+//TODO: handle errors in the pathway
+//TODO: handle authentication with secret key

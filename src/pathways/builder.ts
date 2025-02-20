@@ -73,6 +73,8 @@ export class PathwaysBuilder<
     return this as PathwaysBuilder<TPathway, TWritablePaths>
   }
 
+  //TODO: handle errors in the pathway
+  //TODO: handle retries in the pathway
   public async processPathway(pathway: keyof TPathway, data: FlowcoreEvent) {
     if (!this.pathways[pathway]) {
       throw new Error(`Pathway ${String(pathway)} not found`)
@@ -202,3 +204,6 @@ export class PathwaysBuilder<
     }
   }
 }
+
+//TODO: handle errors properly in the pathway
+//TODO: add metadata webhook with audit functionality
