@@ -1,0 +1,37 @@
+{
+  "$schema": "https://deno.land/x/deno/cli/schemas/config-file.v1.json",
+  "name": "@flowcore/pathways",
+  "description": "Flowcore Pathways",
+  "version": "0.0.0",
+  "license": "MIT",
+  "exports": "./src/mod.ts",
+  "publish": {
+    "include": [
+      "src/**/*.ts",
+      "README.md",
+      "CHANGELOG.md"
+    ]
+  },
+  "tasks": {
+    "build:npm": "deno run -A bin/build-npm.ts"
+  },
+  "imports": {
+    "@deno/dnt": "jsr:@deno/dnt@^0.41.3"
+  },
+  "fmt": {
+    "exclude": [
+      "node_modules",
+      "npm"
+    ],
+    "lineWidth": 120,
+    "indentWidth": 2,
+    "useTabs": false,
+    "semiColons": false
+  },
+  "lint": {
+    "exclude": [
+      "node_modules",
+      "npm"
+    ]
+  }
+}
