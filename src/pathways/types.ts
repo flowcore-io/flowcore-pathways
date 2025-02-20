@@ -1,6 +1,5 @@
 import type { WebhookSendOptions } from "@flowcore/sdk-transformer-core"
 import type { TSchema } from "@sinclair/typebox"
-import { FlowcoreEvent } from "../contracts/index.ts"
 
 /**
  * Helper type to create a custom type error for non-writable pathways

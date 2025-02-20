@@ -1,4 +1,4 @@
-import type { WebhookBuilder as WebhookBuilderType, WebhookSendOptions } from "@flowcore/sdk-transformer-core"
+import type { WebhookBuilder as WebhookBuilderType } from "@flowcore/sdk-transformer-core"
 import type { Static, TSchema } from "@sinclair/typebox"
 import { Value } from "@sinclair/typebox/value"
 import { Subject } from "rxjs"
@@ -68,9 +68,9 @@ export class PathwaysBuilder<
     }
   }
 
-  withPathwayState(state: PathwayState) {
+  withPathwayState(state: PathwayState): PathwaysBuilder<TPathway, TWritablePaths> {
     this.pathwayState = state
-    return this
+    return this as PathwaysBuilder<TPathway, TWritablePaths>
   }
 
   public async processPathway(pathway: keyof TPathway, data: FlowcoreEvent) {
