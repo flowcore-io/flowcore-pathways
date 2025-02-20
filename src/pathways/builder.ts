@@ -1,13 +1,16 @@
+import type { WebhookBuilder as WebhookBuilderType, WebhookSendOptions } from "@flowcore/sdk-transformer-core"
 import type { Static, TSchema } from "@sinclair/typebox"
 import { Value } from "@sinclair/typebox/value"
 import { Subject } from "rxjs"
-import type { FlowcoreEvent } from "../contracts/event.ts"
-import type { EventMetadata, PathwayContract, PathwayKey, SendWebhook } from "./types.ts"
-import type { WebhookSendOptions, WebhookBuilder as WebhookBuilderType } from "@flowcore/sdk-transformer-core"
 import { WebhookBuilder } from "../compatibility/flowcore-transformer-core.sdk.ts"
+import type { FlowcoreEvent } from "../contracts/event.ts"
+import type { EventMetadata, PathwayContract, PathwayKey, SendWebhook, WritablePathway } from "./types.ts"
 
 // deno-lint-ignore ban-types
-export class PathwaysBuilder<TPathway extends Record<string, unknown> = {}> {
+export class PathwaysBuilder<
+  TPathway extends Record<string, unknown> = {},
+  TWritablePaths extends keyof TPathway = never
+> {
   private readonly pathways: TPathway = {} as TPathway
   private readonly handlers: Record<keyof TPathway, (event: FlowcoreEvent) => Promise<void>> = {} as Record<
     keyof TPathway,
@@ -21,9 +24,9 @@ export class PathwaysBuilder<TPathway extends Record<string, unknown> = {}> {
     keyof TPathway,
     Subject<FlowcoreEvent>
   >
-  private readonly writers: Record<keyof TPathway, SendWebhook<TPathway[keyof TPathway]>> = {} as Record<
-    keyof TPathway,
-    SendWebhook<TPathway[keyof TPathway]>
+  private readonly writers: Record<TWritablePaths, SendWebhook<TPathway[TWritablePaths]>> = {} as Record<
+    TWritablePaths,
+    SendWebhook<TPathway[TWritablePaths]>
   >
   private readonly schemas: Record<keyof TPathway, TSchema> = {} as Record<keyof TPathway, TSchema>
   private readonly writable: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
@@ -58,28 +61,46 @@ export class PathwaysBuilder<TPathway extends Record<string, unknown> = {}> {
       throw new Error(`Pathway ${String(pathway)} not found`)
     }
 
-    const processing = this.handlers[pathway](data)
+    if (this.handlers[pathway]) {
+      const handle = this.handlers[pathway](data)
 
-    this.beforeObservable[pathway].next(data)
+      this.beforeObservable[pathway].next(data)
 
-    await processing
+      await handle
 
-    this.afterObservers[pathway].next(data)
+      this.afterObservers[pathway].next(data)
+    } else {
+      this.beforeObservable[pathway].next(data)
+    }
   }
 
-  registerPathway<F extends string, E extends string, S extends TSchema>(
-    contract: PathwayContract<F, E, S>,
-  ): PathwaysBuilder<TPathway & Record<PathwayKey<F, E>, Static<S>>> {
+  registerPathway<
+    F extends string,
+    E extends string,
+    S extends TSchema,
+    W extends boolean = true
+  >(
+    contract: PathwayContract<F, E, S> & { writable?: W }
+  ): PathwaysBuilder<
+    TPathway & Record<PathwayKey<F, E>, Static<S>>,
+    TWritablePaths | WritablePathway<PathwayKey<F, E>, W>
+  > {
     const path = `${contract.flowType}/${contract.eventType}` as PathwayKey<F, E>
+    const writable = contract.writable ?? true;
     // deno-lint-ignore no-explicit-any
-    ;(this.pathways as any)[path] = true
+    (this.pathways as any)[path] = true
     this.beforeObservable[path] = new Subject<FlowcoreEvent>()
     this.afterObservers[path] = new Subject<FlowcoreEvent>()
-    this.writers[path] = this.webhookBuilderFactory()
-      .buildWebhook<TPathway[keyof TPathway]>(contract.flowType, contract.eventType).send as SendWebhook<TPathway[keyof TPathway]>
+    if (writable) {
+      this.writers[path as TWritablePaths] = this.webhookBuilderFactory()
+        .buildWebhook<TPathway[keyof TPathway]>(contract.flowType, contract.eventType).send as SendWebhook<TPathway[keyof TPathway]>
+    }
     this.schemas[path] = contract.schema
-    this.writable[path] = contract.writable ?? true
-    return this as PathwaysBuilder<TPathway & Record<PathwayKey<F, E>, Static<S>>>
+    this.writable[path] = writable
+    return this as PathwaysBuilder<
+      TPathway & Record<PathwayKey<F, E>, Static<S>>,
+      TWritablePaths | WritablePathway<PathwayKey<F, E>, W>
+    >
   }
 
   getPathway<TPath extends keyof TPathway>(path: TPath): TPathway[TPath] {
@@ -114,7 +135,12 @@ export class PathwaysBuilder<TPathway extends Record<string, unknown> = {}> {
     }
   }
 
-  async writeToPathway<TPath extends keyof TPathway>(path: TPath, data: TPathway[TPath], metadata?: EventMetadata, options?: WebhookSendOptions): Promise<void> {
+  async writeToPathway<TPath extends TWritablePaths>(
+    path: TPath,
+    data: TPathway[TPath],
+    metadata?: EventMetadata,
+    options?: WebhookSendOptions
+  ): Promise<void> {
     if (!this.pathways[path]) {
       throw new Error(`Pathway ${String(path)} not found`)
     }
