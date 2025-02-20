@@ -1,6 +1,6 @@
 # Flowcore Pathways
 
-This is Flowcore Pathways, a TypeScript library to simplify the interaction with the Flowcore Platform.
+A Deno Library for creating Flowcore Pathways, simplifying the integration with the flowcore platform
 
 ## Table of Contents
 
