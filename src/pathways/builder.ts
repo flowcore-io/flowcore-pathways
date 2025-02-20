@@ -6,15 +6,15 @@ import { WebhookBuilder } from "../compatibility/flowcore-transformer-core.sdk.t
 import type { FlowcoreEvent } from "../contracts/event.ts"
 import type { EventMetadata, PathwayContract, PathwayKey, SendWebhook, WritablePathway } from "./types.ts"
 
-// deno-lint-ignore ban-types
 export class PathwaysBuilder<
+  // deno-lint-ignore ban-types
   TPathway extends Record<string, unknown> = {},
   TWritablePaths extends keyof TPathway = never
 > {
   private readonly pathways: TPathway = {} as TPathway
-  private readonly handlers: Record<keyof TPathway, (event: FlowcoreEvent) => Promise<void>> = {} as Record<
+  private readonly handlers: Record<keyof TPathway, (event: FlowcoreEvent) => (Promise<void> | void)> = {} as Record<
     keyof TPathway,
-    (event: FlowcoreEvent) => Promise<void>
+    (event: FlowcoreEvent) => (Promise<void> | void)
   >
   private readonly beforeObservable: Record<keyof TPathway, Subject<FlowcoreEvent>> = {} as Record<
     keyof TPathway,
@@ -107,7 +107,7 @@ export class PathwaysBuilder<
     return this.pathways[path]
   }
 
-  handlePathway<TPath extends keyof TPathway>(path: TPath, handler: (event: FlowcoreEvent) => Promise<void>): void {
+  handlePathway<TPath extends keyof TPathway>(path: TPath, handler: (event: FlowcoreEvent) => (Promise<void> | void )): void {
     const pathway = this.pathways[path]
     if (!pathway) {
       throw new Error(`Pathway ${String(path)} not found`)
