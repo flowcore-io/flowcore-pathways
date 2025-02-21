@@ -1,11 +1,11 @@
-import type { WebhookBuilder as WebhookBuilderType } from "@flowcore/sdk-transformer-core"
+import type { WebhookBuilder as WebhookBuilderType, WebhookFileData } from "@flowcore/sdk-transformer-core"
 import type { Static, TSchema } from "@sinclair/typebox"
 import { Value } from "@sinclair/typebox/value"
 import { Subject } from "rxjs"
 import { WebhookBuilder } from "../compatibility/flowcore-transformer-core.sdk.ts"
 import type { FlowcoreEvent } from "../contracts/event.ts"
 import { InternalPathwayState } from "./internal-pathway.state.ts"
-import type { EventMetadata, PathwayContract, PathwayKey, PathwayState, PathwayWriteOptions, SendWebhook, WritablePathway } from "./types.ts"
+import type { EventMetadata, PathwayContract, PathwayKey, PathwayState, PathwayWriteOptions, SendFilehook, SendWebhook, WritablePathway } from "./types.ts"
 
 const DEFAULT_PATHWAY_TIMEOUT_MS = 10000
 
@@ -27,13 +27,14 @@ export class PathwaysBuilder<
     keyof TPathway,
     Subject<FlowcoreEvent>
   >
-  private readonly writers: Record<TWritablePaths, SendWebhook<TPathway[TWritablePaths]>> = {} as Record<
+  private readonly writers: Record<TWritablePaths, (SendWebhook<TPathway[TWritablePaths]> | SendFilehook)> = {} as Record<
     TWritablePaths,
-    SendWebhook<TPathway[TWritablePaths]>
+    (SendWebhook<TPathway[TWritablePaths]> | SendFilehook)
   >
   private readonly schemas: Record<keyof TPathway, TSchema> = {} as Record<keyof TPathway, TSchema>
   private readonly writable: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
   private readonly timeouts: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
+  private readonly filePathways: Set<keyof TPathway> = new Set()
   private readonly webhookBuilderFactory: () => WebhookBuilderType
   private pathwayState: PathwayState = new InternalPathwayState()
   private pathwayTimeoutMs: number = DEFAULT_PATHWAY_TIMEOUT_MS
@@ -92,6 +93,7 @@ export class PathwaysBuilder<
       await this.pathwayState.setProcessed(data.eventId)
     } else {
       this.beforeObservable[pathway].next(data)
+      this.afterObservers[pathway].next(data)
     }
   }
 
@@ -113,8 +115,14 @@ export class PathwaysBuilder<
     this.beforeObservable[path] = new Subject<FlowcoreEvent>()
     this.afterObservers[path] = new Subject<FlowcoreEvent>()
     if (writable) {
-      this.writers[path as TWritablePaths] = this.webhookBuilderFactory()
-        .buildWebhook<TPathway[keyof TPathway]>(contract.flowType, contract.eventType).send as SendWebhook<TPathway[keyof TPathway]>
+      if (contract.isFilePathway) {
+        this.filePathways.add(path)
+        this.writers[path as TWritablePaths] = this.webhookBuilderFactory()
+          .buildFileWebhook(contract.flowType, contract.eventType).send as SendFilehook
+      } else {
+        this.writers[path as TWritablePaths] = this.webhookBuilderFactory()
+          .buildWebhook<TPathway[keyof TPathway]>(contract.flowType, contract.eventType).send as SendWebhook<TPathway[keyof TPathway]>
+      }
     }
 
     if (contract.timeoutMs) {
@@ -166,7 +174,7 @@ export class PathwaysBuilder<
     data: TPathway[TPath],
     metadata?: EventMetadata,
     options?: PathwayWriteOptions
-  ): Promise<void> {
+  ): Promise<string | string[]> {
     if (!this.pathways[path]) {
       throw new Error(`Pathway ${String(path)} not found`)
     }
@@ -180,16 +188,19 @@ export class PathwaysBuilder<
       throw new Error(`Invalid data for pathway ${String(path)}`)
     }
 
-    if (options?.fireAndForget) {
-      this.writers[path](data, metadata, options).catch((error) => {
-        console.error(`Error writing to pathway ${String(path)}`, error)
-      })
-      return
+    let eventIds: string | string[] = []
+    if (this.filePathways.has(path)) {
+      const fileData = data as unknown as WebhookFileData
+      eventIds = await (this.writers[path] as SendFilehook)(fileData, metadata, options)
+    } else {
+      eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]>)(data, metadata, options)
     }
 
-    const result = await this.writers[path](data, metadata, options)
+    if (!options?.fireAndForget) {
+      await Promise.all(Array.isArray(eventIds) ? eventIds.map(this.waitForPathwayToBeProcessed) : [this.waitForPathwayToBeProcessed(eventIds)])
+    }
 
-    await this.waitForPathwayToBeProcessed(result)
+    return eventIds
   }
 
   private async waitForPathwayToBeProcessed(eventId: string): Promise<void> {

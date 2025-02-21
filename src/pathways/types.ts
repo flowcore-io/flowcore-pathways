@@ -1,4 +1,4 @@
-import type { WebhookSendOptions } from "@flowcore/sdk-transformer-core"
+import type { WebhookFileData, WebhookSendOptions } from "@flowcore/sdk-transformer-core"
 import type { TSchema } from "@sinclair/typebox"
 
 /**
@@ -41,6 +41,7 @@ export interface PathwayContract<F extends string, E extends string, T extends T
    */
   writable?: boolean
   timeoutMs?: number
+  isFilePathway?: boolean
 }
 
 export type PathwayKey<F extends string, E extends string> = `${F}/${E}`
@@ -48,6 +49,7 @@ export type PathwayKey<F extends string, E extends string> = `${F}/${E}`
 export interface EventMetadata extends Record<string, unknown> {}
 
 export type SendWebhook<EventPayload> = (payload: EventPayload, metadata?: EventMetadata, options?: WebhookSendOptions) => Promise<string>
+export type SendFilehook = (payload: WebhookFileData, metadata?: EventMetadata, options?: WebhookSendOptions) => Promise<string[]>
 
 /**
  * Helper type to create a better error message for non-writable pathways
