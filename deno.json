@@ -13,7 +13,9 @@
     ]
   },
   "tasks": {
-    "build:npm": "deno run -A bin/build-npm.ts"
+    "build:npm": "deno run -A bin/build-npm.ts",
+    "test": "deno test -A --unstable",
+    "test:watch": "deno test -A --unstable --watch"
   },
   "imports": {
     "@deno/dnt": "jsr:@deno/dnt@^0.41.3",
@@ -33,6 +35,17 @@
     "semiColons": false
   },
   "lint": {
+    "exclude": [
+      "node_modules",
+      "npm",
+      "tests"
+    ]
+  },
+  "test": {
+    "include": [
+      "tests/**/*_test.ts",
+      "tests/**/*.test.ts"
+    ],
     "exclude": [
       "node_modules",
       "npm"

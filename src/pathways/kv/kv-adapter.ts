@@ -4,13 +4,13 @@ export interface KvAdapter {
 }
 
 export async function createKvAdapter(): Promise<KvAdapter> {
-  // Check for Bun
-  if (typeof Bun !== "undefined") {
+  try {
+    // Try to import Bun adapter
     const { BunKvAdapter } = await import("./bun-kv-adapter.ts");
     return new BunKvAdapter();
+  } catch {
+    // Default to node-cache if Bun is not available
+    const { NodeKvAdapter } = await import("./node-kv-adapter.ts");
+    return new NodeKvAdapter();
   }
-  
-  // Default to node-cache
-  const { NodeKvAdapter } = await import("./node-kv-adapter.ts");
-  return new NodeKvAdapter();
 } 
