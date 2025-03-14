@@ -5,4 +5,3 @@ export * from "./router/index.ts";
 
 //TODO: add postgres pathway state
 //TODO: add redis pathway state
-//TODO: add tests

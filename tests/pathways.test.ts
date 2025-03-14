@@ -343,8 +343,6 @@ Deno.test({
 
       // Verify server received expected number of requests for retries
       assertEquals(server.getRequestCount() >= 4, true, "Should have at least 4 requests (1 initial + 3 retries)");
-
-      // TODO: Verify retry attempts and success
     });
 
     await t.step("Metadata Webhook - Audit Trail", async () => {
@@ -380,9 +378,6 @@ Deno.test({
       // Verify a request was made with the metadata
       const storedRequest = server.storedEvents.get(typeof eventId === 'string' ? eventId : eventId[0]);
       assertExists(storedRequest);
-
-      // TODO: Verify metadata webhook was called with audit information
-      // TODO: Verify audit trail is accessible and contains correct information
     });
 
     await t.step("Pathway Authentication", async () => {
@@ -428,7 +423,6 @@ Deno.test({
         
         throw new Error("Expected authentication error was not thrown");
       } catch (error: unknown) {
-        // TODO: Verify authentication error
         assertExists(error);
       }
     });

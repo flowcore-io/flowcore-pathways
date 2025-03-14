@@ -1,4 +1,4 @@
-import type { WebhookBuilder as WebhookBuilderType, WebhookFileData } from "@flowcore/sdk-transformer-core"
+import type { WebhookBuilder as WebhookBuilderType, WebhookFileData, WebhookSendOptions } from "@flowcore/sdk-transformer-core"
 import type { Static, TSchema } from "@sinclair/typebox"
 import { Value } from "@sinclair/typebox/value"
 import { Subject } from "rxjs"
@@ -10,6 +10,16 @@ import type { EventMetadata, PathwayContract, PathwayKey, PathwayState, PathwayW
 const DEFAULT_PATHWAY_TIMEOUT_MS = 10000
 const DEFAULT_MAX_RETRIES = 3
 const DEFAULT_RETRY_DELAY_MS = 500
+
+// Define audit-related types
+export type AuditMode = "user" | "system"
+export type AuditHandler = (path: string, event: FlowcoreEvent) => void
+export type UserIdResolver = () => Promise<string>
+
+// Extend WebhookSendOptions to add audit-specific options
+export interface AuditWebhookSendOptions extends WebhookSendOptions {
+  headers?: Record<string, string>
+}
 
 export class PathwaysBuilder<
   // deno-lint-ignore ban-types
@@ -47,6 +57,10 @@ export class PathwaysBuilder<
   private readonly webhookBuilderFactory: () => WebhookBuilderType
   private pathwayState: PathwayState = new InternalPathwayState()
   private pathwayTimeoutMs: number = DEFAULT_PATHWAY_TIMEOUT_MS
+  
+  // Audit-related properties
+  private auditHandler?: AuditHandler
+  private userIdResolver?: UserIdResolver
 
   constructor({
     baseUrl,
@@ -84,6 +98,18 @@ export class PathwaysBuilder<
   }
 
   /**
+   * Configures the PathwaysBuilder to use audit functionality
+   * @param handler The handler function that receives pathway and event information
+   * @param userIdResolver An async function that resolves to the current user ID
+   * @returns The PathwaysBuilder instance with audit configured
+   */
+  withAudit(handler: AuditHandler, userIdResolver: UserIdResolver): PathwaysBuilder<TPathway, TWritablePaths> {
+    this.auditHandler = handler
+    this.userIdResolver = userIdResolver
+    return this as PathwaysBuilder<TPathway, TWritablePaths>
+  }
+
+  /**
    * Process a pathway event with error handling and retries
    * @param pathway The pathway to process
    * @param data The event data to process
@@ -92,6 +118,11 @@ export class PathwaysBuilder<
   public async process(pathway: keyof TPathway, data: FlowcoreEvent) {
     if (!this.pathways[pathway]) {
       throw new Error(`Pathway ${String(pathway)} not found`)
+    }
+
+    // Call audit handler if configured
+    if (this.auditHandler) {
+      this.auditHandler(String(pathway), data)
     }
 
     if (this.handlers[pathway]) {
@@ -265,6 +296,14 @@ export class PathwaysBuilder<
     this.globalErrorSubject.subscribe(({ pathway, event, error }) => handler(error, event, pathway))
   }
 
+  /**
+   * Writes data to a pathway with optional audit metadata
+   * @param path The pathway to write to
+   * @param data The data to write
+   * @param metadata Optional metadata to include with the event
+   * @param options Optional write options
+   * @returns A promise that resolves to the event ID(s)
+   */
   async write<TPath extends TWritablePaths>(
     path: TPath,
     data: TPathway[TPath],
@@ -284,12 +323,33 @@ export class PathwaysBuilder<
       throw new Error(`Invalid data for pathway ${String(path)}`)
     }
 
+    // Create a copy of the metadata to avoid modifying the original
+    const finalMetadata: EventMetadata = metadata ? { ...metadata } : {};
+    
+    // Process audit metadata if audit is configured
+    if (this.userIdResolver) {
+      const userId = await this.userIdResolver()
+      
+      // Determine the audit mode: default is "user" unless explicitly specified as "system"
+      const auditMode = (finalMetadata?.["audit/mode"] as AuditMode) || "user"
+      
+      // Add appropriate audit metadata based on mode
+      if (auditMode === "system") {
+        finalMetadata["audit/user-id"] = "system"
+        finalMetadata["audit/on-behalf-of"] = userId
+        finalMetadata["audit/mode"] = "system"
+      } else {
+        finalMetadata["audit/user-id"] = userId
+        finalMetadata["audit/mode"] = "user" // Always set mode for user
+      }
+    }
+
     let eventIds: string | string[] = []
     if (this.filePathways.has(path)) {
       const fileData = data as unknown as WebhookFileData
-      eventIds = await (this.writers[path] as SendFilehook)(fileData, metadata, options)
+      eventIds = await (this.writers[path] as SendFilehook)(fileData, finalMetadata, options)
     } else {
-      eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]>)(data, metadata, options)
+      eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]>)(data, finalMetadata, options)
     }
 
     if (!options?.fireAndForget) {

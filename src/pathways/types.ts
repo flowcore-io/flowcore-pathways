@@ -83,6 +83,10 @@ export type PathwayState = {
   setProcessed: (eventId: string) => (void | Promise<void>)
 }
 
+/**
+ * Options for pathway writes, extending WebhookSendOptions
+ */
 export type PathwayWriteOptions = WebhookSendOptions & {
   fireAndForget?: boolean
+  headers?: Record<string, string>
 }

@@ -54,6 +54,12 @@ export function createTestServer(port = 8000): TestServer {
         console.log("Received request:", req.url);
         requestCount++;
 
+        // Debug: Print all headers
+        console.log("Request headers:");
+        for (const [key, value] of req.headers.entries()) {
+          console.log(`  ${key}: ${value}`);
+        }
+
         // Handle authentication
         const apiKey = req.headers.get("x-api-key");
         if (apiKey === "invalid-api-key") {
