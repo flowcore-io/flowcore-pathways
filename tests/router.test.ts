@@ -49,18 +49,18 @@ Deno.test("Router Tests", async (t) => {
     });
 
     const pathwayKey = "event-type.1/event-type.created.0" as const;
-    pathways.registerPathway({
+    pathways.register({
       flowType: "event-type.1",
       eventType: "event-type.created.0",
       schema: testSchema,
     });
 
-    // Mock the processPathway method
+    // Mock the process method
     let processedPathway = "";
     let processedEvent: FlowcoreEvent | null = null;
-    const originalProcessPathway = pathways.processPathway;
+    const originalProcess = pathways.process;
     // deno-lint-ignore no-explicit-any
-    pathways.processPathway = async (pathway: any, event: FlowcoreEvent) => {
+    pathways.process = async (pathway: any, event: FlowcoreEvent) => {
       processedPathway = pathway as string;
       processedEvent = event;
     };
@@ -86,7 +86,7 @@ Deno.test("Router Tests", async (t) => {
     }
     
     // Restore original method
-    pathways.processPathway = originalProcessPathway;
+    pathways.process = originalProcess;
   });
 
   await t.step("Router - Unknown Pathway", async () => {
@@ -127,22 +127,22 @@ Deno.test("Router Tests", async (t) => {
 
     // Register multiple pathways
     pathways
-      .registerPathway({
+      .register({
         flowType: "event-type.1",
         eventType: "event-type.created.0",
         schema: testSchema,
       })
-      .registerPathway({
+      .register({
         flowType: "event-type.1",
         eventType: "event-type.updated.0",
         schema: testSchema,
       });
 
-    // Mock the processPathway method
+    // Mock the process method
     const processedPathways: string[] = [];
-    const originalProcessPathway = pathways.processPathway;
+    const originalProcess = pathways.process;
     // deno-lint-ignore no-explicit-any
-    pathways.processPathway = async (pathway: any, event: FlowcoreEvent) => {
+    pathways.process = async (pathway: any, event: FlowcoreEvent) => {
       processedPathways.push(pathway as string);
     };
 
@@ -170,7 +170,7 @@ Deno.test("Router Tests", async (t) => {
     assertEquals(processedPathways[1], "event-type.1/event-type.updated.0");
     
     // Restore original method
-    pathways.processPathway = originalProcessPathway;
+    pathways.process = originalProcess;
   });
 
   await t.step("Router - Aggregator Field Support", async () => {
@@ -183,18 +183,18 @@ Deno.test("Router Tests", async (t) => {
     });
 
     const pathwayKey = "legacy-flow/event-type.created.0" as const;
-    pathways.registerPathway({
+    pathways.register({
       flowType: "legacy-flow",
       eventType: "event-type.created.0",
       schema: testSchema,
     });
 
-    // Mock the processPathway method
+    // Mock the process method
     let processedPathway = "";
     let processedEvent: FlowcoreEvent | null = null;
-    const originalProcessPathway = pathways.processPathway;
+    const originalProcess = pathways.process;
     // deno-lint-ignore no-explicit-any
-    pathways.processPathway = async (pathway: any, event: FlowcoreEvent) => {
+    pathways.process = async (pathway: any, event: FlowcoreEvent) => {
       processedPathway = pathway as string;
       processedEvent = event;
     };
@@ -220,6 +220,6 @@ Deno.test("Router Tests", async (t) => {
     }
     
     // Restore original method
-    pathways.processPathway = originalProcessPathway;
+    pathways.process = originalProcess;
   });
 }); 

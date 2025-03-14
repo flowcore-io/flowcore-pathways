@@ -8,6 +8,8 @@ import { InternalPathwayState } from "./internal-pathway.state.ts"
 import type { EventMetadata, PathwayContract, PathwayKey, PathwayState, PathwayWriteOptions, SendFilehook, SendWebhook, WritablePathway } from "./types.ts"
 
 const DEFAULT_PATHWAY_TIMEOUT_MS = 10000
+const DEFAULT_MAX_RETRIES = 3
+const DEFAULT_RETRY_DELAY_MS = 500
 
 export class PathwaysBuilder<
   // deno-lint-ignore ban-types
@@ -27,6 +29,11 @@ export class PathwaysBuilder<
     keyof TPathway,
     Subject<FlowcoreEvent>
   >
+  private readonly errorObservers: Record<keyof TPathway, Subject<{ event: FlowcoreEvent, error: Error }>> = {} as Record<
+    keyof TPathway,
+    Subject<{ event: FlowcoreEvent, error: Error }>
+  >
+  private readonly globalErrorSubject = new Subject<{ pathway: string, event: FlowcoreEvent, error: Error }>()
   private readonly writers: Record<TWritablePaths, (SendWebhook<TPathway[TWritablePaths]> | SendFilehook)> = {} as Record<
     TWritablePaths,
     (SendWebhook<TPathway[TWritablePaths]> | SendFilehook)
@@ -34,6 +41,8 @@ export class PathwaysBuilder<
   private readonly schemas: Record<keyof TPathway, TSchema> = {} as Record<keyof TPathway, TSchema>
   private readonly writable: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
   private readonly timeouts: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
+  private readonly maxRetries: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
+  private readonly retryDelays: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
   private readonly filePathways: Set<keyof TPathway> = new Set()
   private readonly webhookBuilderFactory: () => WebhookBuilderType
   private pathwayState: PathwayState = new InternalPathwayState()
@@ -74,36 +83,76 @@ export class PathwaysBuilder<
     return this as PathwaysBuilder<TPathway, TWritablePaths>
   }
 
-  //TODO: handle errors in the pathway
-  //TODO: handle retries in the pathway
-  public async processPathway(pathway: keyof TPathway, data: FlowcoreEvent) {
+  /**
+   * Process a pathway event with error handling and retries
+   * @param pathway The pathway to process
+   * @param data The event data to process
+   * @returns Promise that resolves when processing is complete
+   */
+  public async process(pathway: keyof TPathway, data: FlowcoreEvent) {
     if (!this.pathways[pathway]) {
       throw new Error(`Pathway ${String(pathway)} not found`)
     }
 
     if (this.handlers[pathway]) {
-      const handle = this.handlers[pathway](data)
-
+      let retryCount = 0;
+      const maxRetries = this.maxRetries[pathway] ?? DEFAULT_MAX_RETRIES;
+      const retryDelayMs = this.retryDelays[pathway] ?? DEFAULT_RETRY_DELAY_MS;
+      
       this.beforeObservable[pathway].next(data)
-
-      await handle
-
-      this.afterObservers[pathway].next(data)
-
-      await this.pathwayState.setProcessed(data.eventId)
+      
+      while (true) {
+        try {
+          // Execute the handler
+          const handle = this.handlers[pathway](data)
+          await handle
+          
+          // If successful, emit success event and mark as processed
+          this.afterObservers[pathway].next(data)
+          await this.pathwayState.setProcessed(data.eventId)
+          return
+        } catch (error) {
+          // Create error object if needed
+          const errorObj = error instanceof Error ? error : new Error(String(error))
+          
+          // Emit error event with both error and event data
+          this.errorObservers[pathway].next({ event: data, error: errorObj })
+          
+          // Also emit to global error subject
+          this.globalErrorSubject.next({ 
+            pathway: String(pathway), 
+            event: data, 
+            error: errorObj 
+          })
+          
+          // Check if we should retry
+          if (retryCount < maxRetries) {
+            retryCount++
+            // Wait for delay before retrying
+            await new Promise(resolve => setTimeout(resolve, retryDelayMs * retryCount))
+            continue
+          }
+          
+          // If we've exhausted retries, mark as processed to avoid hanging
+          await this.pathwayState.setProcessed(data.eventId)
+          throw error
+        }
+      }
     } else {
+      // No handler, just emit events and mark as processed
       this.beforeObservable[pathway].next(data)
       this.afterObservers[pathway].next(data)
+      await this.pathwayState.setProcessed(data.eventId)
     }
   }
 
-  registerPathway<
+  register<
     F extends string,
     E extends string,
     S extends TSchema,
     W extends boolean = true
   >(
-    contract: PathwayContract<F, E, S> & { writable?: W }
+    contract: PathwayContract<F, E, S> & { writable?: W; maxRetries?: number; retryDelayMs?: number }
   ): PathwaysBuilder<
     TPathway & Record<PathwayKey<F, E>, Static<S>>,
     TWritablePaths | WritablePathway<PathwayKey<F, E>, W>
@@ -114,6 +163,8 @@ export class PathwaysBuilder<
     (this.pathways as any)[path] = true
     this.beforeObservable[path] = new Subject<FlowcoreEvent>()
     this.afterObservers[path] = new Subject<FlowcoreEvent>()
+    this.errorObservers[path] = new Subject<{ event: FlowcoreEvent, error: Error }>()
+    
     if (writable) {
       if (contract.isFilePathway) {
         this.filePathways.add(path)
@@ -128,6 +179,14 @@ export class PathwaysBuilder<
     if (contract.timeoutMs) {
       this.timeouts[path] = contract.timeoutMs
     }
+    
+    if (contract.maxRetries !== undefined) {
+      this.maxRetries[path] = contract.maxRetries
+    }
+    
+    if (contract.retryDelayMs !== undefined) {
+      this.retryDelays[path] = contract.retryDelayMs
+    }
 
     this.schemas[path] = contract.schema
     this.writable[path] = writable
@@ -137,11 +196,11 @@ export class PathwaysBuilder<
     >
   }
 
-  getPathway<TPath extends keyof TPathway>(path: TPath): TPathway[TPath] {
+  get<TPath extends keyof TPathway>(path: TPath): TPathway[TPath] {
     return this.pathways[path]
   }
 
-  handlePathway<TPath extends keyof TPathway>(path: TPath, handler: (event: FlowcoreEvent) => (Promise<void> | void )): void {
+  handle<TPath extends keyof TPathway>(path: TPath, handler: (event: FlowcoreEvent) => (Promise<void> | void )): void {
     const pathway = this.pathways[path]
     if (!pathway) {
       throw new Error(`Pathway ${String(path)} not found`)
@@ -154,22 +213,59 @@ export class PathwaysBuilder<
     this.handlers[path] = handler
   }
 
-  subscribeToPathway<TPath extends keyof TPathway>(
+  /**
+   * Subscribe to pathway events (before or after processing)
+   * @param path The pathway to subscribe to
+   * @param handler The handler function for the events
+   * @param type The event type to subscribe to (before, after, or all)
+   */
+  subscribe<TPath extends keyof TPathway>(
     path: TPath,
     handler: (event: FlowcoreEvent) => void,
     type: "before" | "after" | "all" = "before",
   ): void {
+    if (!this.pathways[path]) {
+      throw new Error(`Pathway ${String(path)} not found`)
+    }
+
     if (type === "before") {
       this.beforeObservable[path].subscribe(handler)
     } else if (type === "after") {
       this.afterObservers[path].subscribe(handler)
-    } else {
+    } else if (type === "all") {
+      // Subscribe to both before and after events
       this.beforeObservable[path].subscribe(handler)
       this.afterObservers[path].subscribe(handler)
     }
   }
 
-  async writeToPathway<TPath extends TWritablePaths>(
+  /**
+   * Subscribe to errors for a specific pathway
+   * @param path The pathway to subscribe to errors for
+   * @param handler The handler function that receives the error and event
+   */
+  onError<TPath extends keyof TPathway>(
+    path: TPath,
+    handler: (error: Error, event: FlowcoreEvent) => void,
+  ): void {
+    if (!this.pathways[path]) {
+      throw new Error(`Pathway ${String(path)} not found`)
+    }
+    
+    this.errorObservers[path].subscribe(({ event, error }) => handler(error, event))
+  }
+
+  /**
+   * Subscribe to errors for all pathways
+   * @param handler The handler function that receives the error, event, and pathway name
+   */
+  onAnyError(
+    handler: (error: Error, event: FlowcoreEvent, pathway: string) => void,
+  ): void {
+    this.globalErrorSubject.subscribe(({ pathway, event, error }) => handler(error, event, pathway))
+  }
+
+  async write<TPath extends TWritablePaths>(
     path: TPath,
     data: TPathway[TPath],
     metadata?: EventMetadata,
@@ -216,5 +312,4 @@ export class PathwaysBuilder<
   }
 }
 
-//TODO: handle errors properly in the pathway
 //TODO: add metadata webhook with audit functionality

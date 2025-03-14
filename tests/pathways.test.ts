@@ -42,18 +42,18 @@ Deno.test({
       // Track builder instances for cleanup
       pathwaysInstances.push(builder);
 
-      const pathwayBuilder = builder.registerPathway({
+      const pathwayBuilder = builder.register({
         flowType: "test-flow-type",
         eventType: "test-event-type",
         schema: testSchema,
       });
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
-      pathwayBuilder.handlePathway(pathwayKey, async (event: FlowcoreEvent) => {
+      pathwayBuilder.handle(pathwayKey, async (event: FlowcoreEvent) => {
         mockPathwayState.set(event.eventId, true);
       });
 
-      assertExists(pathwayBuilder.getPathway(pathwayKey));
+      assertExists(pathwayBuilder.get(pathwayKey));
     });
 
     await t.step("Pathway Subscriptions - Multiple handlers", () => {
@@ -68,12 +68,12 @@ Deno.test({
       pathwaysInstances.push(builder);
 
       const pathwayBuilder = builder
-        .registerPathway({
+        .register({
           flowType: "test-flow-type",
           eventType: "test-event-type-1",
           schema: testSchema,
         })
-        .registerPathway({
+        .register({
           flowType: "test-flow-type",
           eventType: "test-event-type-2",
           schema: testSchema,
@@ -82,16 +82,16 @@ Deno.test({
       const pathwayKey1 = "test-flow-type/test-event-type-1" as const;
       const pathwayKey2 = "test-flow-type/test-event-type-2" as const;
 
-      pathwayBuilder.handlePathway(pathwayKey1, async () => {
+      pathwayBuilder.handle(pathwayKey1, async () => {
         // Handler 1
       });
 
-      pathwayBuilder.handlePathway(pathwayKey2, async () => {
+      pathwayBuilder.handle(pathwayKey2, async () => {
         // Handler 2
       });
 
-      assertExists(pathwayBuilder.getPathway(pathwayKey1));
-      assertExists(pathwayBuilder.getPathway(pathwayKey2));
+      assertExists(pathwayBuilder.get(pathwayKey1));
+      assertExists(pathwayBuilder.get(pathwayKey2));
     });
 
     await t.step("Pathway Writing - Valid Event", async () => {
@@ -109,18 +109,18 @@ Deno.test({
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
       
-      const pathwayBuilder = builder.registerPathway({
+      const pathwayBuilder = builder.register({
         flowType: "test-flow-type",
         eventType: "test-event-type",
         schema: testSchema,
       });
 
-      pathwayBuilder.handlePathway(pathwayKey, async (event: FlowcoreEvent) => {
+      pathwayBuilder.handle(pathwayKey, async (event: FlowcoreEvent) => {
         mockPathwayState.set(event.eventId, true);
       });
 
       // Write to the pathway with fire-and-forget option
-      const eventId = await pathwayBuilder.writeToPathway(pathwayKey, { test: "data" }, undefined, { fireAndForget: true });
+      const eventId = await pathwayBuilder.write(pathwayKey, { test: "data" }, undefined, { fireAndForget: true });
 
       // Get the last request
       const storedRequest = server.storedEvents.get(typeof eventId === 'string' ? eventId : eventId[0]);
@@ -148,19 +148,19 @@ Deno.test({
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
 
-      const pathwayBuilder = builder.registerPathway({
+      const pathwayBuilder = builder.register({
         flowType: "test-flow-type",
         eventType: "test-event-type",
         schema: testSchema,
       });
 
-      pathwayBuilder.handlePathway(pathwayKey, async (event: FlowcoreEvent) => {
+      pathwayBuilder.handle(pathwayKey, async (event: FlowcoreEvent) => {
         console.log("Received event:", event);
       });
 
       try {
         // @ts-expect-error Testing invalid data type (number instead of string)
-        await pathwayBuilder.writeToPathway(pathwayKey, { test: 123 });
+        await pathwayBuilder.write(pathwayKey, { test: 123 });
       } catch (error: unknown) {
         if (error instanceof Error) {
           assertEquals(error.message, "Invalid data for pathway test-flow-type/test-event-type");
@@ -185,7 +185,7 @@ Deno.test({
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
       
-      const pathwayBuilder = builder.registerPathway({
+      const pathwayBuilder = builder.register({
         flowType: "test-flow-type",
         eventType: "test-event-type",
         schema: testSchema,
@@ -195,14 +195,14 @@ Deno.test({
       let handlerExecuted = false;
       
       // Register a handler that throws an error
-      pathwayBuilder.handlePathway(pathwayKey, async () => {
+      pathwayBuilder.handle(pathwayKey, async () => {
         handlerExecuted = true;
         throw new Error("Test handler error");
       });
 
-      // With fireAndForget: true, no error will be thrown back from writeToPathway
+      // With fireAndForget: true, no error will be thrown back from write
       // We're just testing that the webhook was sent correctly
-      const eventId = await pathwayBuilder.writeToPathway(pathwayKey, { test: "data" }, undefined, { fireAndForget: true });
+      const eventId = await pathwayBuilder.write(pathwayKey, { test: "data" }, undefined, { fireAndForget: true });
       
       // Verify the webhook was sent
       const storedRequest = server.storedEvents.get(typeof eventId === 'string' ? eventId : eventId[0]);
@@ -214,7 +214,7 @@ Deno.test({
       assertEquals(request.body.test, "data");
       
       // Note: With fireAndForget: true, we can't verify that the handler executed or threw an error
-      // because writeToPathway returns before the handler processes the event
+      // because write returns before the handler processes the event
     });
 
     // Test without fireAndForget to verify error handling
@@ -233,7 +233,7 @@ Deno.test({
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
       
-      const pathwayBuilder = builder.registerPathway({
+      const pathwayBuilder = builder.register({
         flowType: "test-flow-type",
         eventType: "test-event-type",
         schema: testSchema,
@@ -253,7 +253,7 @@ Deno.test({
       };
 
       // Register a handler that throws an error
-      pathwayBuilder.handlePathway(pathwayKey, async (event: FlowcoreEvent) => {
+      pathwayBuilder.handle(pathwayKey, async (event: FlowcoreEvent) => {
         // Process the event to mark it as processed so it doesn't time out
         await pathwayBuilder["pathwayState"].setProcessed(event.eventId);
         throw new Error("Test handler error");
@@ -262,12 +262,12 @@ Deno.test({
       try {
         // Without fireAndForget, should wait for the event to be processed
         // but since our mock immediately returns processed=true, it won't time out
-        await pathwayBuilder.writeToPathway(pathwayKey, { test: "data" }, undefined);
+        await pathwayBuilder.write(pathwayKey, { test: "data" }, undefined);
         
         // Since the handler marks the event as processed before throwing,
-        // writeToPathway will return successfully even though the handler threw
+        // write will return successfully even though the handler threw
         
-        // The error is swallowed by the handler and not propagated to writeToPathway
+        // The error is swallowed by the handler and not propagated to write
         // This is expected behavior - handlers can fail but the pathway still processes
       } catch (error: unknown) {
         // We shouldn't get here since the event is marked as processed
@@ -295,7 +295,7 @@ Deno.test({
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
       
-      const pathwayBuilder = builder.registerPathway({
+      const pathwayBuilder = builder.register({
         flowType: "test-flow-type",
         eventType: "test-event-type",
         schema: testSchema,
@@ -305,7 +305,7 @@ Deno.test({
         // When using non-existent server, the network error should be thrown
         // regardless of fireAndForget setting, because the error happens during
         // the initial webhook send, not during processing
-        await pathwayBuilder.writeToPathway(pathwayKey, { test: "data" });
+        await pathwayBuilder.write(pathwayKey, { test: "data" });
         throw new Error("Expected error was not thrown");
       } catch (error: unknown) {
         // We expect a network-related error
@@ -329,7 +329,7 @@ Deno.test({
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
       
-      const pathwayBuilder = builder.registerPathway({
+      const pathwayBuilder = builder.register({
         flowType: "test-flow-type",
         eventType: "test-event-type",
         schema: testSchema,
@@ -338,7 +338,7 @@ Deno.test({
       // Configure server to fail first N requests
       server.failNextRequests(3);
 
-      const eventId = await pathwayBuilder.writeToPathway(pathwayKey, { test: "data" }, undefined, { fireAndForget: true });
+      const eventId = await pathwayBuilder.write(pathwayKey, { test: "data" }, undefined, { fireAndForget: true });
       assertExists(eventId);
 
       // Verify server received expected number of requests for retries
@@ -362,7 +362,7 @@ Deno.test({
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
       
-      const pathwayBuilder = builder.registerPathway({
+      const pathwayBuilder = builder.register({
         flowType: "test-flow-type",
         eventType: "test-event-type",
         schema: testSchema,
@@ -374,7 +374,7 @@ Deno.test({
         timestamp: new Date().toISOString(),
       };
 
-      const eventId = await pathwayBuilder.writeToPathway(pathwayKey, { test: "data" }, metadata, { fireAndForget: true });
+      const eventId = await pathwayBuilder.write(pathwayKey, { test: "data" }, metadata, { fireAndForget: true });
       assertExists(eventId);
 
       // Verify a request was made with the metadata
@@ -400,7 +400,7 @@ Deno.test({
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
       
-      const pathwayBuilder = builder.registerPathway({
+      const pathwayBuilder = builder.register({
         flowType: "test-flow-type",
         eventType: "test-event-type",
         schema: testSchema,
@@ -419,12 +419,12 @@ Deno.test({
 
       try {
         await invalidBuilder
-          .registerPathway({
+          .register({
             flowType: "test-flow-type",
             eventType: "test-event-type",
             schema: testSchema,
           })
-          .writeToPathway(pathwayKey, { test: "data" });
+          .write(pathwayKey, { test: "data" });
         
         throw new Error("Expected authentication error was not thrown");
       } catch (error: unknown) {

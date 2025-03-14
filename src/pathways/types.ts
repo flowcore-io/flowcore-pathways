@@ -22,8 +22,8 @@ export interface PathwayContract<F extends string, E extends string, T extends T
    * Whether the pathway is writable. Use `false as const` to make the pathway non-writable at compile time.
    * @example
    * ```ts
-   * // Non-writable pathway (will not be available in writeToPathway)
-   * registerPathway({
+   * // Non-writable pathway (will not be available in write)
+   * register({
    *   flowType: "test",
    *   eventType: "event",
    *   schema: Type.Object({}),
@@ -31,7 +31,7 @@ export interface PathwayContract<F extends string, E extends string, T extends T
    * })
    * 
    * // Writable pathway
-   * registerPathway({
+   * register({
    *   flowType: "test",
    *   eventType: "writable",
    *   schema: Type.Object({})
@@ -40,7 +40,29 @@ export interface PathwayContract<F extends string, E extends string, T extends T
    * @default true
    */
   writable?: boolean
+  /**
+   * The maximum number of times to retry processing an event if it fails
+   * @default 0
+   */
+  maxRetries?: number
+  /**
+   * The delay in milliseconds between retry attempts
+   * Used as the base for exponential backoff if retries > 1
+   * @default 1000
+   */
+  retryDelayMs?: number
+  /**
+   * HTTP status codes that should trigger a retry
+   * @default [500, 502, 503, 504]
+   */
+  retryStatusCodes?: number[]
+  /**
+   * Custom timeout for this pathway in milliseconds
+   */
   timeoutMs?: number
+  /**
+   * Whether this pathway is for file processing
+   */
   isFilePathway?: boolean
 }
 

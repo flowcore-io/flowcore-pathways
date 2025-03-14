@@ -12,12 +12,12 @@ export class PathwayRouter {
       ...(event.aggregator ? { flowType: event.aggregator } : {}),
     }
     const pathwayKey = `${compatibleEvent.flowType}/${compatibleEvent.eventType}`
-    const pathway = this.pathways.getPathway(pathwayKey)
+    const pathway = this.pathways.get(pathwayKey)
     if (!pathway) {
       console.error(`Pathway ${pathwayKey} not found`)
       throw new Error(`Pathway ${pathwayKey} not found`)
     }
-    await this.pathways.processPathway(pathwayKey, compatibleEvent)
+    await this.pathways.process(pathwayKey, compatibleEvent)
   }
 }
 
