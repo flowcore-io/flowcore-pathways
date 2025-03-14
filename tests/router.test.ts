@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { Type } from "@sinclair/typebox";
-import { assertEquals, assertExists, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals, assertExists, assertRejects, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { FlowcoreEvent, PathwayRouter, PathwaysBuilder } from "../src/mod.ts";
 import { createTestServer } from "./helpers/test-server.ts";
 
@@ -17,6 +17,8 @@ Deno.test("Router Tests", async (t) => {
     flowTypeId: Type.String(),
     name: Type.String(),
   });
+
+  const TEST_SECRET_KEY = "test-secret-key";
 
   // Create a test event with the correct structure
   const createTestEvent = (overrides = {}): Omit<FlowcoreEventWithAggregator, keyof typeof overrides> & typeof overrides => ({
@@ -65,12 +67,12 @@ Deno.test("Router Tests", async (t) => {
       processedEvent = event;
     };
 
-    const router = new PathwayRouter(pathways);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY);
 
     // Test valid event processing
     const validEvent = createTestEvent();
 
-    await router.processEvent(validEvent as FlowcoreEvent);
+    await router.processEvent(validEvent as FlowcoreEvent, TEST_SECRET_KEY);
 
     // Verify the router processed the event correctly
     assertEquals(processedPathway, pathwayKey);
@@ -98,7 +100,7 @@ Deno.test("Router Tests", async (t) => {
       pathwayTimeoutMs: 1000,
     });
 
-    const router = new PathwayRouter(pathways);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY);
 
     // Test event with unknown pathway
     const unknownEvent = createTestEvent({
@@ -109,7 +111,7 @@ Deno.test("Router Tests", async (t) => {
     // Assert that processing an unknown pathway throws an error
     await assertRejects(
       async () => {
-        await router.processEvent(unknownEvent as FlowcoreEvent);
+        await router.processEvent(unknownEvent as FlowcoreEvent, TEST_SECRET_KEY);
       },
       Error,
       "Pathway unknown-flow-type/unknown-event-type not found"
@@ -146,7 +148,7 @@ Deno.test("Router Tests", async (t) => {
       processedPathways.push(pathway as string);
     };
 
-    const router = new PathwayRouter(pathways);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY);
 
     // Process multiple events
     const events = [
@@ -161,7 +163,7 @@ Deno.test("Router Tests", async (t) => {
     ];
 
     for (const event of events) {
-      await router.processEvent(event as FlowcoreEvent);
+      await router.processEvent(event as FlowcoreEvent, TEST_SECRET_KEY);
     }
 
     // Verify both events were processed with correct pathways
@@ -199,7 +201,7 @@ Deno.test("Router Tests", async (t) => {
       processedEvent = event;
     };
 
-    const router = new PathwayRouter(pathways);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY);
 
     // Test event with aggregator field instead of flowType
     const legacyEvent = createTestEvent({
@@ -208,7 +210,7 @@ Deno.test("Router Tests", async (t) => {
       eventType: "event-type.created.0",
     });
 
-    await router.processEvent(legacyEvent as FlowcoreEvent);
+    await router.processEvent(legacyEvent as FlowcoreEvent, TEST_SECRET_KEY);
 
     // Verify the router processed the event correctly using the aggregator field
     assertEquals(processedPathway, pathwayKey);
@@ -221,5 +223,48 @@ Deno.test("Router Tests", async (t) => {
     
     // Restore original method
     pathways.process = originalProcess;
+  });
+
+  await t.step("Router - Invalid Secret Key", async () => {
+    const pathways = new PathwaysBuilder({
+      baseUrl: `http://localhost:${server.port}`,
+      tenant: "test-tenant",
+      dataCore: "test-data-core",
+      apiKey: "test-api-key",
+      pathwayTimeoutMs: 1000,
+    });
+
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY);
+
+    // Test valid event with wrong secret key
+    const validEvent = createTestEvent();
+
+    // Assert that processing with wrong secret key throws an error
+    await assertRejects(
+      async () => {
+        await router.processEvent(validEvent as FlowcoreEvent, "wrong-secret-key");
+      },
+      Error,
+      "Invalid secret key"
+    );
+  });
+
+  await t.step("Router - Constructor Requires Secret Key", async () => {
+    const pathways = new PathwaysBuilder({
+      baseUrl: `http://localhost:${server.port}`,
+      tenant: "test-tenant",
+      dataCore: "test-data-core",
+      apiKey: "test-api-key",
+      pathwayTimeoutMs: 1000,
+    });
+
+    // Assert that creating router with empty secret key throws an error
+    assertThrows(
+      () => {
+        new PathwayRouter(pathways, "");
+      },
+      Error,
+      "Secret key is required for PathwayRouter"
+    );
   });
 }); 

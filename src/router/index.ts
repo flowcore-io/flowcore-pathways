@@ -3,14 +3,27 @@ import type { FlowcoreEvent } from "../contracts/event.ts"
 import type { PathwaysBuilder } from "../pathways/index.ts"
 
 export class PathwayRouter {
-  // deno-lint-ignore no-explicit-any
-  constructor(private readonly pathways: PathwaysBuilder<Record<string, any>>) {}
+  constructor(
+    // deno-lint-ignore no-explicit-any
+    private readonly pathways: PathwaysBuilder<Record<string, any>>,
+    private readonly secretKey: string
+  ) {
+    if (!secretKey || secretKey.trim() === "") {
+      throw new Error("Secret key is required for PathwayRouter")
+    }
+  }
 
-  async processEvent(event: FlowcoreLegacyEvent) {
+  async processEvent(event: FlowcoreLegacyEvent, providedSecret: string) {
+    // Validate secret key
+    if (!providedSecret || providedSecret !== this.secretKey) {
+      throw new Error("Invalid secret key")
+    }
+
     const compatibleEvent: FlowcoreEvent = {
       ...event,
       ...(event.aggregator ? { flowType: event.aggregator } : {}),
     }
+
     const pathwayKey = `${compatibleEvent.flowType}/${compatibleEvent.eventType}`
     const pathway = this.pathways.get(pathwayKey)
     if (!pathway) {
@@ -22,4 +35,3 @@ export class PathwayRouter {
 }
 
 //TODO: handle errors in the pathway
-//TODO: handle authentication with secret key
