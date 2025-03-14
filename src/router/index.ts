@@ -30,8 +30,19 @@ export class PathwayRouter {
       console.error(`Pathway ${pathwayKey} not found`)
       throw new Error(`Pathway ${pathwayKey} not found`)
     }
-    await this.pathways.process(pathwayKey, compatibleEvent)
+    
+    try {
+      await this.pathways.process(pathwayKey, compatibleEvent)
+      return { success: true, message: `Event processed through pathway ${pathwayKey}` }
+    } catch (error) {
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : String(error)
+      
+      console.error(`Error processing pathway ${pathwayKey}: ${errorMessage}`)
+      
+      // Rethrow the error with additional context
+      throw new Error(`Failed to process event in pathway ${pathwayKey}: ${errorMessage}`)
+    }
   }
 }
-
-//TODO: handle errors in the pathway
