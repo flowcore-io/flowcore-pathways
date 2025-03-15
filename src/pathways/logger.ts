@@ -36,12 +36,15 @@ export interface Logger {
   warn(message: string, context?: LoggerMeta): void
   
   /**
-   * Log error messages
-   * @param message The message to log
-   * @param error Optional error object
-   * @param context Optional context data to include
+   * Log error messages - supports two different method signatures:
+   * 1. error(message: string, error?: Error, context?: LoggerMeta)
+   * 2. error(messageOrError: string | Error, meta?: LoggerMeta)
+   * 
+   * @param messageOrError The message to log or Error object
+   * @param errorOrContext Optional error object or context data
+   * @param context Optional context data (only for signature 1)
    */
-  error(message: string, error?: Error, context?: LoggerMeta): void
+  error(messageOrError: string | Error, errorOrContext?: Error | LoggerMeta, context?: LoggerMeta): void
 }
 
 /**
@@ -77,12 +80,27 @@ export class ConsoleLogger implements Logger {
   
   /**
    * Log error messages to the console
-   * @param message The message to log
-   * @param error Optional error object
-   * @param context Optional context data to include
+   * Supports both signature formats:
+   * 1. error(message: string, error?: Error, context?: LoggerMeta)
+   * 2. error(messageOrError: string | Error, meta?: LoggerMeta)
+   * 
+   * @param messageOrError The message to log or Error object
+   * @param errorOrContext Optional error object or context data
+   * @param context Optional context data (only for signature 1)
    */
-  error(message: string, error?: Error, context?: LoggerMeta): void {
-    console.error(message, error, context ? JSON.stringify(context) : '');
+  error(messageOrError: string | Error, errorOrContext?: Error | LoggerMeta, context?: LoggerMeta): void {
+    if (typeof messageOrError === 'string') {
+      if (errorOrContext instanceof Error) {
+        // Signature 1: error(message: string, error: Error, context?: LoggerMeta)
+        console.error(messageOrError, errorOrContext, context ? JSON.stringify(context) : '');
+      } else {
+        // Signature 1 (no error) or Signature 2: error(message: string, context?: LoggerMeta)
+        console.error(messageOrError, errorOrContext ? JSON.stringify(errorOrContext) : '');
+      }
+    } else {
+      // Signature 2: error(error: Error, context?: LoggerMeta)
+      console.error(messageOrError, errorOrContext ? JSON.stringify(errorOrContext) : '');
+    }
   }
 }
 
@@ -113,9 +131,11 @@ export class NoopLogger implements Logger {
   
   /**
    * No-op error log
-   * @param _message The message to log (ignored)
-   * @param _error Optional error object (ignored)
+   * Supports both signature formats
+   * 
+   * @param _messageOrError The message to log or Error object (ignored)
+   * @param _errorOrContext Optional error object or context data (ignored)
    * @param _context Optional context data (ignored)
    */
-  error(_message: string, _error?: Error, _context?: LoggerMeta): void {}
+  error(_messageOrError: string | Error, _errorOrContext?: Error | LoggerMeta, _context?: LoggerMeta): void {}
 } 
