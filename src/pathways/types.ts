@@ -1,4 +1,4 @@
-import type { WebhookFileData, WebhookSendOptions } from "@flowcore/sdk-transformer-core"
+import type { WebhookFileData, WebhookSendOptions } from "npm:@flowcore/sdk-transformer-core"
 import type { TSchema } from "@sinclair/typebox"
 
 /**

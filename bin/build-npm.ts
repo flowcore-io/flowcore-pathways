@@ -37,6 +37,18 @@ await build({
     // steps to run after building and before running the tests
     // Deno.copyFileSync("LICENSE", "npm/LICENSE")
     Deno.copyFileSync("README.md", "npm/README.md")
-    Deno.copyFileSync("CHANGELOG.md", "npm/CHANGELOG.md")
+    
+    // Only copy CHANGELOG.md if it exists
+    try {
+      const changelogStat = Deno.statSync("CHANGELOG.md");
+      if (changelogStat.isFile) {
+        Deno.copyFileSync("CHANGELOG.md", "npm/CHANGELOG.md");
+      }
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) {
+        throw error; // Rethrow if it's not a "file not found" error
+      }
+      console.log("CHANGELOG.md not found, skipping copy");
+    }
   },
 })

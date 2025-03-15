@@ -1,6 +1,6 @@
-import type { WebhookBuilder as WebhookBuilderType, WebhookFileData, WebhookSendOptions } from "@flowcore/sdk-transformer-core"
 import type { Static, TSchema } from "@sinclair/typebox"
 import { Value } from "@sinclair/typebox/value"
+import type { WebhookBuilder as WebhookBuilderType, WebhookFileData, WebhookSendOptions } from "npm:@flowcore/sdk-transformer-core"
 import { Subject } from "rxjs"
 import { WebhookBuilder } from "../compatibility/flowcore-transformer-core.sdk.ts"
 import type { FlowcoreEvent } from "../contracts/event.ts"
