@@ -1,3 +1,11 @@
+/**
+ * Router module for Flowcore Pathways
+ * 
+ * This module provides routing functionality to direct incoming events
+ * to the appropriate pathway handlers based on flow type and event type.
+ * 
+ * @module
+ */
 import type { FlowcoreLegacyEvent } from "../common/flowcore.type.ts"
 import type { FlowcoreEvent } from "../contracts/event.ts"
 import type { PathwaysBuilder } from "../pathways/index.ts"
@@ -6,8 +14,6 @@ import { NoopLogger } from "../pathways/logger.ts"
 
 /**
  * Router class that handles directing events to the appropriate pathway handlers
- * 
- * @class PathwayRouter
  */
 export class PathwayRouter {
   private readonly logger: Logger;
@@ -15,10 +21,10 @@ export class PathwayRouter {
   /**
    * Creates a new instance of PathwayRouter
    * 
-   * @param {PathwaysBuilder<Record<string, any>>} pathways - The pathways builder instance that contains all registered pathways
-   * @param {string} secretKey - Secret key used for authentication when processing events
-   * @param {Logger} [logger] - Optional logger instance (defaults to NoopLogger if not provided)
-   * @throws {Error} Will throw an error if secretKey is empty or not provided
+   * @param pathways The pathways builder instance that contains all registered pathways
+   * @param secretKey Secret key used for authentication when processing events
+   * @param logger Optional logger instance (defaults to NoopLogger if not provided)
+   * @throws Error if secretKey is empty or not provided
    */
   constructor(
     // deno-lint-ignore no-explicit-any
@@ -29,26 +35,28 @@ export class PathwayRouter {
     this.logger = logger ?? new NoopLogger();
     
     if (!secretKey || secretKey.trim() === "") {
-      this.logger.error("Secret key is required for PathwayRouter");
-      throw new Error("Secret key is required for PathwayRouter")
+      const errorMsg = "Secret key is required for PathwayRouter";
+      this.logger.error(errorMsg, new Error(errorMsg));
+      throw new Error(errorMsg)
     }
     
     this.logger.debug("PathwayRouter initialized");
   }
 
   /**
-   * Processes an incoming event by routing it to the appropriate pathway
+   * Process an incoming event by routing it to the appropriate pathway handler
    * 
-   * @param {FlowcoreLegacyEvent} event - The event to process
-   * @param {string} providedSecret - The secret key provided for authentication
-   * @returns {Promise<{ success: boolean; message: string }>} Result of the event processing
-   * @throws {Error} Will throw an error if authentication fails, pathway is not found, or processing fails
+   * @param event The event to process
+   * @param providedSecret The secret key provided for authentication
+   * @returns Result of the event processing with success status and message
+   * @throws Error if authentication fails, pathway is not found, or processing fails
    */
   async processEvent(event: FlowcoreLegacyEvent, providedSecret: string): Promise<{ success: boolean; message: string }> {
     // Validate secret key
     if (!providedSecret || providedSecret !== this.secretKey) {
-      this.logger.error("Invalid secret key provided");
-      throw new Error("Invalid secret key")
+      const errorMsg = "Invalid secret key";
+      this.logger.error(errorMsg, new Error(errorMsg));
+      throw new Error(errorMsg)
     }
 
     const compatibleEvent: FlowcoreEvent = {
@@ -63,9 +71,9 @@ export class PathwayRouter {
     
     const pathway = this.pathways.get(pathwayKey)
     if (!pathway) {
-      const error = `Pathway ${pathwayKey} not found`;
-      this.logger.error(error);
-      throw new Error(error)
+      const errorMsg = `Pathway ${pathwayKey} not found`;
+      this.logger.error(errorMsg, new Error(errorMsg));
+      throw new Error(errorMsg)
     }
     
     try {
@@ -83,17 +91,14 @@ export class PathwayRouter {
       
       return { success: true, message: `Event processed through pathway ${pathwayKey}` }
     } catch (error) {
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : String(error)
+      const errorObj = error instanceof Error ? error : new Error(String(error))
       
-      this.logger.error(`Error processing pathway ${pathwayKey}`, {
-        error: errorMessage,
+      this.logger.error(`Error processing pathway ${pathwayKey}`, errorObj, {
         eventId: compatibleEvent.eventId
       });
       
       // Rethrow the error with additional context
-      throw new Error(`Failed to process event in pathway ${pathwayKey}: ${errorMessage}`)
+      throw new Error(`Failed to process event in pathway ${pathwayKey}: ${errorObj.message}`)
     }
   }
 }

@@ -4,8 +4,6 @@ import type { PathwayState } from "./types.ts";
 /**
  * Internal implementation of PathwayState interface that uses KV storage
  * for tracking processed events to prevent duplicate processing
- * 
- * @implements {PathwayState}
  */
 export class InternalPathwayState implements PathwayState {
   /**
@@ -24,7 +22,7 @@ export class InternalPathwayState implements PathwayState {
    * Gets or initializes the KV adapter
    * 
    * @private
-   * @returns {Promise<KvAdapter>} The KV adapter instance
+   * @returns The KV adapter instance
    */
   private async getKv(): Promise<KvAdapter> {
     if (!this.kv) {
@@ -36,8 +34,8 @@ export class InternalPathwayState implements PathwayState {
   /**
    * Checks if an event has already been processed
    * 
-   * @param {string} eventId - The ID of the event to check
-   * @returns {Promise<boolean>} True if the event has been processed, false otherwise
+   * @param eventId The ID of the event to check
+   * @returns True if the event has been processed, false otherwise
    */
   async isProcessed(eventId: string): Promise<boolean> {
     const kv = await this.getKv();
@@ -48,8 +46,8 @@ export class InternalPathwayState implements PathwayState {
   /**
    * Marks an event as processed
    * 
-   * @param {string} eventId - The ID of the event to mark as processed
-   * @returns {Promise<void>}
+   * @param eventId The ID of the event to mark as processed
+   * @returns Promise that resolves when the operation completes
    */
   async setProcessed(eventId: string): Promise<void> {
     const kv = await this.getKv();
