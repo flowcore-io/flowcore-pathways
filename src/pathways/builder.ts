@@ -5,6 +5,8 @@ import { Subject } from "rxjs"
 import { WebhookBuilder } from "../compatibility/flowcore-transformer-core.sdk.ts"
 import type { FlowcoreEvent } from "../contracts/event.ts"
 import { InternalPathwayState } from "./internal-pathway.state.ts"
+import type { Logger } from "./logger.ts"
+import { NoopLogger } from "./logger.ts"
 import type { EventMetadata, PathwayContract, PathwayKey, PathwayState, PathwayWriteOptions, SendFilehook, SendWebhook, WritablePathway } from "./types.ts"
 
 const DEFAULT_PATHWAY_TIMEOUT_MS = 10000
@@ -61,6 +63,9 @@ export class PathwaysBuilder<
   // Audit-related properties
   private auditHandler?: AuditHandler
   private userIdResolver?: UserIdResolver
+  
+  // Logger instance (but not using it yet due to TypeScript errors)
+  private readonly logger: Logger
 
   constructor({
     baseUrl,
@@ -68,13 +73,25 @@ export class PathwaysBuilder<
     dataCore,
     apiKey,
     pathwayTimeoutMs,
+    logger,
   }: {
     baseUrl: string
     tenant: string
     dataCore: string
     apiKey: string
     pathwayTimeoutMs?: number
+    logger?: Logger
   }) {
+    // Initialize logger (use NoopLogger if none provided)
+    this.logger = logger ?? new NoopLogger();
+    
+    this.logger.debug('Initializing PathwaysBuilder', {
+      baseUrl,
+      tenant,
+      dataCore,
+      pathwayTimeoutMs
+    });
+    
     this.webhookBuilderFactory = new WebhookBuilder({
       baseUrl,
       tenant,
@@ -93,6 +110,7 @@ export class PathwaysBuilder<
   }
 
   withPathwayState(state: PathwayState): PathwaysBuilder<TPathway, TWritablePaths> {
+    this.logger.debug('Setting custom pathway state');
     this.pathwayState = state
     return this as PathwaysBuilder<TPathway, TWritablePaths>
   }
@@ -104,6 +122,7 @@ export class PathwaysBuilder<
    * @returns The PathwaysBuilder instance with audit configured
    */
   withAudit(handler: AuditHandler, userIdResolver: UserIdResolver): PathwaysBuilder<TPathway, TWritablePaths> {
+    this.logger.debug('Configuring audit functionality');
     this.auditHandler = handler
     this.userIdResolver = userIdResolver
     return this as PathwaysBuilder<TPathway, TWritablePaths>
@@ -116,13 +135,26 @@ export class PathwaysBuilder<
    * @returns Promise that resolves when processing is complete
    */
   public async process(pathway: keyof TPathway, data: FlowcoreEvent) {
+    const pathwayStr = String(pathway)
+    
+    this.logger.debug(`Processing pathway event`, {
+      pathway: pathwayStr,
+      eventId: data.eventId
+    });
+    
     if (!this.pathways[pathway]) {
-      throw new Error(`Pathway ${String(pathway)} not found`)
+      const error = `Pathway ${pathwayStr} not found`;
+      this.logger.error(error);
+      throw new Error(error)
     }
 
     // Call audit handler if configured
     if (this.auditHandler) {
-      this.auditHandler(String(pathway), data)
+      this.logger.debug(`Calling audit handler for pathway`, {
+        pathway: pathwayStr,
+        eventId: data.eventId
+      });
+      this.auditHandler(pathwayStr, data)
     }
 
     if (this.handlers[pathway]) {
@@ -130,28 +162,57 @@ export class PathwaysBuilder<
       const maxRetries = this.maxRetries[pathway] ?? DEFAULT_MAX_RETRIES;
       const retryDelayMs = this.retryDelays[pathway] ?? DEFAULT_RETRY_DELAY_MS;
       
+      this.logger.debug(`Emitting 'before' event`, {
+        pathway: pathwayStr,
+        eventId: data.eventId
+      });
       this.beforeObservable[pathway].next(data)
       
       while (true) {
         try {
+          this.logger.debug(`Executing handler for pathway`, {
+            pathway: pathwayStr,
+            eventId: data.eventId,
+            attempt: retryCount + 1
+          });
+          
           // Execute the handler
           const handle = this.handlers[pathway](data)
           await handle
           
           // If successful, emit success event and mark as processed
+          this.logger.debug(`Handler executed successfully, emitting 'after' event`, {
+            pathway: pathwayStr,
+            eventId: data.eventId
+          });
+          
           this.afterObservers[pathway].next(data)
           await this.pathwayState.setProcessed(data.eventId)
+          
+          this.logger.info(`Successfully processed pathway event`, {
+            pathway: pathwayStr,
+            eventId: data.eventId
+          });
+          
           return
         } catch (error) {
           // Create error object if needed
           const errorObj = error instanceof Error ? error : new Error(String(error))
+          
+          this.logger.error(`Error processing pathway event`, {
+            pathway: pathwayStr,
+            eventId: data.eventId,
+            error: errorObj.message,
+            retryCount,
+            maxRetries
+          });
           
           // Emit error event with both error and event data
           this.errorObservers[pathway].next({ event: data, error: errorObj })
           
           // Also emit to global error subject
           this.globalErrorSubject.next({ 
-            pathway: String(pathway), 
+            pathway: pathwayStr, 
             event: data, 
             error: errorObj 
           })
@@ -159,18 +220,40 @@ export class PathwaysBuilder<
           // Check if we should retry
           if (retryCount < maxRetries) {
             retryCount++
+            const nextDelay = retryDelayMs * retryCount
+            
+            this.logger.debug(`Retrying pathway event processing`, {
+              pathway: pathwayStr,
+              eventId: data.eventId,
+              attempt: retryCount,
+              maxRetries,
+              nextDelay
+            });
+            
             // Wait for delay before retrying
-            await new Promise(resolve => setTimeout(resolve, retryDelayMs * retryCount))
+            await new Promise(resolve => setTimeout(resolve, nextDelay))
             continue
           }
           
           // If we've exhausted retries, mark as processed to avoid hanging
+          this.logger.warn(`Max retries exceeded for pathway event, marking as processed`, {
+            pathway: pathwayStr,
+            eventId: data.eventId,
+            retryCount,
+            maxRetries
+          });
+          
           await this.pathwayState.setProcessed(data.eventId)
           throw error
         }
       }
     } else {
       // No handler, just emit events and mark as processed
+      this.logger.debug(`No handler for pathway, emitting events and marking as processed`, {
+        pathway: pathwayStr,
+        eventId: data.eventId
+      });
+      
       this.beforeObservable[pathway].next(data)
       this.afterObservers[pathway].next(data)
       await this.pathwayState.setProcessed(data.eventId)
@@ -190,6 +273,18 @@ export class PathwaysBuilder<
   > {
     const path = `${contract.flowType}/${contract.eventType}` as PathwayKey<F, E>
     const writable = contract.writable ?? true;
+    
+    this.logger.debug(`Registering pathway`, {
+      pathway: path,
+      flowType: contract.flowType,
+      eventType: contract.eventType,
+      writable,
+      isFilePathway: contract.isFilePathway,
+      timeoutMs: contract.timeoutMs,
+      maxRetries: contract.maxRetries,
+      retryDelayMs: contract.retryDelayMs
+    });
+    
     // deno-lint-ignore no-explicit-any
     (this.pathways as any)[path] = true
     this.beforeObservable[path] = new Subject<FlowcoreEvent>()
@@ -221,6 +316,14 @@ export class PathwaysBuilder<
 
     this.schemas[path] = contract.schema
     this.writable[path] = writable
+    
+    this.logger.info(`Pathway registered successfully`, {
+      pathway: path,
+      flowType: contract.flowType,
+      eventType: contract.eventType,
+      writable
+    });
+    
     return this as PathwaysBuilder<
       TPathway & Record<PathwayKey<F, E>, Static<S>>,
       TWritablePaths | WritablePathway<PathwayKey<F, E>, W>
@@ -228,20 +331,29 @@ export class PathwaysBuilder<
   }
 
   get<TPath extends keyof TPathway>(path: TPath): TPathway[TPath] {
+    this.logger.debug(`Getting pathway`, { pathway: String(path) });
     return this.pathways[path]
   }
 
   handle<TPath extends keyof TPathway>(path: TPath, handler: (event: FlowcoreEvent) => (Promise<void> | void )): void {
+    const pathStr = String(path)
+    this.logger.debug(`Setting handler for pathway`, { pathway: pathStr });
+    
     const pathway = this.pathways[path]
     if (!pathway) {
-      throw new Error(`Pathway ${String(path)} not found`)
+      const error = `Pathway ${pathStr} not found`;
+      this.logger.error(error);
+      throw new Error(error)
     }
 
     if (this.handlers[path]) {
-      throw new Error(`Someone is already handling pathway ${String(path)} in this instance`)
+      const error = `Someone is already handling pathway ${pathStr} in this instance`;
+      this.logger.error(error);
+      throw new Error(error)
     }
 
     this.handlers[path] = handler
+    this.logger.info(`Handler set for pathway`, { pathway: pathStr });
   }
 
   /**
@@ -255,8 +367,16 @@ export class PathwaysBuilder<
     handler: (event: FlowcoreEvent) => void,
     type: "before" | "after" | "all" = "before",
   ): void {
+    const pathStr = String(path)
+    this.logger.debug(`Subscribing to pathway events`, { 
+      pathway: pathStr, 
+      type 
+    });
+    
     if (!this.pathways[path]) {
-      throw new Error(`Pathway ${String(path)} not found`)
+      const error = `Pathway ${pathStr} not found`;
+      this.logger.error(error);
+      throw new Error(error)
     }
 
     if (type === "before") {
@@ -268,6 +388,11 @@ export class PathwaysBuilder<
       this.beforeObservable[path].subscribe(handler)
       this.afterObservers[path].subscribe(handler)
     }
+    
+    this.logger.debug(`Subscribed to pathway events`, { 
+      pathway: pathStr, 
+      type 
+    });
   }
 
   /**
@@ -279,11 +404,17 @@ export class PathwaysBuilder<
     path: TPath,
     handler: (error: Error, event: FlowcoreEvent) => void,
   ): void {
+    const pathStr = String(path)
+    this.logger.debug(`Subscribing to pathway errors`, { pathway: pathStr });
+    
     if (!this.pathways[path]) {
-      throw new Error(`Pathway ${String(path)} not found`)
+      const error = `Pathway ${pathStr} not found`;
+      this.logger.error(error);
+      throw new Error(error)
     }
     
     this.errorObservers[path].subscribe(({ event, error }) => handler(error, event))
+    this.logger.debug(`Subscribed to pathway errors`, { pathway: pathStr });
   }
 
   /**
@@ -293,7 +424,9 @@ export class PathwaysBuilder<
   onAnyError(
     handler: (error: Error, event: FlowcoreEvent, pathway: string) => void,
   ): void {
+    this.logger.debug(`Subscribing to all pathway errors`);
     this.globalErrorSubject.subscribe(({ pathway, event, error }) => handler(error, event, pathway))
+    this.logger.debug(`Subscribed to all pathway errors`);
   }
 
   /**
@@ -310,17 +443,36 @@ export class PathwaysBuilder<
     metadata?: EventMetadata,
     options?: PathwayWriteOptions
   ): Promise<string | string[]> {
+    const pathStr = String(path)
+    
+    this.logger.debug(`Writing to pathway`, { 
+      pathway: pathStr,
+      metadata,
+      options: {
+        fireAndForget: options?.fireAndForget
+      }
+    });
+    
     if (!this.pathways[path]) {
-      throw new Error(`Pathway ${String(path)} not found`)
+      const error = `Pathway ${pathStr} not found`;
+      this.logger.error(error);
+      throw new Error(error)
     }
 
     if (!this.writable[path]) {
-      throw new Error(`Pathway ${String(path)} is not writable`)
+      const error = `Pathway ${pathStr} is not writable`;
+      this.logger.error(error);
+      throw new Error(error)
     }
 
     const schema = this.schemas[path]
     if (!Value.Check(schema, data)) {
-      throw new Error(`Invalid data for pathway ${String(path)}`)
+      const error = `Invalid data for pathway ${pathStr}`;
+      this.logger.error(error, {
+        pathway: pathStr,
+        schema: schema.toString()
+      });
+      throw new Error(error)
     }
 
     // Create a copy of the metadata to avoid modifying the original
@@ -328,10 +480,17 @@ export class PathwaysBuilder<
     
     // Process audit metadata if audit is configured
     if (this.userIdResolver) {
+      this.logger.debug(`Resolving user ID for audit metadata`, { pathway: pathStr });
       const userId = await this.userIdResolver()
       
       // Determine the audit mode: default is "user" unless explicitly specified as "system"
       const auditMode = (finalMetadata?.["audit/mode"] as AuditMode) || "user"
+      
+      this.logger.debug(`Adding audit metadata`, { 
+        pathway: pathStr,
+        auditMode,
+        userId
+      });
       
       // Add appropriate audit metadata based on mode
       if (auditMode === "system") {
@@ -346,14 +505,30 @@ export class PathwaysBuilder<
 
     let eventIds: string | string[] = []
     if (this.filePathways.has(path)) {
+      this.logger.debug(`Writing file data to pathway`, { pathway: pathStr });
       const fileData = data as unknown as WebhookFileData
       eventIds = await (this.writers[path] as SendFilehook)(fileData, finalMetadata, options)
     } else {
+      this.logger.debug(`Writing webhook data to pathway`, { pathway: pathStr });
       eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]>)(data, finalMetadata, options)
     }
 
+    this.logger.info(`Successfully wrote to pathway`, { 
+      pathway: pathStr,
+      eventIds: Array.isArray(eventIds) ? eventIds : [eventIds],
+      fireAndForget: options?.fireAndForget
+    });
+
     if (!options?.fireAndForget) {
-      await Promise.all(Array.isArray(eventIds) ? eventIds.map(this.waitForPathwayToBeProcessed) : [this.waitForPathwayToBeProcessed(eventIds)])
+      this.logger.debug(`Waiting for pathway to be processed`, { 
+        pathway: pathStr,
+        eventIds: Array.isArray(eventIds) ? eventIds : [eventIds]
+      });
+      
+      await Promise.all(Array.isArray(eventIds) 
+        ? eventIds.map(id => this.waitForPathwayToBeProcessed(id)) 
+        : [this.waitForPathwayToBeProcessed(eventIds)]
+      )
     }
 
     return eventIds
@@ -362,12 +537,45 @@ export class PathwaysBuilder<
   private async waitForPathwayToBeProcessed(eventId: string): Promise<void> {
     const startTime = Date.now()
     const timeoutMs = this.timeouts[eventId] ?? this.pathwayTimeoutMs
-
+    
+    this.logger.debug(`Waiting for event to be processed`, { 
+      eventId,
+      timeoutMs
+    });
+    
+    let attempts = 0
+    
     while (!(await this.pathwayState.isProcessed(eventId))) {
-      if (Date.now() - startTime > timeoutMs) {
-        throw new Error(`Pathway processing timed out after ${timeoutMs}ms for event ${eventId}`)
+      attempts++
+      const elapsedTime = Date.now() - startTime
+      
+      if (elapsedTime > timeoutMs) {
+        const error = `Pathway processing timed out after ${timeoutMs}ms for event ${eventId}`;
+        this.logger.error(error, { 
+          eventId,
+          timeoutMs,
+          elapsedTime,
+          attempts
+        });
+        throw new Error(error)
       }
+      
+      if (attempts % 10 === 0) { // Log every 10 attempts (1 second)
+        this.logger.debug(`Still waiting for event to be processed`, { 
+          eventId,
+          elapsedTime,
+          attempts,
+          timeoutMs
+        });
+      }
+      
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
+    
+    this.logger.debug(`Event has been processed`, { 
+      eventId,
+      elapsedTime: Date.now() - startTime,
+      attempts
+    });
   }
 }

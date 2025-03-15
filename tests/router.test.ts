@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Type } from "@sinclair/typebox";
 import { assertEquals, assertExists, assertRejects, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { FlowcoreEvent, PathwayRouter, PathwaysBuilder } from "../src/mod.ts";
+import { ConsoleLogger, FlowcoreEvent, PathwayRouter, PathwaysBuilder } from "../src/mod.ts";
 import { createTestServer } from "./helpers/test-server.ts";
 
 type FlowcoreEventWithAggregator = FlowcoreEvent & {
@@ -19,6 +19,8 @@ Deno.test("Router Tests", async (t) => {
   });
 
   const TEST_SECRET_KEY = "test-secret-key";
+  // Create a test logger for the router
+  const testLogger = new ConsoleLogger();
 
   // Create a test event with the correct structure
   const createTestEvent = (overrides = {}): Omit<FlowcoreEventWithAggregator, keyof typeof overrides> & typeof overrides => ({
@@ -67,7 +69,7 @@ Deno.test("Router Tests", async (t) => {
       processedEvent = event;
     };
 
-    const router = new PathwayRouter(pathways, TEST_SECRET_KEY);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger);
 
     // Test valid event processing
     const validEvent = createTestEvent();
@@ -100,7 +102,7 @@ Deno.test("Router Tests", async (t) => {
       pathwayTimeoutMs: 1000,
     });
 
-    const router = new PathwayRouter(pathways, TEST_SECRET_KEY);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger);
 
     // Test event with unknown pathway
     const unknownEvent = createTestEvent({
@@ -148,7 +150,7 @@ Deno.test("Router Tests", async (t) => {
       processedPathways.push(pathway as string);
     };
 
-    const router = new PathwayRouter(pathways, TEST_SECRET_KEY);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger);
 
     // Process multiple events
     const events = [
@@ -201,7 +203,7 @@ Deno.test("Router Tests", async (t) => {
       processedEvent = event;
     };
 
-    const router = new PathwayRouter(pathways, TEST_SECRET_KEY);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger);
 
     // Test event with aggregator field instead of flowType
     const legacyEvent = createTestEvent({
@@ -234,7 +236,7 @@ Deno.test("Router Tests", async (t) => {
       pathwayTimeoutMs: 1000,
     });
 
-    const router = new PathwayRouter(pathways, TEST_SECRET_KEY);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger);
 
     // Test valid event with wrong secret key
     const validEvent = createTestEvent();
@@ -261,7 +263,7 @@ Deno.test("Router Tests", async (t) => {
     // Assert that creating router with empty secret key throws an error
     assertThrows(
       () => {
-        new PathwayRouter(pathways, "");
+        new PathwayRouter(pathways, "", testLogger);
       },
       Error,
       "Secret key is required for PathwayRouter"

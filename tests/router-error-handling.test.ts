@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import { assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { FlowcoreEvent, PathwayRouter, PathwaysBuilder } from "../src/mod.ts";
+import { ConsoleLogger, FlowcoreEvent, PathwayRouter, PathwaysBuilder } from "../src/mod.ts";
 import { createTestServer } from "./helpers/test-server.ts";
 
 // Add ignore flag to avoid resource leak errors, but we still clean up properly
@@ -17,6 +17,8 @@ Deno.test({
     });
 
     const TEST_SECRET_KEY = "test-secret-key";
+    // Create a test logger for the router
+    const testLogger = new ConsoleLogger();
 
     // Helper to create a mock event
     const createMockEvent = (overrides = {}): FlowcoreEvent & Record<string, unknown> => ({
@@ -48,7 +50,7 @@ Deno.test({
         schema: testSchema,
       });
 
-      const router = new PathwayRouter(builder, TEST_SECRET_KEY);
+      const router = new PathwayRouter(builder, TEST_SECRET_KEY, testLogger);
       const mockEvent = createMockEvent();
 
       await assertRejects(
@@ -77,7 +79,7 @@ Deno.test({
         schema: testSchema,
       });
 
-      const router = new PathwayRouter(builder, TEST_SECRET_KEY);
+      const router = new PathwayRouter(builder, TEST_SECRET_KEY, testLogger);
       const mockEvent = createMockEvent();
 
       await assertRejects(
@@ -116,7 +118,7 @@ Deno.test({
         throw new Error("Pathway processing failed");
       });
 
-      const router = new PathwayRouter(pathwayBuilder, TEST_SECRET_KEY);
+      const router = new PathwayRouter(pathwayBuilder, TEST_SECRET_KEY, testLogger);
       const mockEvent = createMockEvent();
 
       await assertRejects(
@@ -154,7 +156,7 @@ Deno.test({
         // Successful processing
       });
 
-      const router = new PathwayRouter(pathwayBuilder, TEST_SECRET_KEY);
+      const router = new PathwayRouter(pathwayBuilder, TEST_SECRET_KEY, testLogger);
       const mockEvent = createMockEvent();
 
       const result = await router.processEvent(mockEvent, TEST_SECRET_KEY);
@@ -192,7 +194,7 @@ Deno.test({
         processedEvent = event;
       });
 
-      const router = new PathwayRouter(pathwayBuilder, TEST_SECRET_KEY);
+      const router = new PathwayRouter(pathwayBuilder, TEST_SECRET_KEY, testLogger);
       
       // Create event with aggregator instead of flowType
       const mockEvent = createMockEvent({
