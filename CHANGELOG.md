@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.2.1...v0.2.2) (2025-03-15)
+
+
+### Bug Fixes
+
+* **deno.json:** :memo: Update library description to specify TypeScript ([014f1fc](https://github.com/flowcore-io/flowcore-pathways/commit/014f1fc88d5e5545dd92ff78fa0aae86a9aceebb))
+* **mod:** :memo: Add module declaration comments to pathways and mod files ([275f41a](https://github.com/flowcore-io/flowcore-pathways/commit/275f41ac9d75b2f2509ddf78ddbd31fc8cd3914a))
+* **types:** :memo: Add module declaration comments and improve JSDoc formatting ([21781f2](https://github.com/flowcore-io/flowcore-pathways/commit/21781f2ab8b8064935d831dfc9f2965f703af343))
+
 ## [0.2.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.2.0...v0.2.1) (2025-03-15)
 
 
