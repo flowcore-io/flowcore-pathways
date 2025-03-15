@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/flowcore-io/flowcore-pathways/compare/v0.2.3...v0.2.4) (2025-03-15)
+
+
+### Bug Fixes
+
+* **logger:** :art: Update error method signatures and improve JSDoc documentation ([07ab772](https://github.com/flowcore-io/flowcore-pathways/commit/07ab77237c7aa88f6bc5999ff95148873c2e45d0))
+
 ## [0.2.3](https://github.com/flowcore-io/flowcore-pathways/compare/v0.2.2...v0.2.3) (2025-03-15)
 
 
