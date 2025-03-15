@@ -23,7 +23,7 @@ export class PathwayRouter {
     this.logger.debug("PathwayRouter initialized");
   }
 
-  async processEvent(event: FlowcoreLegacyEvent, providedSecret: string) {
+  async processEvent(event: FlowcoreLegacyEvent, providedSecret: string): Promise<{ success: boolean; message: string }> {
     // Validate secret key
     if (!providedSecret || providedSecret !== this.secretKey) {
       this.logger.error("Invalid secret key provided");
