@@ -1,27 +1,39 @@
 /**
  * Logger interface that can be implemented by users to capture logs from pathways
  */
+
+/**
+ * Metadata interface for logger context
+ */
+export interface LoggerMeta {
+  [key: string]: unknown
+  label?: never
+  level?: never
+  message?: never
+  timestamp?: never
+}
+
 export interface Logger {
   /**
    * Log debug information
    * @param message The message to log
    * @param context Optional context data to include
    */
-  debug(message: string, context?: Record<string, unknown>): void
+  debug(message: string, context?: LoggerMeta): void
   
   /**
    * Log informational messages
    * @param message The message to log
    * @param context Optional context data to include
    */
-  info(message: string, context?: Record<string, unknown>): void
+  info(message: string, context?: LoggerMeta): void
   
   /**
    * Log warning messages
    * @param message The message to log
    * @param context Optional context data to include
    */
-  warn(message: string, context?: Record<string, unknown>): void
+  warn(message: string, context?: LoggerMeta): void
   
   /**
    * Log error messages
@@ -29,7 +41,7 @@ export interface Logger {
    * @param error Optional error object
    * @param context Optional context data to include
    */
-  error(message: string, error?: Error, context?: Record<string, unknown>): void
+  error(message: string, error?: Error, context?: LoggerMeta): void
 }
 
 /**
@@ -41,7 +53,7 @@ export class ConsoleLogger implements Logger {
    * @param message The message to log
    * @param context Optional context data to include
    */
-  debug(message: string, context?: Record<string, unknown>): void {
+  debug(message: string, context?: LoggerMeta): void {
     console.debug(message, context ? JSON.stringify(context) : '');
   }
   
@@ -50,7 +62,7 @@ export class ConsoleLogger implements Logger {
    * @param message The message to log
    * @param context Optional context data to include
    */
-  info(message: string, context?: Record<string, unknown>): void {
+  info(message: string, context?: LoggerMeta): void {
     console.info(message, context ? JSON.stringify(context) : '');
   }
   
@@ -59,7 +71,7 @@ export class ConsoleLogger implements Logger {
    * @param message The message to log
    * @param context Optional context data to include
    */
-  warn(message: string, context?: Record<string, unknown>): void {
+  warn(message: string, context?: LoggerMeta): void {
     console.warn(message, context ? JSON.stringify(context) : '');
   }
   
@@ -69,7 +81,7 @@ export class ConsoleLogger implements Logger {
    * @param error Optional error object
    * @param context Optional context data to include
    */
-  error(message: string, error?: Error, context?: Record<string, unknown>): void {
+  error(message: string, error?: Error, context?: LoggerMeta): void {
     console.error(message, error, context ? JSON.stringify(context) : '');
   }
 }
@@ -83,21 +95,21 @@ export class NoopLogger implements Logger {
    * @param _message The message to log (ignored)
    * @param _context Optional context data (ignored)
    */
-  debug(_message: string, _context?: Record<string, unknown>): void {}
+  debug(_message: string, _context?: LoggerMeta): void {}
   
   /**
    * No-op info log
    * @param _message The message to log (ignored)
    * @param _context Optional context data (ignored)
    */
-  info(_message: string, _context?: Record<string, unknown>): void {}
+  info(_message: string, _context?: LoggerMeta): void {}
   
   /**
    * No-op warning log
    * @param _message The message to log (ignored)
    * @param _context Optional context data (ignored)
    */
-  warn(_message: string, _context?: Record<string, unknown>): void {}
+  warn(_message: string, _context?: LoggerMeta): void {}
   
   /**
    * No-op error log
@@ -105,5 +117,5 @@ export class NoopLogger implements Logger {
    * @param _error Optional error object (ignored)
    * @param _context Optional context data (ignored)
    */
-  error(_message: string, _error?: Error, _context?: Record<string, unknown>): void {}
+  error(_message: string, _error?: Error, _context?: LoggerMeta): void {}
 } 
