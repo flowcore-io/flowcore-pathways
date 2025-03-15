@@ -4,9 +4,22 @@ import type { PathwaysBuilder } from "../pathways/index.ts"
 import type { Logger } from "../pathways/logger.ts"
 import { NoopLogger } from "../pathways/logger.ts"
 
+/**
+ * Router class that handles directing events to the appropriate pathway handlers
+ * 
+ * @class PathwayRouter
+ */
 export class PathwayRouter {
   private readonly logger: Logger;
 
+  /**
+   * Creates a new instance of PathwayRouter
+   * 
+   * @param {PathwaysBuilder<Record<string, any>>} pathways - The pathways builder instance that contains all registered pathways
+   * @param {string} secretKey - Secret key used for authentication when processing events
+   * @param {Logger} [logger] - Optional logger instance (defaults to NoopLogger if not provided)
+   * @throws {Error} Will throw an error if secretKey is empty or not provided
+   */
   constructor(
     // deno-lint-ignore no-explicit-any
     private readonly pathways: PathwaysBuilder<Record<string, any>>,
@@ -23,6 +36,14 @@ export class PathwayRouter {
     this.logger.debug("PathwayRouter initialized");
   }
 
+  /**
+   * Processes an incoming event by routing it to the appropriate pathway
+   * 
+   * @param {FlowcoreLegacyEvent} event - The event to process
+   * @param {string} providedSecret - The secret key provided for authentication
+   * @returns {Promise<{ success: boolean; message: string }>} Result of the event processing
+   * @throws {Error} Will throw an error if authentication fails, pathway is not found, or processing fails
+   */
   async processEvent(event: FlowcoreLegacyEvent, providedSecret: string): Promise<{ success: boolean; message: string }> {
     // Validate secret key
     if (!providedSecret || providedSecret !== this.secretKey) {

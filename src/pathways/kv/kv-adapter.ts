@@ -1,8 +1,37 @@
+/**
+ * Interface for key-value storage adapters
+ * 
+ * Provides a common interface for different KV storage implementations
+ * that can be used for storing pathway state.
+ */
 export interface KvAdapter {
+  /**
+   * Retrieves a value from storage by key
+   * 
+   * @template T The expected type of the stored value
+   * @param {string} key The key to retrieve
+   * @returns {(Promise<T | null> | T | null)} The stored value or null if not found
+   */
   get<T>(key: string): (Promise<T | null> | T | null);
+  
+  /**
+   * Stores a value in storage with the specified key and TTL
+   * 
+   * @param {string} key The key to store the value under
+   * @param {unknown} value The value to store
+   * @param {number} ttlMs Time-to-live in milliseconds
+   * @returns {(Promise<void> | void)}
+   */
   set(key: string, value: unknown, ttlMs: number): (Promise<void> | void);
 }
 
+/**
+ * Creates an appropriate KV adapter based on the runtime environment
+ * 
+ * Attempts to use Bun KV adapter if running in Bun, falls back to Node adapter otherwise
+ * 
+ * @returns {Promise<KvAdapter>} A KV adapter instance
+ */
 export async function createKvAdapter(): Promise<KvAdapter> {
   try {
     // Try to import Bun adapter
