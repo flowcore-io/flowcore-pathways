@@ -7,6 +7,8 @@
  * - Storage adapters (KV, Postgres)
  * - Logging
  * - Type definitions
+ * 
+ * @module
  */
 export * from "./builder.ts";
 export * from "./internal-pathway.state.ts";

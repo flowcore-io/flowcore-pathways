@@ -6,6 +6,8 @@
  * - Event contracts and schemas
  * - Pathway definitions and builders
  * - Event routing functionality
+ * 
+ * @module
  */
 export * from "./common/index.ts";
 export * from "./contracts/index.ts";

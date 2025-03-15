@@ -1,7 +1,5 @@
 /**
  * Configuration options for PostgreSQL connection
- * 
- * @interface PostgresConfig
  */
 export interface PostgresConfig {
   /** PostgreSQL server hostname */
@@ -22,36 +20,34 @@ export interface PostgresConfig {
  * Interface for PostgreSQL database operations
  * 
  * Provides methods for connecting, querying, and executing SQL statements
- * 
- * @interface PostgresAdapter
  */
 export interface PostgresAdapter {
   /**
    * Establishes a connection to the PostgreSQL database
-   * @returns {Promise<void>}
+   * @returns Promise that resolves when the connection is established
    */
   connect(): Promise<void>;
   
   /**
    * Closes the connection to the PostgreSQL database
-   * @returns {Promise<void>}
+   * @returns Promise that resolves when the connection is closed
    */
   disconnect(): Promise<void>;
   
   /**
    * Executes a SQL query and returns the results
    * @template T The expected result type
-   * @param {string} sql The SQL query to execute
-   * @param {unknown[]} [params] Optional parameters for the query
-   * @returns {Promise<T>} The query results
+   * @param sql The SQL query to execute
+   * @param params Optional parameters for the query
+   * @returns Promise that resolves to the query results
    */
   query<T>(sql: string, params?: unknown[]): Promise<T>;
   
   /**
    * Executes a SQL statement without returning results
-   * @param {string} sql The SQL statement to execute
-   * @param {unknown[]} [params] Optional parameters for the statement
-   * @returns {Promise<void>}
+   * @param sql The SQL statement to execute
+   * @param params Optional parameters for the statement
+   * @returns Promise that resolves when the statement has been executed
    */
   execute(sql: string, params?: unknown[]): Promise<void>;
 }
@@ -76,8 +72,6 @@ interface PostgresModule {
 
 /**
  * Implementation of PostgresAdapter using the postgres.js library
- * 
- * @implements {PostgresAdapter}
  */
 export class PostgresJsAdapter implements PostgresAdapter {
   /** The postgres.js client factory function */
@@ -92,7 +86,7 @@ export class PostgresJsAdapter implements PostgresAdapter {
   /**
    * Creates a new PostgresJsAdapter instance
    * 
-   * @param {PostgresConfig} config The PostgreSQL connection configuration
+   * @param config The PostgreSQL connection configuration
    */
   constructor(config: PostgresConfig) {
     this.config = config;
@@ -105,8 +99,8 @@ export class PostgresJsAdapter implements PostgresAdapter {
   /**
    * Establishes a connection to the PostgreSQL database
    * 
-   * @returns {Promise<void>}
-   * @throws {Error} If connection fails
+   * @returns Promise that resolves when connection is established
+   * @throws Error if connection fails
    */
   async connect(): Promise<void> {
     try {
@@ -121,8 +115,7 @@ export class PostgresJsAdapter implements PostgresAdapter {
 
   /**
    * Closes the connection to the PostgreSQL database
-   * 
-   * @returns {Promise<void>}
+   * @returns Promise that resolves when the connection is closed
    */
   async disconnect(): Promise<void> {
     if (this.sql) {
@@ -133,11 +126,10 @@ export class PostgresJsAdapter implements PostgresAdapter {
 
   /**
    * Executes a SQL query and returns the results
-   * 
    * @template T The expected result type
-   * @param {string} sql The SQL query to execute
-   * @param {unknown[]} [params=[]] Optional parameters for the query
-   * @returns {Promise<T>} The query results
+   * @param sql The SQL query to execute
+   * @param params Optional parameters for the query
+   * @returns Promise that resolves to the query results
    */
   async query<T>(sql: string, params: unknown[] = []): Promise<T> {
     if (!this.sql) {
@@ -148,10 +140,9 @@ export class PostgresJsAdapter implements PostgresAdapter {
 
   /**
    * Executes a SQL statement without returning results
-   * 
-   * @param {string} sql The SQL statement to execute
-   * @param {unknown[]} [params=[]] Optional parameters for the statement
-   * @returns {Promise<void>}
+   * @param sql The SQL statement to execute
+   * @param params Optional parameters for the statement
+   * @returns Promise that resolves when the statement has been executed
    */
   async execute(sql: string, params: unknown[] = []): Promise<void> {
     if (!this.sql) {
@@ -164,8 +155,8 @@ export class PostgresJsAdapter implements PostgresAdapter {
 /**
  * Creates and initializes a PostgreSQL adapter
  * 
- * @param {PostgresConfig} config The PostgreSQL connection configuration
- * @returns {Promise<PostgresAdapter>} An initialized PostgreSQL adapter
+ * @param config The PostgreSQL connection configuration
+ * @returns An initialized PostgreSQL adapter
  */
 export async function createPostgresAdapter(config: PostgresConfig): Promise<PostgresAdapter> {
   const adapter = new PostgresJsAdapter(config);

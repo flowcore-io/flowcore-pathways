@@ -9,18 +9,18 @@ export interface KvAdapter {
    * Retrieves a value from storage by key
    * 
    * @template T The expected type of the stored value
-   * @param {string} key The key to retrieve
-   * @returns {(Promise<T | null> | T | null)} The stored value or null if not found
+   * @param key The key to retrieve
+   * @returns The stored value or null if not found
    */
   get<T>(key: string): (Promise<T | null> | T | null);
   
   /**
    * Stores a value in storage with the specified key and TTL
    * 
-   * @param {string} key The key to store the value under
-   * @param {unknown} value The value to store
-   * @param {number} ttlMs Time-to-live in milliseconds
-   * @returns {(Promise<void> | void)}
+   * @param key The key to store the value under
+   * @param value The value to store
+   * @param ttlMs Time-to-live in milliseconds
+   * @returns Promise or void when the operation completes
    */
   set(key: string, value: unknown, ttlMs: number): (Promise<void> | void);
 }
@@ -30,7 +30,7 @@ export interface KvAdapter {
  * 
  * Attempts to use Bun KV adapter if running in Bun, falls back to Node adapter otherwise
  * 
- * @returns {Promise<KvAdapter>} A KV adapter instance
+ * @returns A KV adapter instance for the current runtime
  */
 export async function createKvAdapter(): Promise<KvAdapter> {
   try {

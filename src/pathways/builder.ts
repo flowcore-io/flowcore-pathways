@@ -9,20 +9,65 @@ import type { Logger } from "./logger.ts"
 import { NoopLogger } from "./logger.ts"
 import type { EventMetadata, PathwayContract, PathwayKey, PathwayState, PathwayWriteOptions, SendFilehook, SendWebhook, WritablePathway } from "./types.ts"
 
+/**
+ * Default timeout for pathway processing in milliseconds (10 seconds)
+ */
 const DEFAULT_PATHWAY_TIMEOUT_MS = 10000
+
+/**
+ * Default maximum number of retry attempts for failed pathway processing
+ */
 const DEFAULT_MAX_RETRIES = 3
+
+/**
+ * Default delay between retry attempts in milliseconds
+ */
 const DEFAULT_RETRY_DELAY_MS = 500
 
-// Define audit-related types
+/**
+ * Defines the mode for auditing pathway operations
+ * - "user": Normal user-initiated operations
+ * - "system": System-initiated operations on behalf of a user
+ */
 export type AuditMode = "user" | "system"
+
+/**
+ * Handler function for auditing pathway events
+ * @param path The pathway path being audited
+ * @param event The event data being processed
+ */
 export type AuditHandler = (path: string, event: FlowcoreEvent) => void
+
+/**
+ * Async function that resolves to the current user ID
+ * Used for audit functionality to track which user initiated an action
+ */
 export type UserIdResolver = () => Promise<string>
 
-// Extend WebhookSendOptions to add audit-specific options
+/**
+ * Extended webhook send options with additional audit-specific options
+ */
 export interface AuditWebhookSendOptions extends WebhookSendOptions {
+  /**
+   * Custom HTTP headers to include with the webhook request
+   */
   headers?: Record<string, string>
 }
 
+/**
+ * Main builder class for creating and managing Flowcore pathways
+ * 
+ * The PathwaysBuilder provides an interface for:
+ * - Registering pathways with type-safe schemas
+ * - Handling events sent to pathways
+ * - Writing data to pathways
+ * - Managing event processing and retries
+ * - Observing event lifecycle (before/after/error)
+ * - Audit logging of pathway operations
+ * 
+ * @template TPathway Record type that maps pathway keys to their payload types
+ * @template TWritablePaths Union type of pathway keys that can be written to
+ */
 export class PathwaysBuilder<
   // deno-lint-ignore ban-types
   TPathway extends Record<string, unknown> = {},
@@ -67,6 +112,16 @@ export class PathwaysBuilder<
   // Logger instance (but not using it yet due to TypeScript errors)
   private readonly logger: Logger
 
+  /**
+   * Creates a new PathwaysBuilder instance
+   * @param options Configuration options for the PathwaysBuilder
+   * @param options.baseUrl The base URL for the Flowcore API
+   * @param options.tenant The tenant name
+   * @param options.dataCore The data core name
+   * @param options.apiKey The API key for authentication
+   * @param options.pathwayTimeoutMs Optional timeout for pathway processing in milliseconds
+   * @param options.logger Optional logger instance
+   */
   constructor({
     baseUrl,
     tenant,
@@ -109,6 +164,11 @@ export class PathwaysBuilder<
     }
   }
 
+  /**
+   * Configures the PathwaysBuilder to use a custom pathway state implementation
+   * @param state The PathwayState implementation to use
+   * @returns The PathwaysBuilder instance with custom state configured
+   */
   withPathwayState(state: PathwayState): PathwaysBuilder<TPathway, TWritablePaths> {
     this.logger.debug('Setting custom pathway state');
     this.pathwayState = state
@@ -199,10 +259,9 @@ export class PathwaysBuilder<
           // Create error object if needed
           const errorObj = error instanceof Error ? error : new Error(String(error))
           
-          this.logger.error(`Error processing pathway event`, {
+          this.logger.error(`Error processing pathway event`, errorObj, {
             pathway: pathwayStr,
             eventId: data.eventId,
-            error: errorObj.message,
             retryCount,
             maxRetries
           });
@@ -260,6 +319,15 @@ export class PathwaysBuilder<
     }
   }
 
+  /**
+   * Registers a new pathway with the given contract
+   * @template F The flow type string
+   * @template E The event type string
+   * @template S The schema type extending TSchema
+   * @template W Boolean indicating if the pathway is writable (defaults to true)
+   * @param contract The pathway contract describing the pathway
+   * @returns The PathwaysBuilder instance with the new pathway registered
+   */
   register<
     F extends string,
     E extends string,
@@ -330,11 +398,29 @@ export class PathwaysBuilder<
     >
   }
 
+  /**
+   * Gets a pathway instance by its path
+   * 
+   * @template TPath The specific pathway key to retrieve
+   * @param path The pathway key to get
+   * @returns The pathway instance
+   */
   get<TPath extends keyof TPathway>(path: TPath): TPathway[TPath] {
     this.logger.debug(`Getting pathway`, { pathway: String(path) });
     return this.pathways[path]
   }
 
+  /**
+   * Sets a handler function for a pathway
+   * 
+   * This handler will be called whenever an event is received for the specified pathway.
+   * Only one handler can be registered per pathway in a given PathwaysBuilder instance.
+   * 
+   * @template TPath The specific pathway key to handle
+   * @param path The pathway key to handle
+   * @param handler The function that will process events for this pathway
+   * @throws Error if the pathway doesn't exist or already has a handler
+   */
   handle<TPath extends keyof TPathway>(path: TPath, handler: (event: FlowcoreEvent) => (Promise<void> | void )): void {
     const pathStr = String(path)
     this.logger.debug(`Setting handler for pathway`, { pathway: pathStr });
@@ -467,12 +553,12 @@ export class PathwaysBuilder<
 
     const schema = this.schemas[path]
     if (!Value.Check(schema, data)) {
-      const error = `Invalid data for pathway ${pathStr}`;
-      this.logger.error(error, {
+      const errorMessage = `Invalid data for pathway ${pathStr}`;
+      this.logger.error(errorMessage, new Error(errorMessage), {
         pathway: pathStr,
         schema: schema.toString()
       });
-      throw new Error(error)
+      throw new Error(errorMessage)
     }
 
     // Create a copy of the metadata to avoid modifying the original
@@ -534,6 +620,17 @@ export class PathwaysBuilder<
     return eventIds
   }
 
+  /**
+   * Waits for a specific event to be processed
+   * 
+   * This method polls the pathway state to check if an event has been processed,
+   * with a configurable timeout. It will throw an error if the timeout is exceeded.
+   * 
+   * @private
+   * @param eventId The ID of the event to wait for
+   * @returns Promise that resolves when the event is processed
+   * @throws Error if the timeout is exceeded
+   */
   private async waitForPathwayToBeProcessed(eventId: string): Promise<void> {
     const startTime = Date.now()
     const timeoutMs = this.timeouts[eventId] ?? this.pathwayTimeoutMs
@@ -550,14 +647,14 @@ export class PathwaysBuilder<
       const elapsedTime = Date.now() - startTime
       
       if (elapsedTime > timeoutMs) {
-        const error = `Pathway processing timed out after ${timeoutMs}ms for event ${eventId}`;
-        this.logger.error(error, { 
+        const errorMessage = `Pathway processing timed out after ${timeoutMs}ms for event ${eventId}`;
+        this.logger.error(errorMessage, new Error(errorMessage), { 
           eventId,
           timeoutMs,
           elapsedTime,
           attempts
         });
-        throw new Error(error)
+        throw new Error(errorMessage)
       }
       
       if (attempts % 10 === 0) { // Log every 10 attempts (1 second)

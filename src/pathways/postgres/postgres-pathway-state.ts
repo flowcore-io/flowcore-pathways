@@ -4,8 +4,6 @@ import { createPostgresAdapter } from "./postgres-adapter.ts";
 
 /**
  * Configuration options for PostgreSQL pathway state storage
- * 
- * @interface PostgresPathwayStateConfig
  */
 export interface PostgresPathwayStateConfig {
   /** PostgreSQL server hostname */
@@ -31,8 +29,6 @@ export interface PostgresPathwayStateConfig {
  * 
  * This class provides persistent storage of pathway state using a PostgreSQL database,
  * which allows for state to be shared across multiple instances of the application.
- * 
- * @implements {PathwayState}
  */
 export class PostgresPathwayState implements PathwayState {
   /**
@@ -190,8 +186,8 @@ export class PostgresPathwayState implements PathwayState {
 /**
  * Creates a new PostgreSQL pathway state instance
  * 
- * @param {PostgresPathwayStateConfig} config The PostgreSQL configuration
- * @returns {PostgresPathwayState} A new PostgresPathwayState instance
+ * @param config The PostgreSQL configuration
+ * @returns A new PostgresPathwayState instance
  */
 export function createPostgresPathwayState(config: PostgresPathwayStateConfig): PostgresPathwayState {
   const state = new PostgresPathwayState(config);
