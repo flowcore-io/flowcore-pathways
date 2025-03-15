@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.2.0...v0.2.1) (2025-03-15)
+
+
+### Bug Fixes
+
+* **dependencies:** :art: Update package versions in deno.lock and import statements ([e47298e](https://github.com/flowcore-io/flowcore-pathways/commit/e47298e565743ebc7381d7d9683ddc7f33b98bf0))
+
 ## [0.2.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.1.0...v0.2.0) (2025-03-15)
 
 
