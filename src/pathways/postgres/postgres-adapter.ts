@@ -1,7 +1,26 @@
 /**
- * Configuration options for PostgreSQL connection
+ * Configuration for PostgreSQL connection using a connection string
  */
-export interface PostgresConfig {
+export interface PostgresConnectionStringConfig {
+  /** Complete PostgreSQL connection string (e.g., postgres://user:password@host:port/database?sslmode=require) */
+  connectionString: string;
+  
+  /** These properties are not used when a connection string is provided */
+  host?: never;
+  port?: never;
+  user?: never;
+  password?: never;
+  database?: never;
+  ssl?: never;
+}
+
+/**
+ * Configuration for PostgreSQL connection using individual parameters
+ */
+export interface PostgresParametersConfig {
+  /** Not used when individual parameters are provided */
+  connectionString?: never;
+  
   /** PostgreSQL server hostname */
   host: string;
   /** PostgreSQL server port */
@@ -15,6 +34,15 @@ export interface PostgresConfig {
   /** Whether to use SSL for the connection */
   ssl?: boolean;
 }
+
+/**
+ * Configuration options for PostgreSQL connection
+ * 
+ * Can provide either:
+ * 1. A complete connection string, or
+ * 2. Individual connection parameters (host, port, user, etc.)
+ */
+export type PostgresConfig = PostgresConnectionStringConfig | PostgresParametersConfig;
 
 /**
  * Interface for PostgreSQL database operations
@@ -90,9 +118,16 @@ export class PostgresJsAdapter implements PostgresAdapter {
    */
   constructor(config: PostgresConfig) {
     this.config = config;
-    this.connectionString = `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`;
-    if (config.ssl) {
-      this.connectionString += "?sslmode=require";
+
+    if ('connectionString' in config && config.connectionString) {
+      // Use the provided connection string directly
+      this.connectionString = config.connectionString;
+    } else {
+      // Build connection string from individual parameters
+      this.connectionString = `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`;
+      if (config.ssl) {
+        this.connectionString += "?sslmode=require";
+      }
     }
   }
 
@@ -155,11 +190,11 @@ export class PostgresJsAdapter implements PostgresAdapter {
 /**
  * Creates and initializes a PostgreSQL adapter
  * 
- * @param config The PostgreSQL connection configuration
+ * @param config The PostgreSQL connection configuration (either connectionString or individual parameters)
  * @returns An initialized PostgreSQL adapter
  */
 export async function createPostgresAdapter(config: PostgresConfig): Promise<PostgresAdapter> {
   const adapter = new PostgresJsAdapter(config);
   await adapter.connect();
   return adapter;
-} 
+}
