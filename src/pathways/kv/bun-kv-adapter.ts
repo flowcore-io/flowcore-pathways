@@ -1,4 +1,4 @@
-import { BunSqliteKeyValue } from "npm:bun-sqlite-key-value";
+import { BunSqliteKeyValue } from "npm:bun-sqlite-key-value@1.13.1";
 import type { KvAdapter } from "./kv-adapter.ts";
 
 /**

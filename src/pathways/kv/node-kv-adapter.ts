@@ -1,4 +1,4 @@
-import NodeCache from "npm:node-cache";
+import NodeCache from "npm:node-cache@5.1.2";
 import type { KvAdapter } from "./kv-adapter.ts";
 
 /**

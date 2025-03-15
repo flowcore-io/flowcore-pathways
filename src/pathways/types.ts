@@ -1,5 +1,5 @@
-import type { WebhookFileData, WebhookSendOptions } from "npm:@flowcore/sdk-transformer-core"
 import type { TSchema } from "@sinclair/typebox"
+import type { WebhookFileData, WebhookSendOptions } from "npm:@flowcore/sdk-transformer-core@^2.3.6"
 
 /**
  * Helper type to create a custom type error for non-writable pathways
