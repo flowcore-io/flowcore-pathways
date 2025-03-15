@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.2.4...v0.3.0) (2025-03-15)
+
+
+### Features
+
+* **postgres:** :sparkles: Enhance PostgreSQL configuration with connection string support ([9b51155](https://github.com/flowcore-io/flowcore-pathways/commit/9b51155eaa8f11c5ca3e8f6422d2b4268c4f27ea))
+
 ## [0.2.4](https://github.com/flowcore-io/flowcore-pathways/compare/v0.2.3...v0.2.4) (2025-03-15)
 
 
