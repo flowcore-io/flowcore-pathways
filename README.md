@@ -1,6 +1,6 @@
 # Flowcore Pathways
 
-A Deno Library for creating Flowcore Pathways, simplifying the integration with the Flowcore platform. Flowcore Pathways helps you build event-driven applications with type-safe pathways for processing and producing events.
+A TypeScript Library for creating Flowcore Pathways, simplifying the integration with the Flowcore platform. Flowcore Pathways helps you build event-driven applications with type-safe pathways for processing and producing events.
 
 ## Table of Contents
 
@@ -34,6 +34,18 @@ deno add jsr:@flowcore/pathways
 
 # npm / yarn
 npx jsr add @flowcore/pathways
+```
+
+or using npm:
+
+```bash
+npm install @flowcore/pathways
+```
+
+or using yarn:
+
+```bash
+yarn add @flowcore/pathways
 ```
 
 ## Getting Started
