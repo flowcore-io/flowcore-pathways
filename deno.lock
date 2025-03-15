@@ -31,6 +31,8 @@
     "npm:bun-sqlite-key-value@*": "1.13.1_typescript@5.6.3",
     "npm:node-cache@*": "5.1.2",
     "npm:node-cache@^5.1.2": "5.1.2",
+    "npm:postgres@*": "3.4.5",
+    "npm:postgres@^3.4.3": "3.4.5",
     "npm:rxjs@^7.8.1": "7.8.1"
   },
   "jsr": {
@@ -187,6 +189,9 @@
         "clone"
       ]
     },
+    "postgres@3.4.5": {
+      "integrity": "sha512-cDWgoah1Gez9rN3H4165peY9qfpEo+SA61oQv65O3cRUE1pOEoJWwddwcqKE8XZYjbblOJlYDlLV4h67HrEVDg=="
+    },
     "radash@12.1.0": {
       "integrity": "sha512-b0Zcf09AhqKS83btmUeYBS8tFK7XL2e3RvLmZcm0sTdF1/UUlHSsjXdCcWNxe7yfmAlPve5ym0DmKGtTzP6kVQ=="
     },
@@ -216,7 +221,9 @@
     }
   },
   "redirects": {
-    "https://deno.land/std/http/server.ts": "https://deno.land/std@0.224.0/http/server.ts"
+    "https://deno.land/std/assert/mod.ts": "https://deno.land/std@0.224.0/assert/mod.ts",
+    "https://deno.land/std/http/server.ts": "https://deno.land/std@0.224.0/http/server.ts",
+    "https://deno.land/std/testing/bdd.ts": "https://deno.land/std@0.224.0/testing/bdd.ts"
   },
   "remote": {
     "https://deno.land/std@0.224.0/assert/_constants.ts": "a271e8ef5a573f1df8e822a6eb9d09df064ad66a4390f21b3e31f820a38e0975",
@@ -254,6 +261,8 @@
     "https://deno.land/std@0.224.0/internal/diff.ts": "6234a4b493ebe65dc67a18a0eb97ef683626a1166a1906232ce186ae9f65f4e6",
     "https://deno.land/std@0.224.0/internal/format.ts": "0a98ee226fd3d43450245b1844b47003419d34d210fa989900861c79820d21c2",
     "https://deno.land/std@0.224.0/internal/mod.ts": "534125398c8e7426183e12dc255bb635d94e06d0f93c60a297723abe69d3b22e",
+    "https://deno.land/std@0.224.0/testing/_test_suite.ts": "f10a8a6338b60c403f07a76f3f46bdc9f1e1a820c0a1decddeb2949f7a8a0546",
+    "https://deno.land/std@0.224.0/testing/bdd.ts": "3e4de4ff6d8f348b5574661cef9501b442046a59079e201b849d0e74120d476b",
     "https://deno.land/std@0.224.0/testing/mock.ts": "a963181c2860b6ba3eb60e08b62c164d33cf5da7cd445893499b2efda20074db"
   },
   "workspace": {
@@ -262,6 +271,7 @@
       "npm:@flowcore/sdk-transformer-core@^2.3.6",
       "npm:@sinclair/typebox@~0.34.27",
       "npm:node-cache@^5.1.2",
+      "npm:postgres@^3.4.3",
       "npm:rxjs@^7.8.1"
     ]
   }

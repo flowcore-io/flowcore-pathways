@@ -6,6 +6,11 @@ on:
 
 env:
   NODE_VERSION: ">=18.12.1"
+  POSTGRES_HOST: localhost
+  POSTGRES_PORT: 5432
+  POSTGRES_USER: postgres
+  POSTGRES_PASSWORD: postgres
+  POSTGRES_DB: pathway_test
 
 permissions:
   id-token: write
@@ -14,6 +19,21 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: pathway_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - uses: actions/checkout@v3
@@ -42,4 +62,6 @@ jobs:
       - name: Format
         run: deno fmt
       - name: Test
-        run: deno test -A
+        run: deno test -A --unstable --exclude=tests/postgres-pathway-state.test.ts
+      - name: Test PostgreSQL
+        run: deno test -A --unstable tests/postgres-pathway-state.test.ts

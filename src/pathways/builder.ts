@@ -371,5 +371,3 @@ export class PathwaysBuilder<
     }
   }
 }
-
-//TODO: add metadata webhook with audit functionality
