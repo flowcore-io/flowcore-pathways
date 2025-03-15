@@ -14,11 +14,11 @@
   },
   "tasks": {
     "build:npm": "deno run -A bin/build-npm.ts",
-    "test": "deno test -A --unstable",
-    "test:watch": "deno test -A --unstable --watch",
+    "test": "deno test -A",
+    "test:watch": "deno test -A --watch",
     "postgres:start": "deno run -A bin/start-postgres.ts",
     "postgres:stop": "deno run -A bin/stop-postgres.ts",
-    "test:postgres": "deno run -A bin/start-postgres.ts && (deno test -A --unstable tests/postgres-pathway-state.test.ts || (deno run -A bin/stop-postgres.ts && exit 1)) && deno run -A bin/stop-postgres.ts"
+    "test:postgres": "deno run -A bin/start-postgres.ts && (deno test -A tests/postgres-pathway-state.test.ts || (deno run -A bin/stop-postgres.ts && exit 1)) && deno run -A bin/stop-postgres.ts"
   },
   "imports": {
     "@deno/dnt": "jsr:@deno/dnt@^0.41.3",

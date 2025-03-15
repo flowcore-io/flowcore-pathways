@@ -62,6 +62,6 @@ jobs:
       - name: Format
         run: deno fmt
       - name: Test
-        run: deno test -A --unstable --exclude=tests/postgres-pathway-state.test.ts
+        run: deno test -A --ignore=tests/postgres-pathway-state.test.ts
       - name: Test PostgreSQL
-        run: deno test -A --unstable tests/postgres-pathway-state.test.ts
+        run: deno test -A tests/postgres-pathway-state.test.ts
