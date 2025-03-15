@@ -3,9 +3,33 @@ import type { PostgresAdapter } from "./postgres-adapter.ts";
 import { createPostgresAdapter } from "./postgres-adapter.ts";
 
 /**
- * Configuration options for PostgreSQL pathway state storage
+ * Configuration for PostgreSQL pathway state storage using a connection string
  */
-export interface PostgresPathwayStateConfig {
+export interface PostgresPathwayStateConnectionStringConfig {
+  /** Complete PostgreSQL connection string (e.g., postgres://user:password@host:port/database?sslmode=require) */
+  connectionString: string;
+  
+  /** These properties are not used when a connection string is provided */
+  host?: never;
+  port?: never;
+  user?: never;
+  password?: never;
+  database?: never;
+  ssl?: never;
+  
+  /** Table name for storing pathway state (default: "pathway_state") */
+  tableName?: string;
+  /** Time-to-live in milliseconds for processed events (default: 5 minutes) */
+  ttlMs?: number;
+}
+
+/**
+ * Configuration for PostgreSQL pathway state storage using individual parameters
+ */
+export interface PostgresPathwayStateParametersConfig {
+  /** Not used when individual parameters are provided */
+  connectionString?: never;
+  
   /** PostgreSQL server hostname */
   host: string;
   /** PostgreSQL server port */
@@ -18,11 +42,21 @@ export interface PostgresPathwayStateConfig {
   database: string;
   /** Whether to use SSL for the connection */
   ssl?: boolean;
+  
   /** Table name for storing pathway state (default: "pathway_state") */
   tableName?: string;
   /** Time-to-live in milliseconds for processed events (default: 5 minutes) */
   ttlMs?: number;
 }
+
+/**
+ * Configuration options for PostgreSQL pathway state storage
+ * 
+ * Can provide either:
+ * 1. A complete connection string, or
+ * 2. Individual connection parameters (host, port, user, etc.)
+ */
+export type PostgresPathwayStateConfig = PostgresPathwayStateConnectionStringConfig | PostgresPathwayStateParametersConfig;
 
 /**
  * Implementation of PathwayState that uses PostgreSQL for storage
@@ -89,14 +123,24 @@ export class PostgresPathwayState implements PathwayState {
       return;
     }
 
-    this.postgres = await createPostgresAdapter({
-      host: this.config.host,
-      port: this.config.port,
-      user: this.config.user,
-      password: this.config.password,
-      database: this.config.database,
-      ssl: this.config.ssl,
-    });
+    // Create adapter using either connection string or individual parameters
+    if ('connectionString' in this.config && this.config.connectionString) {
+      // Use connection string if provided
+      this.postgres = await createPostgresAdapter({
+        connectionString: this.config.connectionString
+      });
+    } else {
+      // We know this must be the parameters config due to the type union
+      // TypeScript just needs help with narrowing the type
+      this.postgres = await createPostgresAdapter({
+        host: this.config.host as string,
+        port: this.config.port as number,
+        user: this.config.user as string,
+        password: this.config.password as string,
+        database: this.config.database as string,
+        ssl: this.config.ssl,
+      });
+    }
 
     // Create table if it doesn't exist
     await this.postgres.execute(`
