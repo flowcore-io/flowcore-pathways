@@ -22,7 +22,6 @@ A Deno Library for creating Flowcore Pathways, simplifying the integration with 
   - [Custom Loggers](#custom-loggers)
   - [Retry Mechanisms](#retry-mechanisms)
 - [API Reference](#api-reference)
-- [Example Projects](#example-projects)
 
 ## Installation
 
