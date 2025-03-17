@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.4.0...v0.5.0) (2025-03-17)
+
+
+### Features
+
+* **pathways:** :sparkles: Add event payload validation and improve handler typings ([228e262](https://github.com/flowcore-io/flowcore-pathways/commit/228e262527a9e1d26aaa68f959480b3a3d2ef70e))
+
 ## [0.4.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.3.0...v0.4.0) (2025-03-15)
 
 
