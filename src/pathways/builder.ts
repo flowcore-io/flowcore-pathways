@@ -208,6 +208,22 @@ export class PathwaysBuilder<
       throw new Error(error)
     }
 
+    // Validate event payload against schema if available
+    if (this.schemas[pathway]) {
+      try {
+        const isValid = Value.Check(this.schemas[pathway], data.payload);
+        if (!isValid) {
+          const error = `Event payload does not match schema for pathway ${pathwayStr}`;
+          this.logger.error(error);
+          throw new Error(error);
+        }
+      } catch (err) {
+        const error = `Error validating event payload against schema for pathway ${pathwayStr}: ${err instanceof Error ? err.message : String(err)}`;
+        this.logger.error(error);
+        throw new Error(error);
+      }
+    }
+
     // Call audit handler if configured
     if (this.auditHandler) {
       this.logger.debug(`Calling audit handler for pathway`, {
@@ -421,7 +437,10 @@ export class PathwaysBuilder<
    * @param handler The function that will process events for this pathway
    * @throws Error if the pathway doesn't exist or already has a handler
    */
-  handle<TPath extends keyof TPathway>(path: TPath, handler: (event: FlowcoreEvent) => (Promise<void> | void )): void {
+  handle<TPath extends keyof TPathway>(
+    path: TPath, 
+    handler: (event: Omit<FlowcoreEvent, 'payload'> & { payload: TPathway[TPath] }) => (Promise<void> | void)
+  ): void {
     const pathStr = String(path)
     this.logger.debug(`Setting handler for pathway`, { pathway: pathStr });
     
@@ -438,7 +457,7 @@ export class PathwaysBuilder<
       throw new Error(error)
     }
 
-    this.handlers[path] = handler
+    this.handlers[path] = handler as (event: FlowcoreEvent) => (Promise<void> | void)
     this.logger.info(`Handler set for pathway`, { pathway: pathStr });
   }
 
@@ -450,32 +469,31 @@ export class PathwaysBuilder<
    */
   subscribe<TPath extends keyof TPathway>(
     path: TPath,
-    handler: (event: FlowcoreEvent) => void,
+    handler: (event: Omit<FlowcoreEvent, 'payload'> & { payload: TPathway[TPath] }) => void,
     type: "before" | "after" | "all" = "before",
   ): void {
     const pathStr = String(path)
-    this.logger.debug(`Subscribing to pathway events`, { 
-      pathway: pathStr, 
-      type 
-    });
     
-    if (!this.pathways[path]) {
+    const pathway = this.pathways[path]
+    if (!pathway) {
       const error = `Pathway ${pathStr} not found`;
       this.logger.error(error);
       throw new Error(error)
     }
 
-    if (type === "before") {
-      this.beforeObservable[path].subscribe(handler)
-    } else if (type === "after") {
-      this.afterObservers[path].subscribe(handler)
-    } else if (type === "all") {
-      // Subscribe to both before and after events
-      this.beforeObservable[path].subscribe(handler)
-      this.afterObservers[path].subscribe(handler)
+    const typedHandler = handler as (event: FlowcoreEvent) => void;
+
+    if (type === "before" || type === "all") {
+      this.beforeObservable[path].subscribe(typedHandler)
+      this.logger.debug(`Subscribed to 'before' events for pathway`, { pathway: pathStr });
     }
-    
-    this.logger.debug(`Subscribed to pathway events`, { 
+
+    if (type === "after" || type === "all") {
+      this.afterObservers[path].subscribe(typedHandler)
+      this.logger.debug(`Subscribed to 'after' events for pathway`, { pathway: pathStr });
+    }
+
+    this.logger.info(`Subscription to pathway events set up`, { 
       pathway: pathStr, 
       type 
     });
@@ -488,19 +506,24 @@ export class PathwaysBuilder<
    */
   onError<TPath extends keyof TPathway>(
     path: TPath,
-    handler: (error: Error, event: FlowcoreEvent) => void,
+    handler: (error: Error, event: Omit<FlowcoreEvent, 'payload'> & { payload: TPathway[TPath] }) => void,
   ): void {
     const pathStr = String(path)
-    this.logger.debug(`Subscribing to pathway errors`, { pathway: pathStr });
+    this.logger.debug(`Setting error handler for pathway`, { pathway: pathStr });
     
-    if (!this.pathways[path]) {
+    const pathway = this.pathways[path]
+    if (!pathway) {
       const error = `Pathway ${pathStr} not found`;
       this.logger.error(error);
       throw new Error(error)
     }
+
+    // Type cast to maintain internal consistency while preserving external type safety
+    const typedHandler = (payload: { event: FlowcoreEvent, error: Error }) => 
+      handler(payload.error, payload.event as Omit<FlowcoreEvent, 'payload'> & { payload: TPathway[TPath] });
     
-    this.errorObservers[path].subscribe(({ event, error }) => handler(error, event))
-    this.logger.debug(`Subscribed to pathway errors`, { pathway: pathStr });
+    this.errorObservers[path].subscribe(typedHandler)
+    this.logger.info(`Error handler set for pathway`, { pathway: pathStr });
   }
 
   /**
