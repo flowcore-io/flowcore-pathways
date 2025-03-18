@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.8.0...v0.9.0) (2025-03-18)
+
+
+### Features
+
+* **pathways:** :sparkles: Introduce Session Pathways for session management ([5ad1f1d](https://github.com/flowcore-io/flowcore-pathways/commit/5ad1f1d706dcfb4ba517c38a2748274d43762cb6))
+
+
+### Bug Fixes
+
+* **pathways:** :art: Change import of KvAdapter to type import ([732da2d](https://github.com/flowcore-io/flowcore-pathways/commit/732da2d191b87781b2be3adf9efa150e2eaab3ef))
+
 ## [0.8.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.7.0...v0.8.0) (2025-03-18)
 
 
