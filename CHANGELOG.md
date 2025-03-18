@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.6.0...v0.7.0) (2025-03-18)
+
+
+### Features
+
+* **pathways:** :sparkles: Add cloning functionality to PathwaysBuilder ([674c72a](https://github.com/flowcore-io/flowcore-pathways/commit/674c72a085c9e8805d127ebd2ae70c0279d990e4))
+
 ## [0.6.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.5.0...v0.6.0) (2025-03-18)
 
 
