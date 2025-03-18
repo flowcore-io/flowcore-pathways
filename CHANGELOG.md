@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.5.0...v0.6.0) (2025-03-18)
+
+
+### Features
+
+* **pathways:** :sparkles: Add auditMode option to PathwayWriteOptions ([f2db7f3](https://github.com/flowcore-io/flowcore-pathways/commit/f2db7f34382ccb618c24d54af74294b3d005dca3))
+* **pathways:** :sparkles: Add user ID resolver configuration to PathwaysBuilder ([9faef35](https://github.com/flowcore-io/flowcore-pathways/commit/9faef35a76764b9419938ac8d372fbbaa4438a23))
+
+
+### Bug Fixes
+
+* **pathways:** :art: Refactor audit handler to use user resolver method ([a63e673](https://github.com/flowcore-io/flowcore-pathways/commit/a63e673fb3c0718ce9eb1f3491b41d800d85dee3))
+
 ## [0.5.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.4.0...v0.5.0) (2025-03-17)
 
 
