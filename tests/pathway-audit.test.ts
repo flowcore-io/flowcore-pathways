@@ -62,7 +62,7 @@ Deno.test({
         auditEvents.push({path, event});
       };
       
-      const builderWithAudit = builder.withAudit(auditHandler, getUserId);
+      const builderWithAudit = builder.withAudit(auditHandler).withUserResolver(getUserId);
 
       assertExists(builderWithAudit);
     });
@@ -83,7 +83,7 @@ Deno.test({
         auditEvents.push({path, event});
       };
       
-      builder.withAudit(auditHandler, getUserId);
+      builder.withAudit(auditHandler).withUserResolver(getUserId);
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
       
@@ -137,7 +137,7 @@ Deno.test({
         auditEvents.push({path, event});
       };
       
-      builder.withAudit(auditHandler, getUserId);
+      builder.withAudit(auditHandler).withUserResolver(getUserId);
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
       
@@ -151,8 +151,8 @@ Deno.test({
       const eventId = await pathwayBuilder.write(
         pathwayKey, 
         { test: "data" }, 
-        { "audit/mode": "user" }, 
-        { fireAndForget: true }
+        undefined, 
+        { fireAndForget: true, auditMode: "user" }
       );
 
       // Get the last request
@@ -192,7 +192,7 @@ Deno.test({
         auditEvents.push({path, event});
       };
       
-      builder.withAudit(auditHandler, getUserId);
+      builder.withAudit(auditHandler).withUserResolver(getUserId);
 
       const pathwayKey = "test-flow-type/test-event-type" as const;
       
@@ -206,8 +206,8 @@ Deno.test({
       const eventId = await pathwayBuilder.write(
         pathwayKey, 
         { test: "data" }, 
-        { "audit/mode": "system" }, 
-        { fireAndForget: true }
+        undefined, 
+        { fireAndForget: true, auditMode: "system" }
       );
 
       // Get the last request
@@ -251,7 +251,7 @@ Deno.test({
         auditEvents.push({path, event});
       };
       
-      builder.withAudit(auditHandler, getUserId);
+      builder.withAudit(auditHandler).withUserResolver(getUserId);
 
       const pathway1 = "test-flow-type/test-event-type-1" as const;
       const pathway2 = "test-flow-type/test-event-type-2" as const;
