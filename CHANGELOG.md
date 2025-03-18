@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.7.0...v0.8.0) (2025-03-18)
+
+
+### Features
+
+* **pathways:** :sparkles: Add session-specific user resolver functionality ([0e0c074](https://github.com/flowcore-io/flowcore-pathways/commit/0e0c074b451b15d3a83ea49f0d838ed559306290))
+
 ## [0.7.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.6.0...v0.7.0) (2025-03-18)
 
 
