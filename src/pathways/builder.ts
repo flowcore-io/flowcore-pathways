@@ -593,7 +593,7 @@ export class PathwaysBuilder<
       const userId = await this.userIdResolver()
       
       // Determine the audit mode: default is "user" unless explicitly specified as "system"
-      const auditMode = (finalMetadata?.["audit/mode"] as AuditMode) || "user"
+      const auditMode = options?.auditMode ?? "user"
       
       this.logger.debug(`Adding audit metadata`, { 
         pathway: pathStr,

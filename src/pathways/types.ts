@@ -145,4 +145,10 @@ export type PathwayWriteOptions = WebhookSendOptions & {
    * Additional HTTP headers to include with the request
    */
   headers?: Record<string, string>
+
+  /**
+   * Audit Mode
+   * @default "user"
+   */
+  auditMode?: "user" | "system"
 }
