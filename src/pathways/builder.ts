@@ -178,13 +178,22 @@ export class PathwaysBuilder<
   /**
    * Configures the PathwaysBuilder to use audit functionality
    * @param handler The handler function that receives pathway and event information
-   * @param userIdResolver An async function that resolves to the current user ID
    * @returns The PathwaysBuilder instance with audit configured
    */
-  withAudit(handler: AuditHandler, userIdResolver: UserIdResolver): PathwaysBuilder<TPathway, TWritablePaths> {
+  withAudit(handler: AuditHandler): PathwaysBuilder<TPathway, TWritablePaths> {
     this.logger.debug('Configuring audit functionality');
     this.auditHandler = handler
-    this.userIdResolver = userIdResolver
+    return this as PathwaysBuilder<TPathway, TWritablePaths>
+  }
+
+  /**
+   * Configures the PathwaysBuilder to use a custom user ID resolver
+   * @param resolver The resolver function that resolves to the current user ID
+   * @returns The PathwaysBuilder instance with custom user ID resolver configured
+   */
+  withUserResolver(resolver: UserIdResolver): PathwaysBuilder<TPathway, TWritablePaths> {
+    this.logger.debug('Configuring user resolver');
+    this.userIdResolver = resolver
     return this as PathwaysBuilder<TPathway, TWritablePaths>
   }
 
