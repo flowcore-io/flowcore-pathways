@@ -151,4 +151,10 @@ export type PathwayWriteOptions = WebhookSendOptions & {
    * @default "user"
    */
   auditMode?: "user" | "system"
+  
+  /**
+   * Session ID for this write operation
+   * Used to associate the operation with a specific session
+   */
+  sessionId?: string
 }

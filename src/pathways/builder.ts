@@ -109,6 +109,9 @@ export class PathwaysBuilder<
   private auditHandler?: AuditHandler
   private userIdResolver?: UserIdResolver
   
+  // Session-specific user resolvers
+  private readonly sessionUserResolvers: Map<string, UserIdResolver> = new Map()
+  
   // Logger instance (but not using it yet due to TypeScript errors)
   private readonly logger: Logger
 
@@ -207,6 +210,27 @@ export class PathwaysBuilder<
     this.logger.debug('Configuring user resolver');
     this.userIdResolver = resolver
     return this as PathwaysBuilder<TPathway, TWritablePaths>
+  }
+
+  /**
+   * Registers a user resolver for a specific session
+   * @param sessionId The session ID to associate with this resolver
+   * @param resolver The resolver function that resolves to the user ID for this session
+   * @returns The PathwaysBuilder instance for chaining
+   */
+  withSessionUserResolver(sessionId: string, resolver: UserIdResolver): PathwaysBuilder<TPathway, TWritablePaths> {
+    this.logger.debug('Configuring session-specific user resolver', { sessionId });
+    this.sessionUserResolvers.set(sessionId, resolver);
+    return this as PathwaysBuilder<TPathway, TWritablePaths>
+  }
+
+  /**
+   * Gets a user resolver for a specific session ID
+   * @param sessionId The session ID to get the resolver for
+   * @returns The resolver function for the session, or undefined if none exists
+   */
+  getSessionUserResolver(sessionId: string): UserIdResolver | undefined {
+    return this.sessionUserResolvers.get(sessionId);
   }
 
   /**
@@ -579,7 +603,8 @@ export class PathwaysBuilder<
       pathway: pathStr,
       metadata,
       options: {
-        fireAndForget: options?.fireAndForget
+        fireAndForget: options?.fireAndForget,
+        sessionId: options?.sessionId
       }
     });
     
@@ -608,20 +633,47 @@ export class PathwaysBuilder<
     // Create a copy of the metadata to avoid modifying the original
     const finalMetadata: EventMetadata = metadata ? { ...metadata } : {};
     
+    // Check for session-specific user resolver
+    let userId: string | undefined;
+    if (options?.sessionId) {
+      const sessionUserResolver = this.sessionUserResolvers.get(options.sessionId);
+      if (sessionUserResolver) {
+        try {
+          userId = await sessionUserResolver();
+
+          this.logger.debug(`Using session-specific user resolver`, {
+            pathway: pathStr,
+            sessionId: options.sessionId,
+            userId
+          });
+        } catch (error) {
+          this.logger.error(`Error resolving session user ID`, error instanceof Error ? error : new Error(String(error)), {
+            pathway: pathStr,
+            sessionId: options.sessionId
+          });
+        }
+      }
+    }
+    
     // Process audit metadata if audit is configured
     if (this.userIdResolver) {
-      this.logger.debug(`Resolving user ID for audit metadata`, { pathway: pathStr });
-      const userId = await this.userIdResolver()
-      
-      // Determine the audit mode: default is "user" unless explicitly specified as "system"
-      const auditMode = options?.auditMode ?? "user"
-      
-      this.logger.debug(`Adding audit metadata`, { 
-        pathway: pathStr,
-        auditMode,
-        userId
-      });
-      
+      // Only use global resolver if we don't already have a user ID from a session resolver
+      if (!userId) {
+        this.logger.debug(`Resolving user ID for audit metadata`, { pathway: pathStr });
+        userId = await this.userIdResolver()
+      }
+    }
+
+    // Determine the audit mode: default is "user" unless explicitly specified as "system"
+    const auditMode = options?.auditMode ?? "user"
+        
+    this.logger.debug(`Adding audit metadata`, { 
+      pathway: pathStr,
+      auditMode,
+      userId
+    });
+    
+    if (userId) {
       // Add appropriate audit metadata based on mode
       if (auditMode === "system") {
         finalMetadata["audit/user-id"] = "system"
@@ -632,7 +684,6 @@ export class PathwaysBuilder<
         finalMetadata["audit/mode"] = "user" // Always set mode for user
       }
     }
-
     let eventIds: string | string[] = []
     if (this.filePathways.has(path)) {
       this.logger.debug(`Writing file data to pathway`, { pathway: pathStr });
@@ -718,44 +769,5 @@ export class PathwaysBuilder<
       elapsedTime: Date.now() - startTime,
       attempts
     });
-  }
-
-  /**
-   * Creates a new instance of PathwaysBuilder with the same configuration
-   * @returns A new PathwaysBuilder instance with the same type parameters and configuration
-   */
-  clone(): PathwaysBuilder<TPathway, TWritablePaths> {
-    this.logger.debug('Building new PathwaysBuilder instance with same configuration');
-    
-    // Create new instance with same base configuration
-    const builder = new PathwaysBuilder<TPathway, TWritablePaths>({
-      baseUrl: this.baseUrl,
-      tenant: this.tenant,
-      dataCore: this.dataCore,
-      apiKey: this.apiKey,
-      pathwayTimeoutMs: this.pathwayTimeoutMs,
-      logger: this.logger
-    });
-    
-    // Copy pathway state configuration if custom
-    if (!(this.pathwayState instanceof InternalPathwayState)) {
-      builder.withPathwayState(this.pathwayState);
-    }
-    
-    // Copy audit configuration if present
-    if (this.auditHandler) {
-      builder.withAudit(this.auditHandler);
-    }
-    
-    // Copy user resolver if present
-    if (this.userIdResolver) {
-      builder.withUserResolver(this.userIdResolver);
-    }
-    
-    // The new instance will have the same type parameters but
-    // it will be empty of pathways until they are registered again
-    
-    this.logger.info('New PathwaysBuilder instance created');
-    return builder;
   }
 }
