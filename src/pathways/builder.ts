@@ -112,6 +112,12 @@ export class PathwaysBuilder<
   // Logger instance (but not using it yet due to TypeScript errors)
   private readonly logger: Logger
 
+  // Configuration values needed for cloning
+  private readonly baseUrl: string
+  private readonly tenant: string
+  private readonly dataCore: string
+  private readonly apiKey: string
+
   /**
    * Creates a new PathwaysBuilder instance
    * @param options Configuration options for the PathwaysBuilder
@@ -139,6 +145,12 @@ export class PathwaysBuilder<
   }) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger();
+    
+    // Store configuration values for cloning
+    this.baseUrl = baseUrl;
+    this.tenant = tenant;
+    this.dataCore = dataCore;
+    this.apiKey = apiKey;
     
     this.logger.debug('Initializing PathwaysBuilder', {
       baseUrl,
@@ -706,5 +718,44 @@ export class PathwaysBuilder<
       elapsedTime: Date.now() - startTime,
       attempts
     });
+  }
+
+  /**
+   * Creates a new instance of PathwaysBuilder with the same configuration
+   * @returns A new PathwaysBuilder instance with the same type parameters and configuration
+   */
+  clone(): PathwaysBuilder<TPathway, TWritablePaths> {
+    this.logger.debug('Building new PathwaysBuilder instance with same configuration');
+    
+    // Create new instance with same base configuration
+    const builder = new PathwaysBuilder<TPathway, TWritablePaths>({
+      baseUrl: this.baseUrl,
+      tenant: this.tenant,
+      dataCore: this.dataCore,
+      apiKey: this.apiKey,
+      pathwayTimeoutMs: this.pathwayTimeoutMs,
+      logger: this.logger
+    });
+    
+    // Copy pathway state configuration if custom
+    if (!(this.pathwayState instanceof InternalPathwayState)) {
+      builder.withPathwayState(this.pathwayState);
+    }
+    
+    // Copy audit configuration if present
+    if (this.auditHandler) {
+      builder.withAudit(this.auditHandler);
+    }
+    
+    // Copy user resolver if present
+    if (this.userIdResolver) {
+      builder.withUserResolver(this.userIdResolver);
+    }
+    
+    // The new instance will have the same type parameters but
+    // it will be empty of pathways until they are registered again
+    
+    this.logger.info('New PathwaysBuilder instance created');
+    return builder;
   }
 }
