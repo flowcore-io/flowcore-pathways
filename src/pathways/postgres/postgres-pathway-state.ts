@@ -63,6 +63,47 @@ export type PostgresPathwayStateConfig = PostgresPathwayStateConnectionStringCon
  * 
  * This class provides persistent storage of pathway state using a PostgreSQL database,
  * which allows for state to be shared across multiple instances of the application.
+ * 
+ * Key features:
+ * - Persistent storage of pathway processing state across application restarts
+ * - Automatic table and index creation
+ * - Configurable TTL (time-to-live) for processed events
+ * - Automatic cleanup of expired records
+ * - Support for horizontal scaling across multiple instances
+ * - Connection pooling for efficient database usage
+ * 
+ * Use cases:
+ * - Production deployments that require durability and persistence
+ * - Distributed systems where multiple instances process events
+ * - Applications with high reliability requirements
+ * - Scenarios where in-memory state is insufficient
+ * 
+ * @example
+ * ```typescript
+ * // Create PostgreSQL pathway state with connection string
+ * const postgresState = createPostgresPathwayState({
+ *   connectionString: "postgres://user:password@localhost:5432/mydb",
+ *   tableName: "event_processing_state", // Optional
+ *   ttlMs: 24 * 60 * 60 * 1000 // 24 hours (optional)
+ * });
+ * 
+ * // Or with individual parameters
+ * const postgresState = createPostgresPathwayState({
+ *   host: "localhost",
+ *   port: 5432,
+ *   user: "postgres",
+ *   password: "postgres",
+ *   database: "mydb",
+ *   ssl: false,
+ *   tableName: "event_processing_state", // Optional
+ *   ttlMs: 30 * 60 * 1000 // 30 minutes (optional)
+ * });
+ * 
+ * // Use with PathwaysBuilder
+ * const pathways = new PathwaysBuilder({
+ *   // ... other config
+ * }).withPathwayState(postgresState);
+ * ```
  */
 export class PostgresPathwayState implements PathwayState {
   /**
@@ -163,8 +204,30 @@ export class PostgresPathwayState implements PathwayState {
   /**
    * Checks if an event has already been processed
    * 
+   * This method checks the PostgreSQL database to determine if an event with the given ID
+   * has been marked as processed. If the event exists in the database and is marked as processed,
+   * the method returns true.
+   * 
+   * Before performing the check, this method also triggers cleanup of expired event records
+   * to maintain database performance.
+   * 
    * @param {string} eventId - The ID of the event to check
    * @returns {Promise<boolean>} True if the event has been processed, false otherwise
+   * 
+   * @example
+   * ```typescript
+   * // Check if an event has been processed
+   * const processed = await postgresState.isProcessed("event-123");
+   * if (processed) {
+   *   console.log("Event has already been processed, skipping");
+   * } else {
+   *   console.log("Processing event for the first time");
+   *   // Process the event
+   *   await processEvent(event);
+   *   // Mark as processed
+   *   await postgresState.setProcessed("event-123");
+   * }
+   * ```
    */
   async isProcessed(eventId: string): Promise<boolean> {
     await this.initialize();
@@ -183,8 +246,37 @@ export class PostgresPathwayState implements PathwayState {
   /**
    * Marks an event as processed
    * 
+   * This method inserts or updates a record in the PostgreSQL database to mark an event
+   * as processed. If the event already exists in the database, the record is updated;
+   * otherwise, a new record is created.
+   * 
+   * Each processed event is stored with an expiration timestamp based on the configured TTL.
+   * After this time elapses, the record may be automatically removed during cleanup operations.
+   * 
    * @param {string} eventId - The ID of the event to mark as processed
    * @returns {Promise<void>}
+   * 
+   * @example
+   * ```typescript
+   * // Process an event and mark it as processed
+   * async function handleEvent(event) {
+   *   // Check if already processed to implement idempotency
+   *   if (await postgresState.isProcessed(event.id)) {
+   *     return; // Skip already processed events
+   *   }
+   *   
+   *   try {
+   *     // Process the event
+   *     await processEvent(event);
+   *     
+   *     // Mark as processed after successful processing
+   *     await postgresState.setProcessed(event.id);
+   *   } catch (error) {
+   *     console.error("Failed to process event:", error);
+   *     // Not marking as processed, so it can be retried
+   *   }
+   * }
+   * ```
    */
   async setProcessed(eventId: string): Promise<void> {
     await this.initialize();
@@ -230,8 +322,46 @@ export class PostgresPathwayState implements PathwayState {
 /**
  * Creates a new PostgreSQL pathway state instance
  * 
- * @param config The PostgreSQL configuration
+ * This is a factory function that simplifies the creation of PostgresPathwayState instances.
+ * It accepts either a connection string or individual connection parameters, along with
+ * optional configuration for table name and TTL.
+ * 
+ * The PostgresPathwayState is lazily initialized, meaning the database connection and
+ * table creation only happen when the first operation is performed. This makes it safe
+ * to create instances early in the application lifecycle.
+ * 
+ * @param config The PostgreSQL configuration (connection string or parameters)
  * @returns A new PostgresPathwayState instance
+ * 
+ * @example
+ * ```typescript
+ * // With connection string
+ * const state = createPostgresPathwayState({
+ *   connectionString: "postgres://user:pass@localhost:5432/db?sslmode=require"
+ * });
+ * 
+ * // With individual parameters
+ * const state = createPostgresPathwayState({
+ *   host: "localhost",
+ *   port: 5432,
+ *   user: "postgres",
+ *   password: "secret",
+ *   database: "events_db",
+ *   ssl: true
+ * });
+ * 
+ * // With custom table name and TTL
+ * const state = createPostgresPathwayState({
+ *   connectionString: "postgres://user:pass@localhost:5432/db",
+ *   tableName: "my_custom_event_state",
+ *   ttlMs: 7 * 24 * 60 * 60 * 1000 // 1 week
+ * });
+ * 
+ * // Use with PathwaysBuilder
+ * const pathways = new PathwaysBuilder({
+ *   // Other config
+ * }).withPathwayState(state);
+ * ```
  */
 export function createPostgresPathwayState(config: PostgresPathwayStateConfig): PostgresPathwayState {
   const state = new PostgresPathwayState(config);

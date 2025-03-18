@@ -14,6 +14,49 @@ import { NoopLogger } from "../pathways/logger.ts"
 
 /**
  * Router class that handles directing events to the appropriate pathway handlers
+ * 
+ * The PathwayRouter serves as a bridge between incoming webhook events and the PathwaysBuilder,
+ * ensuring events are routed to the correct pathway handlers based on flow type and event type.
+ * 
+ * Key features:
+ * - Secure authentication using a secret key
+ * - Automatic mapping of events to the correct pathway handlers
+ * - Compatibility with both legacy and modern Flowcore event formats
+ * - Detailed error handling and logging
+ * 
+ * Use cases:
+ * - Building webhook endpoints that receive Flowcore events
+ * - Creating API routes that process events from external systems
+ * - Implementing event-driven microservices that consume Flowcore events
+ * 
+ * @example
+ * ```typescript
+ * // Create a router with authentication
+ * const SECRET_KEY = "your-webhook-secret";
+ * const router = new PathwayRouter(pathwaysBuilder, SECRET_KEY);
+ * 
+ * // In your HTTP handler:
+ * async function handleWebhook(req: Request) {
+ *   const event = await req.json();
+ *   const secret = req.headers.get("X-Webhook-Secret");
+ *   
+ *   try {
+ *     const result = await router.processEvent(event, secret);
+ *     return new Response(JSON.stringify(result), { 
+ *       status: 200,
+ *       headers: { "Content-Type": "application/json" }
+ *     });
+ *   } catch (error) {
+ *     console.error("Error processing event:", error);
+ *     return new Response(JSON.stringify({ 
+ *       error: error.message 
+ *     }), { 
+ *       status: 401,
+ *       headers: { "Content-Type": "application/json" }
+ *     });
+ *   }
+ * }
+ * ```
  */
 export class PathwayRouter {
   private readonly logger: Logger;
@@ -46,10 +89,48 @@ export class PathwayRouter {
   /**
    * Process an incoming event by routing it to the appropriate pathway handler
    * 
-   * @param event The event to process
+   * This method handles the complete lifecycle of an incoming event:
+   * 1. Validates the authentication using the provided secret key
+   * 2. Maps the event to the correct pathway based on flowType and eventType
+   * 3. Delegates processing to the PathwaysBuilder
+   * 4. Provides detailed error handling and feedback
+   * 
+   * The method supports both modern Flowcore events and legacy events that used
+   * the "aggregator" field instead of "flowType". It automatically converts legacy
+   * events to the modern format before processing.
+   * 
+   * @param event The event to process, containing flowType, eventType, and payload
    * @param providedSecret The secret key provided for authentication
    * @returns Result of the event processing with success status and message
-   * @throws Error if authentication fails, pathway is not found, or processing fails
+   * 
+   * @throws Error if authentication fails (401 unauthorized)
+   * @throws Error if the pathway is not found (404 not found)
+   * @throws Error if processing fails (includes the original error message)
+   * 
+   * @example
+   * ```typescript
+   * // Basic usage
+   * try {
+   *   const result = await router.processEvent(incomingEvent, secretFromHeader);
+   *   console.log("Success:", result.message);
+   * } catch (error) {
+   *   console.error("Failed to process event:", error.message);
+   * }
+   * 
+   * // With error handling for different error types
+   * try {
+   *   const result = await router.processEvent(event, secret);
+   *   return { status: 200, body: result };
+   * } catch (error) {
+   *   if (error.message.includes("Invalid secret key")) {
+   *     return { status: 401, body: { error: "Unauthorized" } };
+   *   } else if (error.message.includes("not found")) {
+   *     return { status: 404, body: { error: "Pathway not found" } };
+   *   } else {
+   *     return { status: 500, body: { error: "Processing failed" } };
+   *   }
+   * }
+   * ```
    */
   async processEvent(event: FlowcoreLegacyEvent, providedSecret: string): Promise<{ success: boolean; message: string }> {
     // Validate secret key

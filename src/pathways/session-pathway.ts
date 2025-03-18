@@ -1,4 +1,4 @@
-import type { PathwaysBuilder } from "./builder.ts";
+import type { PathwaysBuilder, UserIdResolver } from "./builder.ts";
 import type { EventMetadata, PathwayWriteOptions } from "./types.ts";
 
 /**
@@ -26,6 +26,38 @@ function generateUUID(): string {
  * 
  * This provides a convenient way to track operations within a user session
  * by automatically including the session ID in metadata.
+ * 
+ * Key features:
+ * - Automatic session ID generation if none is provided
+ * - Cross-platform UUID generation (works in Deno, Bun, and Node.js)
+ * - Simple API for accessing the current session ID
+ * - Convenient integration with session-specific user resolvers
+ * - Automatic inclusion of session ID in all write operations
+ * - Support for overriding the session ID on specific writes
+ * 
+ * Use cases:
+ * - Tracking user actions across multiple pathway writes
+ * - Connecting related events in a single user session
+ * - Supporting multi-user environments where different users' operations need to be tracked separately
+ * - Building user activity logs with session grouping
+ * 
+ * @example
+ * ```typescript
+ * // Create a session pathway with auto-generated ID
+ * const session = new SessionPathwayBuilder(pathwaysBuilder);
+ * 
+ * // Get the auto-generated session ID
+ * const sessionId = session.getSessionId();
+ * 
+ * // Register a user resolver for this session
+ * session.withUserResolver(async () => getCurrentUserId());
+ * 
+ * // Write events with session context
+ * await session.write("order/placed", orderData);
+ * await session.write("user/action", actionData);
+ * 
+ * // All events will be associated with the same session ID
+ * ```
  */
 export class SessionPathwayBuilder<
   // deno-lint-ignore ban-types
@@ -56,6 +88,40 @@ export class SessionPathwayBuilder<
    */
   getSessionId(): string {
     return this.sessionId;
+  }
+
+  /**
+   * Registers a user resolver for this session
+   * 
+   * This is a convenience method that calls `pathwaysBuilder.withSessionUserResolver`
+   * with the current session ID, allowing you to set up a resolver specific to this session
+   * without having to manually pass the session ID.
+   * 
+   * The resolver will be called whenever events are written through this session,
+   * and the resolved user ID will be included in the event metadata.
+   * 
+   * @param resolver The function that resolves to the user ID for this session
+   * @returns The SessionPathwayBuilder instance for chaining
+   * 
+   * @throws Error if the underlying PathwaysBuilder does not have session user resolvers configured
+   * 
+   * @example
+   * ```typescript
+   * const session = new SessionPathwayBuilder(pathwaysBuilder);
+   * 
+   * // Register a user resolver for this session
+   * session.withUserResolver(async () => {
+   *   // Get the user ID associated with this session
+   *   return getUserIdFromSession();
+   * });
+   * 
+   * // When writing events, the user ID will be automatically included
+   * await session.write("user/action", actionData);
+   * ```
+   */
+  withUserResolver(resolver: UserIdResolver): this {
+    this.pathwaysBuilder.withSessionUserResolver(this.sessionId, resolver);
+    return this;
   }
 
   /**

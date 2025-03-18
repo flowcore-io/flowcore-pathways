@@ -2,7 +2,34 @@
  * Interface for key-value storage adapters
  * 
  * Provides a common interface for different KV storage implementations
- * that can be used for storing pathway state.
+ * that can be used for storing pathway state and other application data.
+ * 
+ * This interface abstracts away the details of specific storage backends,
+ * allowing the application to work with different storage providers
+ * without changing the core logic.
+ * 
+ * The Flowcore Pathways library includes several implementations of this interface:
+ * - BunKvAdapter: Uses Bun's built-in KV store
+ * - NodeKvAdapter: Uses node-cache for in-memory storage
+ * - DenoKvAdapter: Uses Deno's KV store (when available)
+ * 
+ * Custom implementations can be created for other storage backends
+ * by implementing this interface.
+ * 
+ * @example
+ * ```typescript
+ * // Create a KV adapter
+ * const store = await createKvAdapter();
+ * 
+ * // Store a value with a TTL
+ * await store.set("session:123", { userId: "user-456" }, 3600000); // 1 hour TTL
+ * 
+ * // Retrieve the value
+ * const session = await store.get<{ userId: string }>("session:123");
+ * if (session) {
+ *   console.log("User ID:", session.userId);
+ * }
+ * ```
  */
 export interface KvAdapter {
   /**
@@ -28,9 +55,39 @@ export interface KvAdapter {
 /**
  * Creates an appropriate KV adapter based on the runtime environment
  * 
- * Attempts to use Bun KV adapter if running in Bun, falls back to Node adapter otherwise
+ * This function automatically detects the current runtime environment and creates
+ * the most suitable KV adapter implementation:
+ * 
+ * - In Bun: Returns a BunKvAdapter using Bun's built-in KV store
+ * - In Deno with KV access: Returns a DenoKvAdapter
+ * - Otherwise: Returns a NodeKvAdapter using an in-memory cache
+ * 
+ * Using this factory function rather than directly instantiating a specific adapter
+ * implementation makes your code more portable across different JavaScript runtimes.
+ * 
+ * The adapter is lazily initialized, so any necessary setup only happens when
+ * you first interact with the adapter.
  * 
  * @returns A KV adapter instance for the current runtime
+ * 
+ * @example
+ * ```typescript
+ * // Create a runtime-specific KV adapter
+ * const kv = await createKvAdapter();
+ * 
+ * // Use with PathwaysBuilder for session user resolvers
+ * const pathways = new PathwaysBuilder({
+ *   baseUrl: "https://api.flowcore.io",
+ *   tenant: "my-tenant",
+ *   dataCore: "my-data-core",
+ *   apiKey: "my-api-key",
+ *   sessionUserResolvers: kv
+ * });
+ * 
+ * // Use as a general-purpose key-value store
+ * await kv.set("cache:user:123", userData, 60 * 60 * 1000); // 1 hour TTL
+ * const cachedUser = await kv.get("cache:user:123");
+ * ```
  */
 export async function createKvAdapter(): Promise<KvAdapter> {
   try {

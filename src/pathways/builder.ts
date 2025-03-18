@@ -5,6 +5,7 @@ import { Subject } from "rxjs"
 import { WebhookBuilder } from "../compatibility/flowcore-transformer-core.sdk.ts"
 import type { FlowcoreEvent } from "../contracts/event.ts"
 import { InternalPathwayState } from "./internal-pathway.state.ts"
+import { KvAdapter } from "./kv/kv-adapter.ts"
 import type { Logger } from "./logger.ts"
 import { NoopLogger } from "./logger.ts"
 import type { EventMetadata, PathwayContract, PathwayKey, PathwayState, PathwayWriteOptions, SendFilehook, SendWebhook, WritablePathway } from "./types.ts"
@@ -23,6 +24,11 @@ const DEFAULT_MAX_RETRIES = 3
  * Default delay between retry attempts in milliseconds
  */
 const DEFAULT_RETRY_DELAY_MS = 500
+
+/** 
+ * Default TTL for session-specific user resolvers in milliseconds (10seconds)
+ */
+const DEFAULT_SESSION_USER_RESOLVER_TTL_MS = 10 * 1000
 
 /**
  * Defines the mode for auditing pathway operations
@@ -110,7 +116,7 @@ export class PathwaysBuilder<
   private userIdResolver?: UserIdResolver
   
   // Session-specific user resolvers
-  private readonly sessionUserResolvers: Map<string, UserIdResolver> = new Map()
+  private readonly sessionUserResolvers: KvAdapter | null = null
   
   // Logger instance (but not using it yet due to TypeScript errors)
   private readonly logger: Logger
@@ -130,6 +136,7 @@ export class PathwaysBuilder<
    * @param options.apiKey The API key for authentication
    * @param options.pathwayTimeoutMs Optional timeout for pathway processing in milliseconds
    * @param options.logger Optional logger instance
+   * @param options.sessionUserResolvers Optional KvAdapter instance for session-specific user resolvers
    */
   constructor({
     baseUrl,
@@ -138,6 +145,7 @@ export class PathwaysBuilder<
     apiKey,
     pathwayTimeoutMs,
     logger,
+    sessionUserResolvers,
   }: {
     baseUrl: string
     tenant: string
@@ -145,6 +153,7 @@ export class PathwaysBuilder<
     apiKey: string
     pathwayTimeoutMs?: number
     logger?: Logger
+    sessionUserResolvers?: KvAdapter
   }) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger();
@@ -154,6 +163,10 @@ export class PathwaysBuilder<
     this.tenant = tenant;
     this.dataCore = dataCore;
     this.apiKey = apiKey;
+
+    if (sessionUserResolvers) {
+      this.sessionUserResolvers = sessionUserResolvers;
+    }
     
     this.logger.debug('Initializing PathwaysBuilder', {
       baseUrl,
@@ -214,13 +227,44 @@ export class PathwaysBuilder<
 
   /**
    * Registers a user resolver for a specific session
+   * 
+   * Session-specific user resolvers allow you to associate different user IDs with different
+   * sessions, which is useful in multi-user applications or when tracking user actions across
+   * different sessions.
+   * 
+   * The resolver is stored in a key-value store with a TTL (time to live), and will be used
+   * to resolve the user ID when operations are performed with the given session ID. If the resolver
+   * expires, it will need to be registered again.
+   * 
+   * This feature works in conjunction with the SessionPathwayBuilder to provide a complete
+   * session management solution.
+   * 
    * @param sessionId The session ID to associate with this resolver
    * @param resolver The resolver function that resolves to the user ID for this session
    * @returns The PathwaysBuilder instance for chaining
+   * 
+   * @throws Error if session user resolvers are not configured (sessionUserResolvers not provided in constructor)
+   * 
+   * @example
+   * ```typescript
+   * // Register a resolver for a specific session
+   * pathwaysBuilder.withSessionUserResolver("session-123", async () => {
+   *   return "user-456"; // Return the user ID for this session
+   * });
+   * 
+   * // Use with SessionPathwayBuilder
+   * const session = new SessionPathwayBuilder(pathwaysBuilder, "session-123");
+   * await session.write("user/action", actionData);
+   * // The user ID will be automatically included in the metadata
+   * ```
    */
   withSessionUserResolver(sessionId: string, resolver: UserIdResolver): PathwaysBuilder<TPathway, TWritablePaths> {
+    if (!this.sessionUserResolvers) {
+      throw new Error('Session user resolvers not configured');
+    }
+
     this.logger.debug('Configuring session-specific user resolver', { sessionId });
-    this.sessionUserResolvers.set(sessionId, resolver);
+    this.sessionUserResolvers.set(sessionId, resolver, DEFAULT_SESSION_USER_RESOLVER_TTL_MS);
     return this as PathwaysBuilder<TPathway, TWritablePaths>
   }
 
@@ -230,7 +274,11 @@ export class PathwaysBuilder<
    * @returns The resolver function for the session, or undefined if none exists
    */
   getSessionUserResolver(sessionId: string): UserIdResolver | undefined {
-    return this.sessionUserResolvers.get(sessionId);
+    if (!this.sessionUserResolvers) {
+      return undefined;
+    }
+    const resolver = this.sessionUserResolvers.get(sessionId);
+    return resolver as UserIdResolver | undefined;
   }
 
   /**
@@ -636,7 +684,7 @@ export class PathwaysBuilder<
     // Check for session-specific user resolver
     let userId: string | undefined;
     if (options?.sessionId) {
-      const sessionUserResolver = this.sessionUserResolvers.get(options.sessionId);
+      const sessionUserResolver = this.getSessionUserResolver(options.sessionId);
       if (sessionUserResolver) {
         try {
           userId = await sessionUserResolver();

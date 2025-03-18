@@ -21,6 +21,7 @@ A TypeScript Library for creating Flowcore Pathways, simplifying the integration
   - [Auditing](#auditing)
   - [Custom Loggers](#custom-loggers)
   - [Retry Mechanisms](#retry-mechanisms)
+  - [Session Pathways](#session-pathways)
 - [API Reference](#api-reference)
 
 ## Installation
@@ -413,6 +414,100 @@ pathways.register({
   maxRetries: 5,           // Retry up to 5 times
   retryDelayMs: 1000       // 1 second between retries
 });
+```
+
+### Session Pathways
+
+The `SessionPathwayBuilder` provides a way to associate session IDs with pathway operations, making it easier to track and manage user sessions in your application.
+
+#### Setting Up Session Support
+
+To use session-specific functionality, first configure your `PathwaysBuilder` with session support:
+
+```typescript
+import { PathwaysBuilder, createKvAdapter } from "@flowcore/pathways";
+
+// Create a KV adapter for storing session information
+const sessionStore = await createKvAdapter();
+
+// Configure the builder with session support
+const pathways = new PathwaysBuilder({
+  baseUrl: "https://api.flowcore.io",
+  tenant: "your-tenant",
+  dataCore: "your-data-core",
+  apiKey: "your-api-key",
+  sessionUserResolvers: sessionStore // Enable session-specific resolvers
+});
+```
+
+#### Creating Session Pathways
+
+Create a session-specific pathway wrapper:
+
+```typescript
+import { SessionPathwayBuilder } from "@flowcore/pathways";
+
+// Create a session with an auto-generated session ID
+const session = new SessionPathwayBuilder(pathways);
+const sessionId = session.getSessionId(); // Get the auto-generated ID
+
+// Or create a session with a specific session ID
+const customSession = new SessionPathwayBuilder(pathways, "user-session-123");
+```
+
+#### Session-Specific User Resolvers
+
+You can register different user resolvers for different sessions, allowing you to associate users with specific sessions:
+
+```typescript
+// Register a user resolver for a specific session
+pathways.withSessionUserResolver("user-session-123", async () => {
+  // Return the user ID for this session
+  return "user-456";
+});
+
+// Alternative: Register directly through the session instance
+session.withUserResolver(async () => {
+  return "user-789";
+});
+```
+
+#### Writing Events with Session Context
+
+Events written through a session builder automatically include the session ID:
+
+```typescript
+// Write an event with session context
+await session.write("order/placed", {
+  orderId: "ord-123",
+  userId: "user-456",
+  total: 99.99,
+  items: [{ id: "item-1", quantity: 2 }]
+});
+
+// You can override the session ID for a specific write
+await session.write(
+  "order/placed",
+  orderData,
+  {}, // No metadata
+  { sessionId: "different-session" }
+);
+```
+
+#### Session ID in Audit Events
+
+When auditing is enabled, the session ID is included in the audit metadata:
+
+```typescript
+// Enable auditing
+pathways.withAudit((path, event) => {
+  console.log(`Audit: ${path} event ${event.eventId}`);
+  // The session ID will be included in event metadata
+});
+
+// Now when writing events through a session
+await session.write("order/placed", orderData);
+// The session ID is automatically included in the audit metadata
 ```
 
 ## API Reference
