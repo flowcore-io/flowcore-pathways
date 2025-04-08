@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.9.0...v0.9.1) (2025-04-08)
+
+
+### Bug Fixes
+
+* force bun-sqlite-key-value only as optional dependency ([c8a4ce5](https://github.com/flowcore-io/flowcore-pathways/commit/c8a4ce523def84e33c8986da04b758ab0b45ac17))
+
 ## [0.9.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.8.0...v0.9.0) (2025-03-18)
 
 
