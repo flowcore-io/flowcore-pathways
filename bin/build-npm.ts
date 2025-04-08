@@ -18,16 +18,19 @@ await build({
     description: denoJson.description,
     version: denoJson.version,
     license: denoJson.license,
-    homepage: "https://github.com/flowcore-io/flowcore-sdk#readme",
+    homepage: "https://github.com/flowcore-io/flowcore-pathways#readme",
     repository: {
       type: "git",
-      url: "git+https://github.com/flowcore-io/flowcore-sdk.git",
+      url: "git+https://github.com/flowcore-io/flowcore-pathways.git",
     },
     bugs: {
-      url: "https://github.com/flowcore-io/flowcore-sdk/issues",
+      url: "https://github.com/flowcore-io/flowcore-pathways/issues",
     },
     optionalDependencies: {
       "bun-sqlite-key-value": "1.13.1",
+    },
+    dependencies: {
+      "bun-sqlite-key-value": undefined as unknown as string,
     },
     devDependencies: {
       "@types/ws": "^8.5.10"
@@ -37,7 +40,7 @@ await build({
     // steps to run after building and before running the tests
     // Deno.copyFileSync("LICENSE", "npm/LICENSE")
     Deno.copyFileSync("README.md", "npm/README.md")
-    
+
     // Only copy CHANGELOG.md if it exists
     try {
       const changelogStat = Deno.statSync("CHANGELOG.md");
