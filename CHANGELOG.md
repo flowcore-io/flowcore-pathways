@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.9.1...v0.10.0) (2025-04-09)
+
+
+### Features
+
+* allow to chain handle, subscribe, onError and onAnyError ([a560142](https://github.com/flowcore-io/flowcore-pathways/commit/a560142b940c61626a69d41b6c64dcad7947c957))
+* allow to chain handle, subscribe, onError and onAnyError ([4ac4fdb](https://github.com/flowcore-io/flowcore-pathways/commit/4ac4fdb245ede9ef6c7bcf7e79918a9744bec611))
+
+
+### Bug Fixes
+
+* only create table if it doesn't exist ([828d584](https://github.com/flowcore-io/flowcore-pathways/commit/828d58499067d6a46fa6e293b0c4eac67be840c7))
+
 ## [0.9.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.9.0...v0.9.1) (2025-04-08)
 
 
