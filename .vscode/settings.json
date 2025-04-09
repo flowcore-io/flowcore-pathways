@@ -1,5 +1,6 @@
 {
   "deno.enable": true,
+  "editor.defaultFormatter": "denoland.vscode-deno",
   "eslint.enable": false,
   "prettier.enable": false,
   "biome.enable": false,
