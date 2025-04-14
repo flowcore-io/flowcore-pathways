@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.10.0...v0.11.0) (2025-04-14)
+
+
+### Features
+
+* batch support ([32b641e](https://github.com/flowcore-io/flowcore-pathways/commit/32b641e4f181d9ff747a1f0b2bab85a9aea48504))
+* batch support ([4ccf19b](https://github.com/flowcore-io/flowcore-pathways/commit/4ccf19b73419589ddea56dfa13533c4e73947287))
+
 ## [0.10.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.9.1...v0.10.0) (2025-04-09)
 
 
