@@ -9,7 +9,6 @@ import { Subject } from "rxjs"
 import { WebhookBuilder } from "../compatibility/flowcore-transformer-core.sdk.ts"
 import type { FlowcoreEvent } from "../contracts/event.ts"
 import { InternalPathwayState } from "./internal-pathway.state.ts"
-import type { KvAdapter } from "./kv/kv-adapter.ts"
 import type { Logger } from "./logger.ts"
 import { NoopLogger } from "./logger.ts"
 import type {
@@ -75,6 +74,85 @@ export interface AuditWebhookSendOptions extends WebhookSendOptions {
 }
 
 /**
+ * SessionUserResolver is a key-value store for storing and retrieving UserIdResolver functions
+ * with a TTL (time to live).
+ * 
+ * This allows for session-specific user resolvers to be stored and reused across different
+ * sessions or operations.
+ */
+
+export interface SessionUserResolver {
+  /**
+   * Retrieves a UserIdResolver from the session user resolver store
+   * @param key The key to retrieve the UserIdResolver for
+   * @returns The UserIdResolver or undefined if it doesn't exist
+   */
+  get(key: string): Promise<UserIdResolver | undefined> | UserIdResolver | undefined
+
+  /**
+   * Stores a UserIdResolver in the session user resolver store
+   * @param key The key to store the UserIdResolver under
+   * @param value The UserIdResolver to store
+   * @param ttlMs The time to live for the UserIdResolver in milliseconds
+   */
+  set(key: string, value: UserIdResolver, ttlMs: number): Promise<void> | void
+}
+
+/**
+ * SessionUserResolver implementation that uses a Map to store UserIdResolver functions
+ * with a TTL (time to live).
+ */
+export class SessionUser implements SessionUserResolver {
+  /**
+   * The underlying Map that stores UserIdResolver functions
+   */
+  private store: Map<string, { value: UserIdResolver; timeout: number }>
+
+  /**
+   * Creates a new SessionUser instance
+   */
+  constructor() {
+    this.store = new Map()
+  }
+
+  /**
+   * Retrieves a UserIdResolver from the session user resolver store
+   * @param key The key to retrieve the UserIdResolver for
+   * @returns The UserIdResolver or undefined if it doesn't exist
+   */
+  get(key: string): UserIdResolver | undefined {
+    const entry = this.store.get(key)
+    if (!entry) {
+      return undefined
+    }
+    return entry.value as UserIdResolver
+  }
+
+  /**
+   * Stores a UserIdResolver in the session user resolver store
+   * @param key The key to store the UserIdResolver under
+   * @param value The UserIdResolver to store
+   * @param ttlMs The time to live for the UserIdResolver in milliseconds
+   * @default 5 minutes
+   */
+  set(key: string, value: UserIdResolver, ttlMs = 1000 * 60 * 5): void {
+    // Clear any existing timeout for this key
+    const existingEntry = this.store.get(key)
+    if (existingEntry) {
+      clearTimeout(existingEntry.timeout)
+    }
+
+    // Set up new timeout
+    const timeout = setTimeout(() => {
+      this.store.delete(key)
+    }, ttlMs)
+
+    // Store the new value and its timeout
+    this.store.set(key, { value, timeout })
+  }
+}
+
+/**
  * Main builder class for creating and managing Flowcore pathways
  *
  * The PathwaysBuilder provides an interface for:
@@ -136,7 +214,7 @@ export class PathwaysBuilder<
   private userIdResolver?: UserIdResolver
 
   // Session-specific user resolvers
-  private readonly sessionUserResolvers: KvAdapter | null = null
+  private readonly sessionUserResolvers: SessionUserResolver | null = null
 
   // Logger instance (but not using it yet due to TypeScript errors)
   private readonly logger: Logger
@@ -156,7 +234,8 @@ export class PathwaysBuilder<
    * @param options.apiKey The API key for authentication
    * @param options.pathwayTimeoutMs Optional timeout for pathway processing in milliseconds
    * @param options.logger Optional logger instance
-   * @param options.sessionUserResolvers Optional KvAdapter instance for session-specific user resolvers
+   * @param options.enableSessionUserResolvers Whether to enable session user resolvers
+   * @param options.overrideSessionUserResolvers Optional SessionUserResolver instance to override the default
    */
   constructor({
     baseUrl,
@@ -165,7 +244,8 @@ export class PathwaysBuilder<
     apiKey,
     pathwayTimeoutMs,
     logger,
-    sessionUserResolvers,
+    enableSessionUserResolvers,
+    overrideSessionUserResolvers,
   }: {
     baseUrl: string
     tenant: string
@@ -173,7 +253,8 @@ export class PathwaysBuilder<
     apiKey: string
     pathwayTimeoutMs?: number
     logger?: Logger
-    sessionUserResolvers?: KvAdapter
+    enableSessionUserResolvers?: boolean
+    overrideSessionUserResolvers?: SessionUserResolver
   }) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger()
@@ -184,8 +265,8 @@ export class PathwaysBuilder<
     this.dataCore = dataCore
     this.apiKey = apiKey
 
-    if (sessionUserResolvers) {
-      this.sessionUserResolvers = sessionUserResolvers
+    if (enableSessionUserResolvers) {
+      this.sessionUserResolvers = overrideSessionUserResolvers ?? new SessionUser()
     }
 
     this.logger.debug("Initializing PathwaysBuilder", {
