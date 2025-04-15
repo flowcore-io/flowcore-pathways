@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox"
 import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts"
-import { createKvAdapter, PathwaysBuilder, SessionPathwayBuilder } from "../src/mod.ts"
+import { PathwaysBuilder, SessionPathwayBuilder } from "../src/mod.ts"
 import { createTestServer } from "./helpers/test-server.ts"
 
 // Add ignore flag to avoid resource leak errors, but we still clean up properly
@@ -20,8 +20,6 @@ Deno.test({
     // Start the test server before running tests
     await server.start()
 
-    const sessionStore = await createKvAdapter()
-
     // Run tests
     try {
       await t.step("SessionPathwayBuilder - Creates a unique session ID", () => {
@@ -30,7 +28,7 @@ Deno.test({
           tenant: "test-tenant",
           dataCore: "test-data-core",
           apiKey: "test-api-key",
-          sessionUserResolvers: sessionStore,
+          enableSessionUserResolvers: true,
         })
         pathwaysInstances.push(builder)
 
@@ -53,7 +51,7 @@ Deno.test({
           tenant: "test-tenant",
           dataCore: "test-data-core",
           apiKey: "test-api-key",
-          sessionUserResolvers: sessionStore,
+          enableSessionUserResolvers: true,
         })
         pathwaysInstances.push(builder)
 
@@ -72,7 +70,7 @@ Deno.test({
           tenant: "test-tenant",
           dataCore: "test-data-core",
           apiKey: "test-api-key",
-          sessionUserResolvers: sessionStore,
+          enableSessionUserResolvers: true,
         })
         pathwaysInstances.push(builder)
 
@@ -114,7 +112,7 @@ Deno.test({
           tenant: "test-tenant",
           dataCore: "test-data-core",
           apiKey: "test-api-key",
-          sessionUserResolvers: sessionStore,
+          enableSessionUserResolvers: true,
         })
         pathwaysInstances.push(builder)
 
@@ -177,7 +175,7 @@ Deno.test({
           tenant: "test-tenant",
           dataCore: "test-data-core",
           apiKey: "test-api-key",
-          sessionUserResolvers: sessionStore,
+          enableSessionUserResolvers: true,
         })
         pathwaysInstances.push(builder)
 
