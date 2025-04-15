@@ -104,9 +104,10 @@ export interface SessionUserResolver {
  */
 export class SessionUser implements SessionUserResolver {
   /**
-   * The underlying Map that stores UserIdResolver functions
+   * The underlying Map that stores UserIdResolver functions and their timeouts
+   * Using unknown for timeout to support both Node.js and Deno timer types
    */
-  private store: Map<string, { value: UserIdResolver; timeout: number }>
+  private store: Map<string, { value: UserIdResolver; timeout: unknown }>
 
   /**
    * Creates a new SessionUser instance
@@ -139,7 +140,7 @@ export class SessionUser implements SessionUserResolver {
     // Clear any existing timeout for this key
     const existingEntry = this.store.get(key)
     if (existingEntry) {
-      clearTimeout(existingEntry.timeout)
+      clearTimeout(existingEntry.timeout as number)
     }
 
     // Set up new timeout
