@@ -1,6 +1,7 @@
 # WebhookBuilder Types Summary
 
-This code defines the type system and schema validation for the WebhookBuilder library. It uses the `@sinclair/typebox` package to create runtime type definitions that can be used for validation.
+This code defines the type system and schema validation for the WebhookBuilder library. It uses the `@sinclair/typebox`
+package to create runtime type definitions that can be used for validation.
 
 ## Core Type Definitions
 
@@ -11,10 +12,12 @@ These schemas define the expected structure of API responses:
 1. **Success Response Schemas**:
    - `WebhookSuccessResponseSchema`: Defines a successful single event response with an `eventId` field.
    - `WebhookBatchSuccessResponseSchema`: Defines a successful batch event response with an array of `eventIds`.
-   - `WebhookFileSuccessResponseSchema`: Defines a successful file upload response with `checksum`, `hashType`, and `eventIds`.
+   - `WebhookFileSuccessResponseSchema`: Defines a successful file upload response with `checksum`, `hashType`, and
+     `eventIds`.
 
 2. **Error Response Schemas**:
-   - `WebhookErrorResponseSchema`: Defines the standard error response with `error` and `message` fields, plus an optional `__localError` for client-side errors.
+   - `WebhookErrorResponseSchema`: Defines the standard error response with `error` and `message` fields, plus an
+     optional `__localError` for client-side errors.
    - `WebhookError500ResponseSchema`: Defines a specific server error response with status code 500.
 
 3. **Union Response Schemas**:
@@ -73,5 +76,5 @@ These schemas define the expected structure of API responses:
 
 - `RETRYABLE_STATUS_CODES`: HTTP status codes that should trigger a retry (408, 429, 500, 502, 503, 504)
 
-This type system provides a strongly-typed foundation for the WebhookBuilder implementation, ensuring type safety and enabling schema validation of API responses.
-
+This type system provides a strongly-typed foundation for the WebhookBuilder implementation, ensuring type safety and
+enabling schema validation of API responses.

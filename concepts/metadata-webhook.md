@@ -1,10 +1,12 @@
 # `metadataWebhook` Function Summary
 
-This code defines a higher-order function called `metadataWebhook` that enhances webhook calls with predefined metadata. Here's a breakdown of what it does and how it works:
+This code defines a higher-order function called `metadataWebhook` that enhances webhook calls with predefined metadata.
+Here's a breakdown of what it does and how it works:
 
 ## Conceptual Overview
 
-The `metadataWebhook` function creates a wrapper around webhook functions that automatically injects predefined metadata into every webhook call, while still allowing for additional metadata to be provided on a per-call basis.
+The `metadataWebhook` function creates a wrapper around webhook functions that automatically injects predefined metadata
+into every webhook call, while still allowing for additional metadata to be provided on a per-call basis.
 
 ## Type Parameters and Function Structure
 
@@ -40,18 +42,18 @@ The `metadataWebhook` function creates a wrapper around webhook functions that a
 // Create a webhook with predefined metadata
 const loggedWebhook = metadataWebhook({
   source: "backend-service",
-  version: "1.0.0"
-});
+  version: "1.0.0",
+})
 
 // Use the enhanced webhook
 await loggedWebhook(
   userWebhook.send,
   { userId: "123", action: "login" },
-  { correlationId: "abc-123" }
-);
+  { correlationId: "abc-123" },
+)
 // This would call userWebhook.send with the payload and merged metadata:
 // { correlationId: "abc-123", source: "backend-service", version: "1.0.0" }
 ```
 
-This pattern is useful for ensuring consistent metadata across multiple webhook calls, such as adding tracking information, source identifiers, or version data to all outgoing events.
-
+This pattern is useful for ensuring consistent metadata across multiple webhook calls, such as adding tracking
+information, source identifiers, or version data to all outgoing events.

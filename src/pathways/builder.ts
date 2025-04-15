@@ -76,7 +76,7 @@ export interface AuditWebhookSendOptions extends WebhookSendOptions {
 /**
  * SessionUserResolver is a key-value store for storing and retrieving UserIdResolver functions
  * with a TTL (time to live).
- * 
+ *
  * This allows for session-specific user resolvers to be stored and reused across different
  * sessions or operations.
  */

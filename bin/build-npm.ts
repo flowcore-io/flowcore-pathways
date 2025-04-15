@@ -33,8 +33,8 @@ await build({
       "bun-sqlite-key-value": undefined as unknown as string,
     },
     devDependencies: {
-      "@types/ws": "^8.5.10"
-    }
+      "@types/ws": "^8.5.10",
+    },
   },
   postBuild() {
     // steps to run after building and before running the tests
@@ -43,15 +43,15 @@ await build({
 
     // Only copy CHANGELOG.md if it exists
     try {
-      const changelogStat = Deno.statSync("CHANGELOG.md");
+      const changelogStat = Deno.statSync("CHANGELOG.md")
       if (changelogStat.isFile) {
-        Deno.copyFileSync("CHANGELOG.md", "npm/CHANGELOG.md");
+        Deno.copyFileSync("CHANGELOG.md", "npm/CHANGELOG.md")
       }
     } catch (error) {
       if (!(error instanceof Deno.errors.NotFound)) {
-        throw error; // Rethrow if it's not a "file not found" error
+        throw error // Rethrow if it's not a "file not found" error
       }
-      console.log("CHANGELOG.md not found, skipping copy");
+      console.log("CHANGELOG.md not found, skipping copy")
     }
   },
 })

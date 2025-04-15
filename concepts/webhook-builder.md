@@ -1,6 +1,7 @@
 # WebhookBuilder Code Summary
 
-This code implements a webhook client library for interacting with a webhook API service, specifically designed for the Flowcore platform. Here's a conceptual overview of what this code does:
+This code implements a webhook client library for interacting with a webhook API service, specifically designed for the
+Flowcore platform. Here's a conceptual overview of what this code does:
 
 ## Core Concepts
 
@@ -64,5 +65,5 @@ The main class that configures and creates webhook clients with these key method
    - Custom error types for different failure scenarios
    - Structured error information for debugging
 
-This library abstracts away the complexity of interacting with webhook APIs, providing a clean interface for sending events while handling common concerns like retries, validation, and error management.
-
+This library abstracts away the complexity of interacting with webhook APIs, providing a clean interface for sending
+events while handling common concerns like retries, validation, and error management.

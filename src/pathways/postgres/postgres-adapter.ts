@@ -3,15 +3,15 @@
  */
 export interface PostgresConnectionStringConfig {
   /** Complete PostgreSQL connection string (e.g., postgres://user:password@host:port/database?sslmode=require) */
-  connectionString: string;
-  
+  connectionString: string
+
   /** These properties are not used when a connection string is provided */
-  host?: never;
-  port?: never;
-  user?: never;
-  password?: never;
-  database?: never;
-  ssl?: never;
+  host?: never
+  port?: never
+  user?: never
+  password?: never
+  database?: never
+  ssl?: never
 }
 
 /**
@@ -19,34 +19,34 @@ export interface PostgresConnectionStringConfig {
  */
 export interface PostgresParametersConfig {
   /** Not used when individual parameters are provided */
-  connectionString?: never;
-  
+  connectionString?: never
+
   /** PostgreSQL server hostname */
-  host: string;
+  host: string
   /** PostgreSQL server port */
-  port: number;
+  port: number
   /** PostgreSQL username */
-  user: string;
+  user: string
   /** PostgreSQL password */
-  password: string;
+  password: string
   /** PostgreSQL database name */
-  database: string;
+  database: string
   /** Whether to use SSL for the connection */
-  ssl?: boolean;
+  ssl?: boolean
 }
 
 /**
  * Configuration options for PostgreSQL connection
- * 
+ *
  * Can provide either:
  * 1. A complete connection string, or
  * 2. Individual connection parameters (host, port, user, etc.)
  */
-export type PostgresConfig = PostgresConnectionStringConfig | PostgresParametersConfig;
+export type PostgresConfig = PostgresConnectionStringConfig | PostgresParametersConfig
 
 /**
  * Interface for PostgreSQL database operations
- * 
+ *
  * Provides methods for connecting, querying, and executing SQL statements
  */
 export interface PostgresAdapter {
@@ -54,14 +54,14 @@ export interface PostgresAdapter {
    * Establishes a connection to the PostgreSQL database
    * @returns Promise that resolves when the connection is established
    */
-  connect(): Promise<void>;
-  
+  connect(): Promise<void>
+
   /**
    * Closes the connection to the PostgreSQL database
    * @returns Promise that resolves when the connection is closed
    */
-  disconnect(): Promise<void>;
-  
+  disconnect(): Promise<void>
+
   /**
    * Executes a SQL query and returns the results
    * @template T The expected result type
@@ -69,15 +69,15 @@ export interface PostgresAdapter {
    * @param params Optional parameters for the query
    * @returns Promise that resolves to the query results
    */
-  query<T>(sql: string, params?: unknown[]): Promise<T>;
-  
+  query<T>(sql: string, params?: unknown[]): Promise<T>
+
   /**
    * Executes a SQL statement without returning results
    * @param sql The SQL statement to execute
    * @param params Optional parameters for the statement
    * @returns Promise that resolves when the statement has been executed
    */
-  execute(sql: string, params?: unknown[]): Promise<void>;
+  execute(sql: string, params?: unknown[]): Promise<void>
 }
 
 // Types for the postgres library
@@ -86,8 +86,8 @@ export interface PostgresAdapter {
  * @private
  */
 interface PostgresClient {
-  end: () => Promise<void>;
-  unsafe: (sql: string, params?: unknown[]) => Promise<unknown>;
+  end: () => Promise<void>
+  unsafe: (sql: string, params?: unknown[]) => Promise<unknown>
 }
 
 /**
@@ -95,7 +95,7 @@ interface PostgresClient {
  * @private
  */
 interface PostgresModule {
-  default: (connectionString: string) => PostgresClient;
+  default: (connectionString: string) => PostgresClient
 }
 
 /**
@@ -103,48 +103,49 @@ interface PostgresModule {
  */
 export class PostgresJsAdapter implements PostgresAdapter {
   /** The postgres.js client factory function */
-  private postgres: ((connectionString: string) => PostgresClient) | null = null;
+  private postgres: ((connectionString: string) => PostgresClient) | null = null
   /** The active postgres.js client */
-  private sql: PostgresClient | null = null;
+  private sql: PostgresClient | null = null
   /** The PostgreSQL configuration */
-  private config: PostgresConfig;
+  private config: PostgresConfig
   /** The connection string built from the configuration */
-  private connectionString: string;
+  private connectionString: string
 
   /**
    * Creates a new PostgresJsAdapter instance
-   * 
+   *
    * @param config The PostgreSQL connection configuration
    */
   constructor(config: PostgresConfig) {
-    this.config = config;
+    this.config = config
 
-    if ('connectionString' in config && config.connectionString) {
+    if ("connectionString" in config && config.connectionString) {
       // Use the provided connection string directly
-      this.connectionString = config.connectionString;
+      this.connectionString = config.connectionString
     } else {
       // Build connection string from individual parameters
-      this.connectionString = `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`;
+      this.connectionString =
+        `postgres://${config.user}:${config.password}@${config.host}:${config.port}/${config.database}`
       if (config.ssl) {
-        this.connectionString += "?sslmode=require";
+        this.connectionString += "?sslmode=require"
       }
     }
   }
 
   /**
    * Establishes a connection to the PostgreSQL database
-   * 
+   *
    * @returns Promise that resolves when connection is established
    * @throws Error if connection fails
    */
   async connect(): Promise<void> {
     try {
-      const module = await import("postgres") as PostgresModule;
-      this.postgres = module.default;
-      this.sql = this.postgres(this.connectionString);
+      const module = await import("postgres") as PostgresModule
+      this.postgres = module.default
+      this.sql = this.postgres(this.connectionString)
     } catch (error) {
-      console.error("Failed to connect to PostgreSQL:", error);
-      throw error;
+      console.error("Failed to connect to PostgreSQL:", error)
+      throw error
     }
   }
 
@@ -154,8 +155,8 @@ export class PostgresJsAdapter implements PostgresAdapter {
    */
   async disconnect(): Promise<void> {
     if (this.sql) {
-      await this.sql.end();
-      this.sql = null;
+      await this.sql.end()
+      this.sql = null
     }
   }
 
@@ -168,9 +169,9 @@ export class PostgresJsAdapter implements PostgresAdapter {
    */
   async query<T>(sql: string, params: unknown[] = []): Promise<T> {
     if (!this.sql) {
-      await this.connect();
+      await this.connect()
     }
-    return await this.sql!.unsafe(sql, params) as T;
+    return await this.sql!.unsafe(sql, params) as T
   }
 
   /**
@@ -181,20 +182,20 @@ export class PostgresJsAdapter implements PostgresAdapter {
    */
   async execute(sql: string, params: unknown[] = []): Promise<void> {
     if (!this.sql) {
-      await this.connect();
+      await this.connect()
     }
-    await this.sql!.unsafe(sql, params);
+    await this.sql!.unsafe(sql, params)
   }
 }
 
 /**
  * Creates and initializes a PostgreSQL adapter
- * 
+ *
  * @param config The PostgreSQL connection configuration (either connectionString or individual parameters)
  * @returns An initialized PostgreSQL adapter
  */
 export async function createPostgresAdapter(config: PostgresConfig): Promise<PostgresAdapter> {
-  const adapter = new PostgresJsAdapter(config);
-  await adapter.connect();
-  return adapter;
+  const adapter = new PostgresJsAdapter(config)
+  await adapter.connect()
+  return adapter
 }

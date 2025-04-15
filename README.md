@@ -1,6 +1,7 @@
 # Flowcore Pathways
 
-A TypeScript Library for creating Flowcore Pathways, simplifying the integration with the Flowcore platform. Flowcore Pathways helps you build event-driven applications with type-safe pathways for processing and producing events.
+A TypeScript Library for creating Flowcore Pathways, simplifying the integration with the Flowcore platform. Flowcore
+Pathways helps you build event-driven applications with type-safe pathways for processing and producing events.
 
 ## Table of Contents
 
@@ -54,44 +55,44 @@ yarn add @flowcore/pathways
 Here's a basic example to get you started with Flowcore Pathways:
 
 ```typescript
-import { Type } from "@sinclair/typebox";
-import { PathwaysBuilder } from "@flowcore/pathways";
+import { Type } from "@sinclair/typebox"
+import { PathwaysBuilder } from "@flowcore/pathways"
 
 // Define your event schema
 const userSchema = Type.Object({
   id: Type.String(),
   name: Type.String(),
-  email: Type.String()
-});
+  email: Type.String(),
+})
 
 // Create a pathways builder
 const pathways = new PathwaysBuilder({
   baseUrl: "https://api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
-  apiKey: "your-api-key"
-});
+  apiKey: "your-api-key",
+})
 
 // Register a pathway
 pathways
   .register({
     flowType: "user",
     eventType: "created",
-    schema: userSchema
+    schema: userSchema,
   })
   .handle("user/created", async (event) => {
-    console.log(`Processing user created event: ${event.eventId}`);
-    console.log(`User data:`, event.payload);
-    
+    console.log(`Processing user created event: ${event.eventId}`)
+    console.log(`User data:`, event.payload)
+
     // Process the event...
-    
+
     // You can write to another pathway if needed
     await pathways.write("notifications/sent", {
       userId: event.payload.id,
       message: `Welcome ${event.payload.name}!`,
-      channel: "email"
-    });
-  });
+      channel: "email",
+    })
+  })
 ```
 
 ## Core Concepts
@@ -112,7 +113,7 @@ Flowcore Pathways is built around these core concepts:
 The `PathwaysBuilder` is the main configuration point for your pathways:
 
 ```typescript
-import { PathwaysBuilder } from "@flowcore/pathways";
+import { PathwaysBuilder } from "@flowcore/pathways"
 
 const pathways = new PathwaysBuilder({
   baseUrl: "https://api.flowcore.io",
@@ -120,8 +121,8 @@ const pathways = new PathwaysBuilder({
   dataCore: "your-data-core",
   apiKey: "your-api-key",
   pathwayTimeoutMs: 10000, // Optional, default is 10000 (10s)
-  logger: customLogger     // Optional, defaults to NoopLogger
-});
+  logger: customLogger, // Optional, defaults to NoopLogger
+})
 ```
 
 ### Registering Pathways
@@ -129,7 +130,7 @@ const pathways = new PathwaysBuilder({
 Register pathways with their schemas for type-safe event handling:
 
 ```typescript
-import { Type } from "@sinclair/typebox";
+import { Type } from "@sinclair/typebox"
 
 // Define your event schema
 const orderSchema = Type.Object({
@@ -139,20 +140,20 @@ const orderSchema = Type.Object({
   items: Type.Array(
     Type.Object({
       id: Type.String(),
-      quantity: Type.Number()
-    })
-  )
-});
+      quantity: Type.Number(),
+    }),
+  ),
+})
 
 // Register pathway
 pathways.register({
   flowType: "order",
   eventType: "placed",
   schema: orderSchema,
-  writable: true,       // Optional, default is true
-  maxRetries: 3,        // Optional, default is 3
-  retryDelayMs: 500     // Optional, default is 500
-});
+  writable: true, // Optional, default is true
+  maxRetries: 3, // Optional, default is 3
+  retryDelayMs: 500, // Optional, default is 500
+})
 ```
 
 ### Handling Events
@@ -160,18 +161,18 @@ pathways.register({
 Set up handlers to process events for specific pathways:
 
 ```typescript
-const pathwayKey = "order/placed";
+const pathwayKey = "order/placed"
 
 pathways.handle(pathwayKey, async (event) => {
-  console.log(`Processing order ${event.payload.orderId}`);
-  
+  console.log(`Processing order ${event.payload.orderId}`)
+
   // Access typed payload data
-  const { userId, total, items } = event.payload;
-  
+  const { userId, total, items } = event.payload
+
   // Your business logic here
-  await updateInventory(items);
-  await notifyUser(userId, total);
-});
+  await updateInventory(items)
+  await notifyUser(userId, total)
+})
 ```
 
 ### Writing Events
@@ -185,27 +186,27 @@ const eventId = await pathways.write("order/placed", {
   userId: "user-456",
   total: 99.99,
   items: [
-    { id: "item-1", quantity: 2 }
-  ]
-});
+    { id: "item-1", quantity: 2 },
+  ],
+})
 
 // Write with metadata
 const eventId2 = await pathways.write(
-  "order/placed", 
+  "order/placed",
   orderData,
-  { 
+  {
     correlationId: "corr-789",
-    source: "checkout-service" 
-  }
-);
+    source: "checkout-service",
+  },
+)
 
 // Fire-and-forget mode (doesn't wait for processing)
 const eventId3 = await pathways.write(
-  "order/placed", 
+  "order/placed",
   orderData,
   undefined,
-  { fireAndForget: true }
-);
+  { fireAndForget: true },
+)
 ```
 
 ### Error Handling
@@ -215,15 +216,15 @@ Handle errors in pathway processing:
 ```typescript
 // Error handler for a specific pathway
 pathways.onError("order/placed", (error, event) => {
-  console.error(`Error processing order ${event.payload.orderId}:`, error);
-  reportToMonitoring(error, event);
-});
+  console.error(`Error processing order ${event.payload.orderId}:`, error)
+  reportToMonitoring(error, event)
+})
 
 // Global error handler for all pathways
 pathways.onAnyError((error, event, pathway) => {
-  console.error(`Error in pathway ${pathway}:`, error);
-  reportToMonitoring(error, event, pathway);
-});
+  console.error(`Error in pathway ${pathway}:`, error)
+  reportToMonitoring(error, event, pathway)
+})
 ```
 
 ### Event Observability
@@ -233,18 +234,18 @@ Subscribe to events for observability at different stages:
 ```typescript
 // Before processing
 pathways.subscribe("order/placed", (event) => {
-  console.log(`About to process order ${event.payload.orderId}`);
-}, "before");
+  console.log(`About to process order ${event.payload.orderId}`)
+}, "before")
 
 // After processing
 pathways.subscribe("order/placed", (event) => {
-  console.log(`Finished processing order ${event.payload.orderId}`);
-}, "after");
+  console.log(`Finished processing order ${event.payload.orderId}`)
+}, "after")
 
 // At both stages
 pathways.subscribe("order/placed", (event) => {
-  console.log(`Event ${event.eventId} at ${new Date().toISOString()}`);
-}, "all");
+  console.log(`Event ${event.eventId} at ${new Date().toISOString()}`)
+}, "all")
 ```
 
 ### Setting up a Router
@@ -252,24 +253,24 @@ pathways.subscribe("order/placed", (event) => {
 The `PathwayRouter` routes incoming events to the appropriate pathway:
 
 ```typescript
-import { PathwayRouter } from "@flowcore/pathways";
+import { PathwayRouter } from "@flowcore/pathways"
 
 // Create a router with a secret key for validation
-const WEBHOOK_SECRET = "your-webhook-secret";
-const router = new PathwayRouter(pathways, WEBHOOK_SECRET);
+const WEBHOOK_SECRET = "your-webhook-secret"
+const router = new PathwayRouter(pathways, WEBHOOK_SECRET)
 
 // Process an incoming event from a webhook
 async function handleWebhook(req: Request) {
-  const event = await req.json();
-  const secret = req.headers.get("X-Webhook-Secret");
-  
+  const event = await req.json()
+  const secret = req.headers.get("X-Webhook-Secret")
+
   try {
     // This validates the secret and routes to the right pathway
-    await router.processEvent(event, secret);
-    return new Response("Event processed", { status: 200 });
+    await router.processEvent(event, secret)
+    return new Response("Event processed", { status: 200 })
   } catch (error) {
-    console.error("Error processing event:", error);
-    return new Response("Error processing event", { status: 500 });
+    console.error("Error processing event:", error)
+    return new Response("Error processing event", { status: 500 })
   }
 }
 ```
@@ -279,17 +280,17 @@ async function handleWebhook(req: Request) {
 Integrate with Deno's HTTP server:
 
 ```typescript
-import { serve } from "https://deno.land/std/http/server.ts";
+import { serve } from "https://deno.land/std/http/server.ts"
 
 serve(async (req: Request) => {
-  const url = new URL(req.url);
-  
+  const url = new URL(req.url)
+
   if (req.method === "POST" && url.pathname === "/webhook") {
-    return handleWebhook(req);
+    return handleWebhook(req)
   }
-  
-  return new Response("Not found", { status: 404 });
-}, { port: 3000 });
+
+  return new Response("Not found", { status: 404 })
+}, { port: 3000 })
 ```
 
 ### Persistence Options
@@ -306,18 +307,19 @@ const pathways = new PathwaysBuilder({
   baseUrl: "https://api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
-  apiKey: "your-api-key"
-});
+  apiKey: "your-api-key",
+})
 ```
 
-The internal store uses the appropriate KV adapter for your environment (Bun, Node, or Deno), but note that this state is not persistent across application restarts and should be used primarily for development.
+The internal store uses the appropriate KV adapter for your environment (Bun, Node, or Deno), but note that this state
+is not persistent across application restarts and should be used primarily for development.
 
 #### PostgreSQL Persistence (Production)
 
 For production environments, you can use PostgreSQL for reliable and scalable persistence:
 
 ```typescript
-import { PostgresPathwayState, createPostgresPathwayState } from "@flowcore/pathways";
+import { createPostgresPathwayState, PostgresPathwayState } from "@flowcore/pathways"
 
 // Create a PostgreSQL state handler
 const postgresState = createPostgresPathwayState({
@@ -327,12 +329,12 @@ const postgresState = createPostgresPathwayState({
   password: "postgres",
   database: "pathway_db",
   tableName: "pathway_state", // Optional, defaults to "pathway_state"
-  ttlMs: 300000,              // Optional, defaults to 5 minutes (300000ms)
-  ssl: false                  // Optional, defaults to false
-});
+  ttlMs: 300000, // Optional, defaults to 5 minutes (300000ms)
+  ssl: false, // Optional, defaults to false
+})
 
 // Use PostgreSQL for pathway state
-pathways.withPathwayState(postgresState);
+pathways.withPathwayState(postgresState)
 ```
 
 The PostgreSQL implementation:
@@ -352,15 +354,15 @@ Enable auditing to track events:
 pathways.withAudit(
   // Audit handler
   (path, event) => {
-    console.log(`Audit: ${path} event ${event.eventId}`);
-    logToAuditSystem(path, event);
+    console.log(`Audit: ${path} event ${event.eventId}`)
+    logToAuditSystem(path, event)
   },
   // User ID resolver
   async () => {
     // Get the current user ID from context
-    return getCurrentUserId();
-  }
-);
+    return getCurrentUserId()
+  },
+)
 ```
 
 ### Custom Loggers
@@ -368,31 +370,31 @@ pathways.withAudit(
 Create a custom logger:
 
 ```typescript
-import { Logger } from "@flowcore/pathways";
+import { Logger } from "@flowcore/pathways"
 
 class MyCustomLogger implements Logger {
   debug(message: string, context?: Record<string, unknown>): void {
-    console.debug(`[DEBUG] ${message}`, context);
+    console.debug(`[DEBUG] ${message}`, context)
   }
-  
+
   info(message: string, context?: Record<string, unknown>): void {
-    console.info(`[INFO] ${message}`, context);
+    console.info(`[INFO] ${message}`, context)
   }
-  
+
   warn(message: string, context?: Record<string, unknown>): void {
-    console.warn(`[WARN] ${message}`, context);
+    console.warn(`[WARN] ${message}`, context)
   }
-  
+
   error(message: string, error?: Error, context?: Record<string, unknown>): void {
-    console.error(`[ERROR] ${message}`, error, context);
+    console.error(`[ERROR] ${message}`, error, context)
   }
 }
 
 // Use custom logger
 const pathways = new PathwaysBuilder({
   // ...other config
-  logger: new MyCustomLogger()
-});
+  logger: new MyCustomLogger(),
+})
 ```
 
 ### Retry Mechanisms
@@ -403,32 +405,33 @@ Configure retry behavior for pathways:
 // Global timeout for pathway processing
 const pathways = new PathwaysBuilder({
   // ...other config
-  pathwayTimeoutMs: 15000 // 15 seconds
-});
+  pathwayTimeoutMs: 15000, // 15 seconds
+})
 
 // Per-pathway retry configuration
 pathways.register({
   flowType: "payment",
   eventType: "process",
   schema: paymentSchema,
-  maxRetries: 5,           // Retry up to 5 times
-  retryDelayMs: 1000       // 1 second between retries
-});
+  maxRetries: 5, // Retry up to 5 times
+  retryDelayMs: 1000, // 1 second between retries
+})
 ```
 
 ### Session Pathways
 
-The `SessionPathwayBuilder` provides a way to associate session IDs with pathway operations, making it easier to track and manage user sessions in your application.
+The `SessionPathwayBuilder` provides a way to associate session IDs with pathway operations, making it easier to track
+and manage user sessions in your application.
 
 #### Setting Up Session Support
 
 To use session-specific functionality, first configure your `PathwaysBuilder` with session support:
 
 ```typescript
-import { PathwaysBuilder, createKvAdapter } from "@flowcore/pathways";
+import { createKvAdapter, PathwaysBuilder } from "@flowcore/pathways"
 
 // Create a KV adapter for storing session information
-const sessionStore = await createKvAdapter();
+const sessionStore = await createKvAdapter()
 
 // Configure the builder with session support
 const pathways = new PathwaysBuilder({
@@ -436,8 +439,8 @@ const pathways = new PathwaysBuilder({
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: "your-api-key",
-  sessionUserResolvers: sessionStore // Enable session-specific resolvers
-});
+  sessionUserResolvers: sessionStore, // Enable session-specific resolvers
+})
 ```
 
 #### Creating Session Pathways
@@ -445,31 +448,32 @@ const pathways = new PathwaysBuilder({
 Create a session-specific pathway wrapper:
 
 ```typescript
-import { SessionPathwayBuilder } from "@flowcore/pathways";
+import { SessionPathwayBuilder } from "@flowcore/pathways"
 
 // Create a session with an auto-generated session ID
-const session = new SessionPathwayBuilder(pathways);
-const sessionId = session.getSessionId(); // Get the auto-generated ID
+const session = new SessionPathwayBuilder(pathways)
+const sessionId = session.getSessionId() // Get the auto-generated ID
 
 // Or create a session with a specific session ID
-const customSession = new SessionPathwayBuilder(pathways, "user-session-123");
+const customSession = new SessionPathwayBuilder(pathways, "user-session-123")
 ```
 
 #### Session-Specific User Resolvers
 
-You can register different user resolvers for different sessions, allowing you to associate users with specific sessions:
+You can register different user resolvers for different sessions, allowing you to associate users with specific
+sessions:
 
 ```typescript
 // Register a user resolver for a specific session
 pathways.withSessionUserResolver("user-session-123", async () => {
   // Return the user ID for this session
-  return "user-456";
-});
+  return "user-456"
+})
 
 // Alternative: Register directly through the session instance
 session.withUserResolver(async () => {
-  return "user-789";
-});
+  return "user-789"
+})
 ```
 
 #### Writing Events with Session Context
@@ -482,16 +486,16 @@ await session.write("order/placed", {
   orderId: "ord-123",
   userId: "user-456",
   total: 99.99,
-  items: [{ id: "item-1", quantity: 2 }]
-});
+  items: [{ id: "item-1", quantity: 2 }],
+})
 
 // You can override the session ID for a specific write
 await session.write(
   "order/placed",
   orderData,
   {}, // No metadata
-  { sessionId: "different-session" }
-);
+  { sessionId: "different-session" },
+)
 ```
 
 #### Session ID in Audit Events
@@ -501,12 +505,12 @@ When auditing is enabled, the session ID is included in the audit metadata:
 ```typescript
 // Enable auditing
 pathways.withAudit((path, event) => {
-  console.log(`Audit: ${path} event ${event.eventId}`);
+  console.log(`Audit: ${path} event ${event.eventId}`)
   // The session ID will be included in event metadata
-});
+})
 
 // Now when writing events through a session
-await session.write("order/placed", orderData);
+await session.write("order/placed", orderData)
 // The session ID is automatically included in the audit metadata
 ```
 

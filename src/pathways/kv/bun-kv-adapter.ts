@@ -1,5 +1,5 @@
-import { BunSqliteKeyValue } from "npm:bun-sqlite-key-value@1.13.1";
-import type { KvAdapter } from "./kv-adapter.ts";
+import { BunSqliteKeyValue } from "npm:bun-sqlite-key-value@1.13.1"
+import type { KvAdapter } from "./kv-adapter.ts"
 
 /**
  * KV adapter implementation for Bun runtime
@@ -11,13 +11,13 @@ export class BunKvAdapter implements KvAdapter {
    * The underlying Bun SQLite key-value store
    * @private
    */
-  private store: BunSqliteKeyValue;
+  private store: BunSqliteKeyValue
 
   /**
    * Creates a new in-memory Bun KV adapter
    */
   constructor() {
-    this.store = new BunSqliteKeyValue(":memory:");
+    this.store = new BunSqliteKeyValue(":memory:")
   }
 
   /**
@@ -28,8 +28,8 @@ export class BunKvAdapter implements KvAdapter {
    * @returns The stored value or null if not found
    */
   get<T>(key: string): T | null {
-    const value = this.store.get(key);
-    return value as T | null;
+    const value = this.store.get(key)
+    return value as T | null
   }
 
   /**
@@ -40,6 +40,6 @@ export class BunKvAdapter implements KvAdapter {
    * @param ttlMs Time-to-live in milliseconds
    */
   set(key: string, value: unknown, ttlMs: number): void {
-    this.store.set(key, value, ttlMs);
+    this.store.set(key, value, ttlMs)
   }
 }

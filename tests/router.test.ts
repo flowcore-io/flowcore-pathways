@@ -1,29 +1,31 @@
 // @ts-nocheck
-import { Type } from "@sinclair/typebox";
-import { assertEquals, assertExists, assertRejects, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { ConsoleLogger, FlowcoreEvent, PathwayRouter, PathwaysBuilder } from "../src/mod.ts";
-import { createTestServer } from "./helpers/test-server.ts";
+import { Type } from "@sinclair/typebox"
+import { assertEquals, assertExists, assertRejects, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts"
+import { ConsoleLogger, FlowcoreEvent, PathwayRouter, PathwaysBuilder } from "../src/mod.ts"
+import { createTestServer } from "./helpers/test-server.ts"
 
 type FlowcoreEventWithAggregator = FlowcoreEvent & {
-  aggregator?: string;
-};
+  aggregator?: string
+}
 
 Deno.test("Router Tests", async (t) => {
-  const server = createTestServer();
+  const server = createTestServer()
   const testSchema = Type.Object({
     id: Type.String(),
     organizationId: Type.String(),
     dataCoreId: Type.String(),
     flowTypeId: Type.String(),
     name: Type.String(),
-  });
+  })
 
-  const TEST_SECRET_KEY = "test-secret-key";
+  const TEST_SECRET_KEY = "test-secret-key"
   // Create a test logger for the router
-  const testLogger = new ConsoleLogger();
+  const testLogger = new ConsoleLogger()
 
   // Create a test event with the correct structure
-  const createTestEvent = (overrides = {}): Omit<FlowcoreEventWithAggregator, keyof typeof overrides> & typeof overrides => ({
+  const createTestEvent = (
+    overrides = {},
+  ): Omit<FlowcoreEventWithAggregator, keyof typeof overrides> & typeof overrides => ({
     eventId: "test-event-id",
     tenant: "test-tenant",
     dataCoreId: "test-data-core",
@@ -40,7 +42,7 @@ Deno.test("Router Tests", async (t) => {
       name: "test-name",
     },
     ...overrides,
-  });
+  })
 
   await t.step("Router - Valid Pathway Key", async () => {
     // We don't need the server for this test as we're just testing the router logic
@@ -50,48 +52,48 @@ Deno.test("Router Tests", async (t) => {
       dataCore: "test-data-core",
       apiKey: "test-api-key",
       pathwayTimeoutMs: 1000,
-    });
+    })
 
-    const pathwayKey = "event-type.1/event-type.created.0" as const;
+    const pathwayKey = "event-type.1/event-type.created.0" as const
     pathways.register({
       flowType: "event-type.1",
       eventType: "event-type.created.0",
       schema: testSchema,
-    });
+    })
 
     // Mock the process method
-    let processedPathway = "";
-    let processedEvent: FlowcoreEvent | null = null;
-    const originalProcess = pathways.process;
+    let processedPathway = ""
+    let processedEvent: FlowcoreEvent | null = null
+    const originalProcess = pathways.process
     // deno-lint-ignore no-explicit-any
     pathways.process = async (pathway: any, event: FlowcoreEvent) => {
-      processedPathway = pathway as string;
-      processedEvent = event;
-    };
+      processedPathway = pathway as string
+      processedEvent = event
+    }
 
-    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger)
 
     // Test valid event processing
-    const validEvent = createTestEvent();
+    const validEvent = createTestEvent()
 
-    await router.processEvent(validEvent as FlowcoreEvent, TEST_SECRET_KEY);
+    await router.processEvent(validEvent as FlowcoreEvent, TEST_SECRET_KEY)
 
     // Verify the router processed the event correctly
-    assertEquals(processedPathway, pathwayKey);
-    assertExists(processedEvent, "processedEvent should not be null");
-    
+    assertEquals(processedPathway, pathwayKey)
+    assertExists(processedEvent, "processedEvent should not be null")
+
     // Type assertions to appease the linter
     if (processedEvent) {
-      assertEquals(processedEvent.eventId, validEvent.eventId);
-      
-      const processedPayload = processedEvent.payload as Record<string, unknown>;
-      const validPayload = validEvent.payload as Record<string, unknown>;
-      assertEquals(processedPayload.id, validPayload.id);
+      assertEquals(processedEvent.eventId, validEvent.eventId)
+
+      const processedPayload = processedEvent.payload as Record<string, unknown>
+      const validPayload = validEvent.payload as Record<string, unknown>
+      assertEquals(processedPayload.id, validPayload.id)
     }
-    
+
     // Restore original method
-    pathways.process = originalProcess;
-  });
+    pathways.process = originalProcess
+  })
 
   await t.step("Router - Unknown Pathway", async () => {
     const pathways = new PathwaysBuilder({
@@ -100,25 +102,25 @@ Deno.test("Router Tests", async (t) => {
       dataCore: "test-data-core",
       apiKey: "test-api-key",
       pathwayTimeoutMs: 1000,
-    });
+    })
 
-    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger)
 
     // Test event with unknown pathway
     const unknownEvent = createTestEvent({
       flowType: "unknown-flow-type",
       eventType: "unknown-event-type",
-    });
+    })
 
     // Assert that processing an unknown pathway throws an error
     await assertRejects(
       async () => {
-        await router.processEvent(unknownEvent as FlowcoreEvent, TEST_SECRET_KEY);
+        await router.processEvent(unknownEvent as FlowcoreEvent, TEST_SECRET_KEY)
       },
       Error,
-      "Pathway unknown-flow-type/unknown-event-type not found"
-    );
-  });
+      "Pathway unknown-flow-type/unknown-event-type not found",
+    )
+  })
 
   await t.step("Router - Multiple Pathways", async () => {
     const pathways = new PathwaysBuilder({
@@ -127,7 +129,7 @@ Deno.test("Router Tests", async (t) => {
       dataCore: "test-data-core",
       apiKey: "test-api-key",
       pathwayTimeoutMs: 1000,
-    });
+    })
 
     // Register multiple pathways
     pathways
@@ -140,17 +142,17 @@ Deno.test("Router Tests", async (t) => {
         flowType: "event-type.1",
         eventType: "event-type.updated.0",
         schema: testSchema,
-      });
+      })
 
     // Mock the process method
-    const processedPathways: string[] = [];
-    const originalProcess = pathways.process;
+    const processedPathways: string[] = []
+    const originalProcess = pathways.process
     // deno-lint-ignore no-explicit-any
     pathways.process = async (pathway: any, event: FlowcoreEvent) => {
-      processedPathways.push(pathway as string);
-    };
+      processedPathways.push(pathway as string)
+    }
 
-    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger)
 
     // Process multiple events
     const events = [
@@ -162,20 +164,20 @@ Deno.test("Router Tests", async (t) => {
         eventId: "test-event-id-2",
         eventType: "event-type.updated.0",
       }),
-    ];
+    ]
 
     for (const event of events) {
-      await router.processEvent(event as FlowcoreEvent, TEST_SECRET_KEY);
+      await router.processEvent(event as FlowcoreEvent, TEST_SECRET_KEY)
     }
 
     // Verify both events were processed with correct pathways
-    assertEquals(processedPathways.length, 2);
-    assertEquals(processedPathways[0], "event-type.1/event-type.created.0");
-    assertEquals(processedPathways[1], "event-type.1/event-type.updated.0");
-    
+    assertEquals(processedPathways.length, 2)
+    assertEquals(processedPathways[0], "event-type.1/event-type.created.0")
+    assertEquals(processedPathways[1], "event-type.1/event-type.updated.0")
+
     // Restore original method
-    pathways.process = originalProcess;
-  });
+    pathways.process = originalProcess
+  })
 
   await t.step("Router - Aggregator Field Support", async () => {
     const pathways = new PathwaysBuilder({
@@ -184,48 +186,48 @@ Deno.test("Router Tests", async (t) => {
       dataCore: "test-data-core",
       apiKey: "test-api-key",
       pathwayTimeoutMs: 1000,
-    });
+    })
 
-    const pathwayKey = "legacy-flow/event-type.created.0" as const;
+    const pathwayKey = "legacy-flow/event-type.created.0" as const
     pathways.register({
       flowType: "legacy-flow",
       eventType: "event-type.created.0",
       schema: testSchema,
-    });
+    })
 
     // Mock the process method
-    let processedPathway = "";
-    let processedEvent: FlowcoreEvent | null = null;
-    const originalProcess = pathways.process;
+    let processedPathway = ""
+    let processedEvent: FlowcoreEvent | null = null
+    const originalProcess = pathways.process
     // deno-lint-ignore no-explicit-any
     pathways.process = async (pathway: any, event: FlowcoreEvent) => {
-      processedPathway = pathway as string;
-      processedEvent = event;
-    };
+      processedPathway = pathway as string
+      processedEvent = event
+    }
 
-    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger)
 
     // Test event with aggregator field instead of flowType
     const legacyEvent = createTestEvent({
       flowType: undefined,
       aggregator: "legacy-flow", // Legacy field
       eventType: "event-type.created.0",
-    });
+    })
 
-    await router.processEvent(legacyEvent as FlowcoreEvent, TEST_SECRET_KEY);
+    await router.processEvent(legacyEvent as FlowcoreEvent, TEST_SECRET_KEY)
 
     // Verify the router processed the event correctly using the aggregator field
-    assertEquals(processedPathway, pathwayKey);
-    assertExists(processedEvent, "processedEvent should not be null");
-    
+    assertEquals(processedPathway, pathwayKey)
+    assertExists(processedEvent, "processedEvent should not be null")
+
     // Type assertions to appease the linter
     if (processedEvent) {
-      assertEquals(processedEvent.flowType, "legacy-flow");
+      assertEquals(processedEvent.flowType, "legacy-flow")
     }
-    
+
     // Restore original method
-    pathways.process = originalProcess;
-  });
+    pathways.process = originalProcess
+  })
 
   await t.step("Router - Invalid Secret Key", async () => {
     const pathways = new PathwaysBuilder({
@@ -234,22 +236,22 @@ Deno.test("Router Tests", async (t) => {
       dataCore: "test-data-core",
       apiKey: "test-api-key",
       pathwayTimeoutMs: 1000,
-    });
+    })
 
-    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger);
+    const router = new PathwayRouter(pathways, TEST_SECRET_KEY, testLogger)
 
     // Test valid event with wrong secret key
-    const validEvent = createTestEvent();
+    const validEvent = createTestEvent()
 
     // Assert that processing with wrong secret key throws an error
     await assertRejects(
       async () => {
-        await router.processEvent(validEvent as FlowcoreEvent, "wrong-secret-key");
+        await router.processEvent(validEvent as FlowcoreEvent, "wrong-secret-key")
       },
       Error,
-      "Invalid secret key"
-    );
-  });
+      "Invalid secret key",
+    )
+  })
 
   await t.step("Router - Constructor Requires Secret Key", async () => {
     const pathways = new PathwaysBuilder({
@@ -258,15 +260,15 @@ Deno.test("Router Tests", async (t) => {
       dataCore: "test-data-core",
       apiKey: "test-api-key",
       pathwayTimeoutMs: 1000,
-    });
+    })
 
     // Assert that creating router with empty secret key throws an error
     assertThrows(
       () => {
-        new PathwayRouter(pathways, "", testLogger);
+        new PathwayRouter(pathways, "", testLogger)
       },
       Error,
-      "Secret key is required for PathwayRouter"
-    );
-  });
-}); 
+      "Secret key is required for PathwayRouter",
+    )
+  })
+})
