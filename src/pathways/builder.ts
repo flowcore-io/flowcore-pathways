@@ -58,10 +58,20 @@ export type AuditMode = "user" | "system"
 export type AuditHandler = (path: string, event: FlowcoreEvent) => void
 
 /**
+ * Represents an entity that can be used for audit purposes
+ * @property entityId The unique identifier for the entity
+ * @property entityType The type of entity (e.g., "user" or "key")
+ */
+export type UserResolverEntity = {
+  entityId: string
+  entityType: "user" | "key"
+}
+
+/**
  * Async function that resolves to the current user ID
  * Used for audit functionality to track which user initiated an action
  */
-export type UserIdResolver = () => Promise<string>
+export type UserIdResolver = () => Promise<UserResolverEntity>
 
 /**
  * Extended webhook send options with additional audit-specific options
@@ -797,7 +807,7 @@ export class PathwaysBuilder<
     const finalMetadata: EventMetadata = metadata ? { ...metadata } : {}
 
     // Check for session-specific user resolver
-    let userId: string | undefined
+    let userId: UserResolverEntity | undefined
     if (options?.sessionId) {
       const sessionUserResolver = this.getSessionUserResolver(options.sessionId)
       if (sessionUserResolver) {
@@ -844,11 +854,13 @@ export class PathwaysBuilder<
       // Add appropriate audit metadata based on mode
       if (auditMode === "system") {
         finalMetadata["audit/user-id"] = "system"
-        finalMetadata["audit/on-behalf-of"] = userId
+        finalMetadata["audit/on-behalf-of"] = userId.entityId
         finalMetadata["audit/mode"] = "system"
+        finalMetadata["audit/entity-type"] = userId.entityType
       } else {
-        finalMetadata["audit/user-id"] = userId
+        finalMetadata["audit/user-id"] = userId.entityId
         finalMetadata["audit/mode"] = "user" // Always set mode for user
+        finalMetadata["audit/entity-type"] = userId.entityType
       }
     }
     let eventIds: string | string[] = []
@@ -926,7 +938,7 @@ export class PathwaysBuilder<
     const finalMetadata: EventMetadata = metadata ? { ...metadata } : {}
 
     // Check for session-specific user resolver
-    let userId: string | undefined
+    let userId: UserResolverEntity | undefined
     if (options?.sessionId) {
       const sessionUserResolver = this.getSessionUserResolver(options.sessionId)
       if (sessionUserResolver) {
@@ -973,11 +985,13 @@ export class PathwaysBuilder<
       // Add appropriate audit metadata based on mode
       if (auditMode === "system") {
         finalMetadata["audit/user-id"] = "system"
-        finalMetadata["audit/on-behalf-of"] = userId
+        finalMetadata["audit/on-behalf-of"] = userId.entityId
         finalMetadata["audit/mode"] = "system"
+        finalMetadata["audit/entity-type"] = userId.entityType
       } else {
-        finalMetadata["audit/user-id"] = userId
+        finalMetadata["audit/user-id"] = userId.entityId
         finalMetadata["audit/mode"] = "user" // Always set mode for user
+        finalMetadata["audit/entity-type"] = userId.entityType
       }
     }
     let eventIds: string | string[] = []

@@ -127,8 +127,14 @@ Deno.test({
         const sessionId1 = "session-1"
         const sessionId2 = "session-2"
 
-        pathwayBuilder.withSessionUserResolver(sessionId1, async () => "user-1")
-        pathwayBuilder.withSessionUserResolver(sessionId2, async () => "user-2")
+        pathwayBuilder.withSessionUserResolver(sessionId1, async () => ({
+          entityId: "user-1",
+          entityType: "user",
+        }))
+        pathwayBuilder.withSessionUserResolver(sessionId2, async () => ({
+          entityId: "user-2",
+          entityType: "user",
+        }))
 
         // Create session pathway builders
         const sessionBuilder1 = new SessionPathwayBuilder(pathwayBuilder, sessionId1)
@@ -190,8 +196,14 @@ Deno.test({
         const defaultSessionId = "default-session"
         const explicitSessionId = "explicit-session"
 
-        pathwayBuilder.withSessionUserResolver(defaultSessionId, async () => "default-user")
-        pathwayBuilder.withSessionUserResolver(explicitSessionId, async () => "explicit-user")
+        pathwayBuilder.withSessionUserResolver(defaultSessionId, async () => ({
+          entityId: "default-user",
+          entityType: "user",
+        }))
+        pathwayBuilder.withSessionUserResolver(explicitSessionId, async () => ({
+          entityId: "explicit-user",
+          entityType: "user",
+        }))
 
         // Create session pathway builder with default session ID
         const sessionBuilder = new SessionPathwayBuilder(pathwayBuilder, defaultSessionId)

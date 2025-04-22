@@ -428,10 +428,7 @@ and manage user sessions in your application.
 To use session-specific functionality, first configure your `PathwaysBuilder` with session support:
 
 ```typescript
-import { createKvAdapter, PathwaysBuilder } from "@flowcore/pathways"
-
-// Create a KV adapter for storing session information
-const sessionStore = await createKvAdapter()
+import { PathwaysBuilder } from "@flowcore/pathways"
 
 // Configure the builder with session support
 const pathways = new PathwaysBuilder({
@@ -439,7 +436,7 @@ const pathways = new PathwaysBuilder({
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: "your-api-key",
-  sessionUserResolvers: sessionStore, // Enable session-specific resolvers
+  enableSessionUserResolvers: true, // Enable session-specific resolvers
 })
 ```
 
@@ -467,12 +464,18 @@ sessions:
 // Register a user resolver for a specific session
 pathways.withSessionUserResolver("user-session-123", async () => {
   // Return the user ID for this session
-  return "user-456"
+  return {
+    entityId: "user-456",
+    entityType: "user",
+  }
 })
 
 // Alternative: Register directly through the session instance
 session.withUserResolver(async () => {
-  return "user-789"
+  return {
+    entityId: "key-789",
+    entityType: "key",
+  }
 })
 ```
 

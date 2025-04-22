@@ -46,7 +46,10 @@ Deno.test({
     const auditEvents: Array<{ path: string; event: FlowcoreEvent }> = []
 
     // Mock user ID resolver function
-    const getUserId: UserIdResolver = async () => "test-user-123"
+    const getUserId: UserIdResolver = async () => ({
+      entityId: "test-user-123",
+      entityType: "user",
+    })
 
     await t.step("Configure PathwaysBuilder with audit", async () => {
       const builder = new PathwaysBuilder({

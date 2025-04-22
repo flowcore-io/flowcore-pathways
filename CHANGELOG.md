@@ -2,17 +2,19 @@
 
 ## [0.12.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.11.0...v0.12.0) (2025-04-15)
 
-
 ### Features
 
-* **pathways:** :sparkles: add SessionUserResolver for session-specific user resolvers ([87be987](https://github.com/flowcore-io/flowcore-pathways/commit/87be987825e6c1b465950644d8a3b9d6ed170a7d))
-
+- **pathways:** :sparkles: add SessionUserResolver for session-specific user resolvers
+  ([87be987](https://github.com/flowcore-io/flowcore-pathways/commit/87be987825e6c1b465950644d8a3b9d6ed170a7d))
 
 ### Bug Fixes
 
-* :rotating_light: fixed linting errors ([a4ed698](https://github.com/flowcore-io/flowcore-pathways/commit/a4ed69892ff604e8ef57e9eafae411c61ad235bb))
-* **pathways:** :art: update SessionUser store to support unknown timeout types ([7330cbf](https://github.com/flowcore-io/flowcore-pathways/commit/7330cbfef35001bbb91b2072e6a35345549c7383))
-* **pathways:** :bug: update session user resolvers to use enableSessionUserResolvers flag ([13623de](https://github.com/flowcore-io/flowcore-pathways/commit/13623de687db252c9ba89499d5ce3171783014ef))
+- :rotating_light: fixed linting errors
+  ([a4ed698](https://github.com/flowcore-io/flowcore-pathways/commit/a4ed69892ff604e8ef57e9eafae411c61ad235bb))
+- **pathways:** :art: update SessionUser store to support unknown timeout types
+  ([7330cbf](https://github.com/flowcore-io/flowcore-pathways/commit/7330cbfef35001bbb91b2072e6a35345549c7383))
+- **pathways:** :bug: update session user resolvers to use enableSessionUserResolvers flag
+  ([13623de](https://github.com/flowcore-io/flowcore-pathways/commit/13623de687db252c9ba89499d5ce3171783014ef))
 
 ## [0.11.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.10.0...v0.11.0) (2025-04-14)
 
