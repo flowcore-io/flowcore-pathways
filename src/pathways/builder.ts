@@ -22,6 +22,14 @@ import type {
   SendWebhookBatch,
   WritablePathway,
 } from "./types.ts"
+import {
+  AUDIT_ENTITY_TYPE,
+  AUDIT_MODE,
+  AUDIT_ON_BEHALF_OF,
+  AUDIT_SYSTEM_MODE,
+  AUDIT_USER_ID,
+  AUDIT_USER_MODE,
+} from "./constants.ts"
 
 /**
  * Default timeout for pathway processing in milliseconds (10 seconds)
@@ -852,15 +860,15 @@ export class PathwaysBuilder<
 
     if (userId) {
       // Add appropriate audit metadata based on mode
-      if (auditMode === "system") {
-        finalMetadata["audit/user-id"] = "system"
-        finalMetadata["audit/on-behalf-of"] = userId.entityId
-        finalMetadata["audit/mode"] = "system"
-        finalMetadata["audit/entity-type"] = userId.entityType
+      if (auditMode === AUDIT_SYSTEM_MODE) {
+        finalMetadata[AUDIT_USER_ID] = "system"
+        finalMetadata[AUDIT_ON_BEHALF_OF] = userId.entityId
+        finalMetadata[AUDIT_MODE] = "system"
+        finalMetadata[AUDIT_ENTITY_TYPE] = userId.entityType
       } else {
-        finalMetadata["audit/user-id"] = userId.entityId
-        finalMetadata["audit/mode"] = "user" // Always set mode for user
-        finalMetadata["audit/entity-type"] = userId.entityType
+        finalMetadata[AUDIT_USER_ID] = userId.entityId
+        finalMetadata[AUDIT_MODE] = AUDIT_USER_MODE // Always set mode for user
+        finalMetadata[AUDIT_ENTITY_TYPE] = userId.entityType
       }
     }
     let eventIds: string | string[] = []
@@ -983,15 +991,15 @@ export class PathwaysBuilder<
 
     if (userId) {
       // Add appropriate audit metadata based on mode
-      if (auditMode === "system") {
-        finalMetadata["audit/user-id"] = "system"
-        finalMetadata["audit/on-behalf-of"] = userId.entityId
-        finalMetadata["audit/mode"] = "system"
-        finalMetadata["audit/entity-type"] = userId.entityType
+      if (auditMode === AUDIT_SYSTEM_MODE) {
+        finalMetadata[AUDIT_USER_ID] = "system"
+        finalMetadata[AUDIT_ON_BEHALF_OF] = userId.entityId
+        finalMetadata[AUDIT_MODE] = "system"
+        finalMetadata[AUDIT_ENTITY_TYPE] = userId.entityType
       } else {
-        finalMetadata["audit/user-id"] = userId.entityId
-        finalMetadata["audit/mode"] = "user" // Always set mode for user
-        finalMetadata["audit/entity-type"] = userId.entityType
+        finalMetadata[AUDIT_USER_ID] = userId.entityId
+        finalMetadata[AUDIT_MODE] = AUDIT_USER_MODE // Always set mode for user
+        finalMetadata[AUDIT_ENTITY_TYPE] = userId.entityType
       }
     }
     let eventIds: string | string[] = []

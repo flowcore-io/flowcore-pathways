@@ -2,10 +2,10 @@
 
 ## [0.13.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.12.0...v0.13.0) (2025-04-22)
 
-
 ### Features
 
-* **session-pathways:** :sparkles: added support for api keys in session pathways ([0ada03e](https://github.com/flowcore-io/flowcore-pathways/commit/0ada03e10e0a8c837e23f0246ec2e1250ac56fd7))
+- **session-pathways:** :sparkles: added support for api keys in session pathways
+  ([0ada03e](https://github.com/flowcore-io/flowcore-pathways/commit/0ada03e10e0a8c837e23f0246ec2e1250ac56fd7))
 
 ## [0.12.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.11.0...v0.12.0) (2025-04-15)
 
