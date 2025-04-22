@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.13.0...v0.13.1) (2025-04-22)
+
+
+### Bug Fixes
+
+* **pathways:** :art: extract audit constants for better readability ([9a349b8](https://github.com/flowcore-io/flowcore-pathways/commit/9a349b865e8bc5627a50a4b132d368fcba4bf986))
+
 ## [0.13.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.12.0...v0.13.0) (2025-04-22)
 
 ### Features
