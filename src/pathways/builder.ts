@@ -92,6 +92,28 @@ export interface AuditWebhookSendOptions extends WebhookSendOptions {
 }
 
 /**
+ * Represents the set log level for different internal log messages
+ * @property debug Log level for debug messages
+ * @property info Log level for info messages
+ * @property warn Log level for warn messages
+ * @property error Log level for error messages
+ */
+export type LogLevel = keyof Pick<Logger, 'debug' | 'info' | 'warn' | 'error'>
+
+/**
+ * Configuration for log levels
+ * @property writeSuccess Log level used when a write operation is successful. Defaults to 'info'.
+ */
+export type LogLevelConfig = {
+  writeSuccess?: LogLevel
+}
+
+/**
+ * Internal log level configuration that ensures all properties are defined
+ */
+type InternalLogLevelConfig = Required<LogLevelConfig>
+
+/**
  * SessionUserResolver is a key-value store for storing and retrieving UserIdResolver functions
  * with a TTL (time to live).
  *
@@ -243,6 +265,7 @@ export class PathwaysBuilder<
   private readonly tenant: string
   private readonly dataCore: string
   private readonly apiKey: string
+  private readonly logLevel: InternalLogLevelConfig
 
   /**
    * Creates a new PathwaysBuilder instance
@@ -255,6 +278,8 @@ export class PathwaysBuilder<
    * @param options.logger Optional logger instance
    * @param options.enableSessionUserResolvers Whether to enable session user resolvers
    * @param options.overrideSessionUserResolvers Optional SessionUserResolver instance to override the default
+   * @param options.logLevel Optional configuration for log levels
+   * @param options.logLevel.writeSuccess Log level for write success messages ('info' or 'debug'). Defaults to 'info'.
    */
   constructor({
     baseUrl,
@@ -265,6 +290,7 @@ export class PathwaysBuilder<
     logger,
     enableSessionUserResolvers,
     overrideSessionUserResolvers,
+    logLevel,
   }: {
     baseUrl: string
     tenant: string
@@ -274,9 +300,15 @@ export class PathwaysBuilder<
     logger?: Logger
     enableSessionUserResolvers?: boolean
     overrideSessionUserResolvers?: SessionUserResolver
+    logLevel?: LogLevelConfig
   }) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger()
+    
+    // Initialize log levels with defaults
+    this.logLevel = {
+      writeSuccess: logLevel?.writeSuccess ?? 'info'
+    }
 
     // Store configuration values for cloning
     this.baseUrl = baseUrl
@@ -881,7 +913,7 @@ export class PathwaysBuilder<
       eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]>)(data, finalMetadata, options)
     }
 
-    this.logger.info(`Successfully wrote to pathway`, {
+    this.logger[this.logLevel.writeSuccess](`Successfully wrote to pathway`, {
       pathway: pathStr,
       eventIds: Array.isArray(eventIds) ? eventIds : [eventIds],
       fireAndForget: options?.fireAndForget,
@@ -1006,7 +1038,7 @@ export class PathwaysBuilder<
     this.logger.debug(`Writing batch webhook data to pathway`, { pathway: pathStr })
     eventIds = await (this.batchWriters[path] as SendWebhookBatch<TPathway[TPath]>)(data, finalMetadata, options)
 
-    this.logger.info(`Successfully wrote to pathway`, {
+    this.logger[this.logLevel.writeSuccess](`Successfully wrote to pathway`, {
       pathway: pathStr,
       eventIds: Array.isArray(eventIds) ? eventIds : [eventIds],
       fireAndForget: options?.fireAndForget,
