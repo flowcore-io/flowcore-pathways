@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.13.1...v0.13.2) (2025-05-14)
+
+
+### Performance Improvements
+
+* ability to adjust the log level of internal logs ([eaeb9c5](https://github.com/flowcore-io/flowcore-pathways/commit/eaeb9c58a53be3effb6ba54621535a531b11e82e))
+
 ## [0.13.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.13.0...v0.13.1) (2025-04-22)
 
 
