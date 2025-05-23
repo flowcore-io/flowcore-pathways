@@ -455,9 +455,9 @@ export class PathwaysBuilder<
 
     // Validate event payload against schema if available
     if (this.schemas[pathway]) {
+      const parsedPayload = this.schemas[pathway].safeParse(data.payload)
       try {
-        const isValid = this.schemas[pathway].safeParse(data.payload).success
-        if (!isValid) {
+        if (!parsedPayload.success) {
           const error = `Event payload does not match schema for pathway ${pathwayStr}`
           this.logger.error(error)
           throw new Error(error)
@@ -469,6 +469,7 @@ export class PathwaysBuilder<
         this.logger.error(error)
         throw new Error(error)
       }
+      data.payload = parsedPayload.data
     }
 
     // Call audit handler if configured
@@ -807,7 +808,7 @@ export class PathwaysBuilder<
    */
   async write<TPath extends TWritablePaths>(
     path: TPath,
-    data: TPathway[TPath]["input"],
+    inputData: TPathway[TPath]["input"],
     metadata?: EventMetadata,
     options?: PathwayWriteOptions,
   ): Promise<string | string[]> {
@@ -835,7 +836,8 @@ export class PathwaysBuilder<
     }
 
     const schema = this.schemas[path]
-    if (!schema.safeParse(data).success) {
+    const parsedData = schema.safeParse(inputData)
+    if (!parsedData.success) {
       const errorMessage = `Invalid data for pathway ${pathStr}`
       this.logger.error(errorMessage, new Error(errorMessage), {
         pathway: pathStr,
@@ -843,6 +845,7 @@ export class PathwaysBuilder<
       })
       throw new Error(errorMessage)
     }
+    const data = parsedData.data
 
     // Create a copy of the metadata to avoid modifying the original
     const finalMetadata: EventMetadata = metadata ? { ...metadata } : {}
@@ -938,7 +941,7 @@ export class PathwaysBuilder<
 
   async writeBatch<TPath extends TWritablePaths>(
     path: TPath,
-    inputData: TPathway[TPath]["input"],
+    inputData: TPathway[TPath]["input"][],
     metadata?: EventMetadata,
     options?: PathwayWriteOptions,
   ): Promise<string | string[]> {
