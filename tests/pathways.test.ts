@@ -1,7 +1,7 @@
-import { Type } from "@sinclair/typebox"
 import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts"
 import { FlowcoreEvent, PathwaysBuilder } from "../src/mod.ts"
 import { createTestServer } from "./helpers/test-server.ts"
+import { z } from "zod"
 
 // Add ignore flag to avoid resource leak errors, but we still clean up properly
 Deno.test({
@@ -13,8 +13,8 @@ Deno.test({
     const mockPathwayState = new Map<string, boolean>()
     let pathwaysInstances: PathwaysBuilder[] = []
 
-    const testSchema = Type.Object({
-      test: Type.String(),
+    const testSchema = z.object({
+      test: z.string(),
     })
 
     await t.step("PathwaysBuilder - Configuration", () => {

@@ -1,8 +1,8 @@
 // @ts-nocheck
-import { Type } from "@sinclair/typebox"
 import { assertEquals, assertExists, assertRejects, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts"
 import { ConsoleLogger, FlowcoreEvent, PathwayRouter, PathwaysBuilder } from "../src/mod.ts"
 import { createTestServer } from "./helpers/test-server.ts"
+import { z } from "zod"
 
 type FlowcoreEventWithAggregator = FlowcoreEvent & {
   aggregator?: string
@@ -10,12 +10,12 @@ type FlowcoreEventWithAggregator = FlowcoreEvent & {
 
 Deno.test("Router Tests", async (t) => {
   const server = createTestServer()
-  const testSchema = Type.Object({
-    id: Type.String(),
-    organizationId: Type.String(),
-    dataCoreId: Type.String(),
-    flowTypeId: Type.String(),
-    name: Type.String(),
+  const testSchema = z.object({
+    id: z.string(),
+    organizationId: z.string(),
+    dataCoreId: z.string(),
+    flowTypeId: z.string(),
+    name: z.string(),
   })
 
   const TEST_SECRET_KEY = "test-secret-key"

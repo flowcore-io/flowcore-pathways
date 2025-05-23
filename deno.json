@@ -23,10 +23,10 @@
   "imports": {
     "@deno/dnt": "jsr:@deno/dnt@^0.41.3",
     "@flowcore/sdk-transformer-core": "npm:@flowcore/sdk-transformer-core@^2.3.6",
-    "@sinclair/typebox": "npm:@sinclair/typebox@^0.34.27",
     "node-cache": "npm:node-cache@^5.1.2",
     "rxjs": "npm:rxjs@^7.8.1",
-    "postgres": "npm:postgres@^3.4.3"
+    "postgres": "npm:postgres@^3.4.3",
+    "zod": "npm:zod@^3.25.23"
   },
   "fmt": {
     "exclude": [

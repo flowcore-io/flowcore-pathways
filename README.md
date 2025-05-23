@@ -55,14 +55,14 @@ yarn add @flowcore/pathways
 Here's a basic example to get you started with Flowcore Pathways:
 
 ```typescript
-import { Type } from "@sinclair/typebox"
+import { z } from "zod"
 import { PathwaysBuilder } from "@flowcore/pathways"
 
 // Define your event schema
-const userSchema = Type.Object({
-  id: Type.String(),
-  name: Type.String(),
-  email: Type.String(),
+const userSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
 })
 
 // Create a pathways builder
@@ -130,17 +130,17 @@ const pathways = new PathwaysBuilder({
 Register pathways with their schemas for type-safe event handling:
 
 ```typescript
-import { Type } from "@sinclair/typebox"
+import { z } from "zod"
 
 // Define your event schema
-const orderSchema = Type.Object({
-  orderId: Type.String(),
-  userId: Type.String(),
-  total: Type.Number(),
-  items: Type.Array(
-    Type.Object({
-      id: Type.String(),
-      quantity: Type.Number(),
+const orderSchema = z.object({
+  orderId: z.string(),
+  userId: z.string(),
+  total: z.number(),
+  items: z.array(
+    z.Object({
+      id: z.string(),
+      quantity: z.number(),
     }),
   ),
 })

@@ -1,5 +1,4 @@
-import { type Static, type TSchema, Type } from "@sinclair/typebox"
-import { Value } from "@sinclair/typebox/value"
+import { z, type ZodTypeAny } from "zod"
 import type {
   WebhookBuilder as WebhookBuilderType,
   WebhookFileData,
@@ -98,7 +97,7 @@ export interface AuditWebhookSendOptions extends WebhookSendOptions {
  * @property warn Log level for warn messages
  * @property error Log level for error messages
  */
-export type LogLevel = keyof Pick<Logger, 'debug' | 'info' | 'warn' | 'error'>
+export type LogLevel = keyof Pick<Logger, "debug" | "info" | "warn" | "error">
 
 /**
  * Configuration for log levels
@@ -209,7 +208,7 @@ export class SessionUser implements SessionUserResolver {
  */
 export class PathwaysBuilder<
   // deno-lint-ignore ban-types
-  TPathway extends Record<string, unknown> = {},
+  TPathway extends Record<string, { input: unknown; output: unknown }> = {},
   TWritablePaths extends keyof TPathway = never,
 > {
   private readonly pathways: TPathway = {} as TPathway
@@ -231,16 +230,17 @@ export class PathwaysBuilder<
       Subject<{ event: FlowcoreEvent; error: Error }>
     >
   private readonly globalErrorSubject = new Subject<{ pathway: string; event: FlowcoreEvent; error: Error }>()
-  private readonly writers: Record<TWritablePaths, (SendWebhook<TPathway[TWritablePaths]> | SendFilehook)> =
+  private readonly writers: Record<TWritablePaths, (SendWebhook<TPathway[TWritablePaths]["output"]> | SendFilehook)> =
     {} as Record<
       TWritablePaths,
-      (SendWebhook<TPathway[TWritablePaths]> | SendFilehook)
+      (SendWebhook<TPathway[TWritablePaths]["output"]> | SendFilehook)
     >
-  private readonly batchWriters: Record<TWritablePaths, SendWebhookBatch<TPathway[TWritablePaths]>> = {} as Record<
-    TWritablePaths,
-    SendWebhookBatch<TPathway[TWritablePaths]>
-  >
-  private readonly schemas: Record<keyof TPathway, TSchema> = {} as Record<keyof TPathway, TSchema>
+  private readonly batchWriters: Record<TWritablePaths, SendWebhookBatch<TPathway[TWritablePaths]["output"]>> =
+    {} as Record<
+      TWritablePaths,
+      SendWebhookBatch<TPathway[TWritablePaths]["output"]>
+    >
+  private readonly schemas: Record<keyof TPathway, ZodTypeAny> = {} as Record<keyof TPathway, ZodTypeAny>
   private readonly writable: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
   private readonly timeouts: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
   private readonly maxRetries: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
@@ -304,10 +304,10 @@ export class PathwaysBuilder<
   }) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger()
-    
+
     // Initialize log levels with defaults
     this.logLevel = {
-      writeSuccess: logLevel?.writeSuccess ?? 'info'
+      writeSuccess: logLevel?.writeSuccess ?? "info",
     }
 
     // Store configuration values for cloning
@@ -455,9 +455,9 @@ export class PathwaysBuilder<
 
     // Validate event payload against schema if available
     if (this.schemas[pathway]) {
+      const parsedPayload = this.schemas[pathway].safeParse(data.payload)
       try {
-        const isValid = Value.Check(this.schemas[pathway], data.payload)
-        if (!isValid) {
+        if (!parsedPayload.success) {
           const error = `Event payload does not match schema for pathway ${pathwayStr}`
           this.logger.error(error)
           throw new Error(error)
@@ -469,6 +469,7 @@ export class PathwaysBuilder<
         this.logger.error(error)
         throw new Error(error)
       }
+      data.payload = parsedPayload.data
     }
 
     // Call audit handler if configured
@@ -586,7 +587,7 @@ export class PathwaysBuilder<
    * Registers a new pathway with the given contract
    * @template F The flow type string
    * @template E The event type string
-   * @template S The schema type extending TSchema
+   * @template S The schema type extending ZodTypeAny
    * @template W Boolean indicating if the pathway is writable (defaults to true)
    * @param contract The pathway contract describing the pathway
    * @returns The PathwaysBuilder instance with the new pathway registered
@@ -594,12 +595,12 @@ export class PathwaysBuilder<
   register<
     F extends string,
     E extends string,
-    S extends TSchema,
+    S extends ZodTypeAny,
     W extends boolean = true,
   >(
     contract: PathwayContract<F, E, S> & { writable?: W; maxRetries?: number; retryDelayMs?: number },
   ): PathwaysBuilder<
-    TPathway & Record<PathwayKey<F, E>, Static<S>>,
+    TPathway & Record<PathwayKey<F, E>, { output: z.infer<S>; input: z.input<S> }>,
     TWritablePaths | WritablePathway<PathwayKey<F, E>, W>
   > {
     const path = `${contract.flowType}/${contract.eventType}` as PathwayKey<F, E>
@@ -627,12 +628,13 @@ export class PathwaysBuilder<
           .buildFileWebhook(contract.flowType, contract.eventType).send as SendFilehook
       } else {
         this.writers[path as TWritablePaths] = this.webhookBuilderFactory()
-          .buildWebhook<TPathway[keyof TPathway]>(contract.flowType, contract.eventType).send as SendWebhook<
-            TPathway[keyof TPathway]
+          .buildWebhook<TPathway[keyof TPathway]["output"]>(contract.flowType, contract.eventType).send as SendWebhook<
+            TPathway[keyof TPathway]["output"]
           >
         this.batchWriters[path as TWritablePaths] = this.webhookBuilderFactory()
-          .buildWebhook<TPathway[keyof TPathway]>(contract.flowType, contract.eventType).sendBatch as SendWebhookBatch<
-            TPathway[keyof TPathway]
+          .buildWebhook<TPathway[keyof TPathway]["output"]>(contract.flowType, contract.eventType)
+          .sendBatch as SendWebhookBatch<
+            TPathway[keyof TPathway]["output"]
           >
       }
     }
@@ -660,7 +662,7 @@ export class PathwaysBuilder<
     })
 
     return this as PathwaysBuilder<
-      TPathway & Record<PathwayKey<F, E>, Static<S>>,
+      TPathway & Record<PathwayKey<F, E>, z.infer<S>>,
       TWritablePaths | WritablePathway<PathwayKey<F, E>, W>
     >
   }
@@ -672,7 +674,7 @@ export class PathwaysBuilder<
    * @param path The pathway key to get
    * @returns The pathway instance
    */
-  get<TPath extends keyof TPathway>(path: TPath): TPathway[TPath] {
+  get<TPath extends keyof TPathway>(path: TPath): TPathway[TPath]["output"] {
     this.logger.debug(`Getting pathway`, { pathway: String(path) })
     return this.pathways[path]
   }
@@ -690,7 +692,7 @@ export class PathwaysBuilder<
    */
   handle<TPath extends keyof TPathway>(
     path: TPath,
-    handler: (event: Omit<FlowcoreEvent, "payload"> & { payload: TPathway[TPath] }) => Promise<void> | void,
+    handler: (event: FlowcoreEvent<TPathway[TPath]["output"]>) => Promise<void> | void,
   ): PathwaysBuilder<TPathway, TWritablePaths> {
     const pathStr = String(path)
     this.logger.debug(`Setting handler for pathway`, { pathway: pathStr })
@@ -721,7 +723,7 @@ export class PathwaysBuilder<
    */
   subscribe<TPath extends keyof TPathway>(
     path: TPath,
-    handler: (event: Omit<FlowcoreEvent, "payload"> & { payload: TPathway[TPath] }) => void,
+    handler: (event: FlowcoreEvent<TPathway[TPath]["output"]>) => void,
     type: "before" | "after" | "all" = "before",
   ): PathwaysBuilder<TPathway, TWritablePaths> {
     const pathStr = String(path)
@@ -760,7 +762,7 @@ export class PathwaysBuilder<
    */
   onError<TPath extends keyof TPathway>(
     path: TPath,
-    handler: (error: Error, event: Omit<FlowcoreEvent, "payload"> & { payload: TPathway[TPath] }) => void,
+    handler: (error: Error, event: FlowcoreEvent<TPathway[TPath]["output"]>) => void,
   ): PathwaysBuilder<TPathway, TWritablePaths> {
     const pathStr = String(path)
     this.logger.debug(`Setting error handler for pathway`, { pathway: pathStr })
@@ -774,7 +776,7 @@ export class PathwaysBuilder<
 
     // Type cast to maintain internal consistency while preserving external type safety
     const typedHandler = (payload: { event: FlowcoreEvent; error: Error }) =>
-      handler(payload.error, payload.event as Omit<FlowcoreEvent, "payload"> & { payload: TPathway[TPath] })
+      handler(payload.error, payload.event as FlowcoreEvent<TPathway[TPath]["output"]>)
 
     this.errorObservers[path].subscribe(typedHandler)
     this.logger.info(`Error handler set for pathway`, { pathway: pathStr })
@@ -806,7 +808,7 @@ export class PathwaysBuilder<
    */
   async write<TPath extends TWritablePaths>(
     path: TPath,
-    data: TPathway[TPath],
+    inputData: TPathway[TPath]["input"],
     metadata?: EventMetadata,
     options?: PathwayWriteOptions,
   ): Promise<string | string[]> {
@@ -834,7 +836,8 @@ export class PathwaysBuilder<
     }
 
     const schema = this.schemas[path]
-    if (!Value.Check(schema, data)) {
+    const parsedData = schema.safeParse(inputData)
+    if (!parsedData.success) {
       const errorMessage = `Invalid data for pathway ${pathStr}`
       this.logger.error(errorMessage, new Error(errorMessage), {
         pathway: pathStr,
@@ -842,6 +845,7 @@ export class PathwaysBuilder<
       })
       throw new Error(errorMessage)
     }
+    const data = parsedData.data
 
     // Create a copy of the metadata to avoid modifying the original
     const finalMetadata: EventMetadata = metadata ? { ...metadata } : {}
@@ -910,7 +914,7 @@ export class PathwaysBuilder<
       eventIds = await (this.writers[path] as SendFilehook)(fileData, finalMetadata, options)
     } else {
       this.logger.debug(`Writing webhook data to pathway`, { pathway: pathStr })
-      eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]>)(data, finalMetadata, options)
+      eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]["output"]>)(data, finalMetadata, options)
     }
 
     this.logger[this.logLevel.writeSuccess](`Successfully wrote to pathway`, {
@@ -937,7 +941,7 @@ export class PathwaysBuilder<
 
   async writeBatch<TPath extends TWritablePaths>(
     path: TPath,
-    data: TPathway[TPath][],
+    inputData: TPathway[TPath]["input"][],
     metadata?: EventMetadata,
     options?: PathwayWriteOptions,
   ): Promise<string | string[]> {
@@ -965,7 +969,8 @@ export class PathwaysBuilder<
     }
 
     const schema = this.schemas[path]
-    if (!Value.Check(Type.Array(schema), data)) {
+    const parsedData = z.array(schema).safeParse(inputData)
+    if (!parsedData.success) {
       const errorMessage = `Invalid batch data for pathway ${pathStr}`
       this.logger.error(errorMessage, new Error(errorMessage), {
         pathway: pathStr,
@@ -973,6 +978,7 @@ export class PathwaysBuilder<
       })
       throw new Error(errorMessage)
     }
+    const data = parsedData.data
 
     // Create a copy of the metadata to avoid modifying the original
     const finalMetadata: EventMetadata = metadata ? { ...metadata } : {}
@@ -1036,7 +1042,11 @@ export class PathwaysBuilder<
     }
     let eventIds: string | string[] = []
     this.logger.debug(`Writing batch webhook data to pathway`, { pathway: pathStr })
-    eventIds = await (this.batchWriters[path] as SendWebhookBatch<TPathway[TPath]>)(data, finalMetadata, options)
+    eventIds = await (this.batchWriters[path] as SendWebhookBatch<TPathway[TPath]["output"]>)(
+      data as unknown as TPathway[TPath]["output"][],
+      finalMetadata,
+      options,
+    )
 
     this.logger[this.logLevel.writeSuccess](`Successfully wrote to pathway`, {
       pathway: pathStr,

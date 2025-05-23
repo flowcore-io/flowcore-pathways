@@ -1,4 +1,4 @@
-import type { TSchema } from "@sinclair/typebox"
+import type { ZodTypeAny } from "zod"
 import type { WebhookFileData, WebhookSendOptions } from "npm:@flowcore/sdk-transformer-core@^2.3.6"
 
 /**
@@ -16,7 +16,7 @@ type NonWritablePathwayError<T extends string> = T & {
  * @template E The event type
  * @template T The schema type
  */
-export interface PathwayContract<F extends string, E extends string, T extends TSchema> {
+export interface PathwayContract<F extends string, E extends string, T extends ZodTypeAny> {
   /**
    * The flow type for this pathway
    */

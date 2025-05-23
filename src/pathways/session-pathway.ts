@@ -61,7 +61,7 @@ function generateUUID(): string {
  */
 export class SessionPathwayBuilder<
   // deno-lint-ignore ban-types
-  TPathway extends Record<string, unknown> = {},
+  TPathway extends Record<string, { input: unknown; output: unknown }> = {},
   TWritablePaths extends keyof TPathway = never,
 > {
   private readonly pathwaysBuilder: PathwaysBuilder<TPathway, TWritablePaths>
@@ -135,7 +135,7 @@ export class SessionPathwayBuilder<
    */
   async write<TPath extends TWritablePaths>(
     path: TPath,
-    data: TPathway[TPath],
+    data: TPathway[TPath]["input"],
     metadata?: EventMetadata,
     options?: PathwayWriteOptions,
   ): Promise<string | string[]> {
