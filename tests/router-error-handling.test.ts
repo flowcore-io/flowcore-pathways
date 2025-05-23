@@ -1,7 +1,7 @@
-import { Type } from "@sinclair/typebox"
 import { assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts"
 import { ConsoleLogger, FlowcoreEvent, PathwayRouter, PathwaysBuilder } from "../src/mod.ts"
 import { createTestServer } from "./helpers/test-server.ts"
+import { z } from "zod"
 
 // Add ignore flag to avoid resource leak errors, but we still clean up properly
 Deno.test({
@@ -12,8 +12,8 @@ Deno.test({
     const server = createTestServer()
 
     // Define test schema
-    const testSchema = Type.Object({
-      test: Type.String(),
+    const testSchema = z.object({
+      test: z.string(),
     })
 
     const TEST_SECRET_KEY = "test-secret-key"

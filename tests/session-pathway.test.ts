@@ -1,7 +1,7 @@
-import { Type } from "@sinclair/typebox"
 import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts"
 import { PathwaysBuilder, SessionPathwayBuilder } from "../src/mod.ts"
 import { createTestServer } from "./helpers/test-server.ts"
+import { z } from "zod"
 
 // Add ignore flag to avoid resource leak errors, but we still clean up properly
 Deno.test({
@@ -13,8 +13,8 @@ Deno.test({
     let pathwaysInstances: PathwaysBuilder[] = []
 
     // Define a test schema for our pathway
-    const testSchema = Type.Object({
-      message: Type.String(),
+    const testSchema = z.object({
+      message: z.string(),
     })
 
     // Start the test server before running tests
