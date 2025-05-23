@@ -3,3 +3,4 @@
 src/local/
 npm/
 coverage/
+tmp/

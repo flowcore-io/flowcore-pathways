@@ -1,5 +1,5 @@
 {
-  "version": "4",
+  "version": "5",
   "specifiers": {
     "jsr:@david/code-block-writer@^13.0.2": "13.0.3",
     "jsr:@deno/cache-dir@~0.10.3": "0.10.3",
@@ -22,12 +22,12 @@
     "jsr:@ts-morph/bootstrap@0.24": "0.24.0",
     "jsr:@ts-morph/common@0.24": "0.24.0",
     "npm:@flowcore/sdk-transformer-core@^2.3.6": "2.3.6",
-    "npm:@sinclair/typebox@~0.34.27": "0.34.30",
     "npm:bun-sqlite-key-value@1.13.1": "1.13.1_typescript@5.8.2",
     "npm:node-cache@5.1.2": "5.1.2",
     "npm:node-cache@^5.1.2": "5.1.2",
     "npm:postgres@^3.4.3": "3.4.5",
-    "npm:rxjs@^7.8.1": "7.8.2"
+    "npm:rxjs@^7.8.1": "7.8.2",
+    "npm:zod@^3.25.23": "3.25.23"
   },
   "jsr": {
     "@david/code-block-writer@13.0.3": {
@@ -130,15 +130,12 @@
     "@flowcore/sdk-transformer-core@2.3.6": {
       "integrity": "sha512-7mf98rOntv8NAUjKwXmEz+iUAY3IOt3jmLFiqjmzrRH13p0jttVLr6WIc009QMZusuyU4TiZ/KX0+CedbByZ4A==",
       "dependencies": [
-        "@sinclair/typebox@0.32.35",
+        "@sinclair/typebox",
         "radash"
       ]
     },
     "@sinclair/typebox@0.32.35": {
       "integrity": "sha512-Ul3YyOTU++to8cgNkttakC0dWvpERr6RYoHO2W47DLbFvrwBDJUY31B1sImH6JZSYc4Kt4PyHtoPNu+vL2r2dA=="
-    },
-    "@sinclair/typebox@0.34.30": {
-      "integrity": "sha512-gFB3BiqjDxEoadW0zn+xyMVb7cLxPCoblVn2C/BKpI41WPYi2d6fwHAlynPNZ5O/Q4WEiujdnJzVtvG/Jc2CBQ=="
     },
     "bun-sqlite-key-value@1.13.1_typescript@5.8.2": {
       "integrity": "sha512-cb3thB8QXPeXB6B7NhObpADEYvtVNwqg/0ED7PgKt2OxVAxPSejkiTsy1+byQDC0AwLYajw3nhtr/ubKvcLcKw==",
@@ -171,7 +168,11 @@
       "integrity": "sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w=="
     },
     "typescript@5.8.2": {
-      "integrity": "sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ=="
+      "integrity": "sha512-aJn6wq13/afZp/jT9QZmwEjDqqvSGp1VT5GVg+f/t6/oVyrgXM6BY1h9BRh/O5p3PlUPAe+WuiEZOmb/49RqoQ==",
+      "bin": true
+    },
+    "zod@3.25.23": {
+      "integrity": "sha512-Od2bdMosahjSrSgJtakrwjMDb1zM1A3VIHCPGveZt/3/wlrTWBya2lmEh2OYe4OIu8mPTmmr0gnLHIWQXdtWBg=="
     }
   },
   "redirects": {
@@ -221,10 +222,10 @@
     "dependencies": [
       "jsr:@deno/dnt@~0.41.3",
       "npm:@flowcore/sdk-transformer-core@^2.3.6",
-      "npm:@sinclair/typebox@~0.34.27",
       "npm:node-cache@^5.1.2",
       "npm:postgres@^3.4.3",
-      "npm:rxjs@^7.8.1"
+      "npm:rxjs@^7.8.1",
+      "npm:zod@^3.25.23"
     ]
   }
 }
