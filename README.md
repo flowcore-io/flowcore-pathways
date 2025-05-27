@@ -88,9 +88,11 @@ pathways
 
     // You can write to another pathway if needed
     await pathways.write("notifications/sent", {
-      userId: event.payload.id,
-      message: `Welcome ${event.payload.name}!`,
-      channel: "email",
+      data: {
+        userId: event.payload.id,
+        message: `Welcome ${event.payload.name}!`,
+        channel: "email",
+      },
     })
   })
 ```
@@ -182,31 +184,32 @@ Send events to pathways:
 ```typescript
 // Basic write
 const eventId = await pathways.write("order/placed", {
-  orderId: "ord-123",
-  userId: "user-456",
-  total: 99.99,
-  items: [
-    { id: "item-1", quantity: 2 },
-  ],
+  data: {
+    orderId: "ord-123",
+    userId: "user-456",
+    total: 99.99,
+    items: [
+      { id: "item-1", quantity: 2 },
+    ],
+  },
 })
 
 // Write with metadata
-const eventId2 = await pathways.write(
-  "order/placed",
-  orderData,
-  {
+const eventId2 = await pathways.write("order/placed", {
+  data: orderData,
+  metadata: {
     correlationId: "corr-789",
     source: "checkout-service",
   },
-)
+})
 
 // Fire-and-forget mode (doesn't wait for processing)
-const eventId3 = await pathways.write(
-  "order/placed",
-  orderData,
-  undefined,
-  { fireAndForget: true },
-)
+const eventId3 = await pathways.write("order/placed", {
+  data: orderData,
+  options: {
+    fireAndForget: true,
+  },
+})
 ```
 
 ### Error Handling
