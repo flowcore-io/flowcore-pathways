@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.15.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.14.0...v0.15.0) (2025-05-27)
+
+
+### Features
+
+* file writer + changes to write and writeBatch args ([5cbbb8f](https://github.com/flowcore-io/flowcore-pathways/commit/5cbbb8f83c5b8cdba11436565c4d36c1ad3faa61))
+* unified write method ([19f00bd](https://github.com/flowcore-io/flowcore-pathways/commit/19f00bd550d5b167e0104d9c8ef5a2751a909041))
+
+
+### Bug Fixes
+
+* fix session pathway ([5b8b1a0](https://github.com/flowcore-io/flowcore-pathways/commit/5b8b1a0b846f97adb679ce79ddd61bdc8868caf9))
+* fix types ([2235058](https://github.com/flowcore-io/flowcore-pathways/commit/22350588845db0a1e320d80928653210048b9a29))
+* update readme ([2285c96](https://github.com/flowcore-io/flowcore-pathways/commit/2285c960d9f3d95c09092c91ab8b93b4fc98a94f))
+* update tests and readme ([c3af713](https://github.com/flowcore-io/flowcore-pathways/commit/c3af7133196bb5da5cf7f342c2922bb7ad778fe9))
+
 ## [0.14.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.13.2...v0.14.0) (2025-05-23)
 
 
