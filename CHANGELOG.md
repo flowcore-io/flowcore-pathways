@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.13.2...v0.14.0) (2025-05-23)
+
+
+### Features
+
+* switch from typebox to zod ([e20e8f8](https://github.com/flowcore-io/flowcore-pathways/commit/e20e8f81a9cf68eaa598be5d43ef34f346f136ea))
+
+
+### Bug Fixes
+
+* fix tests ([05496b9](https://github.com/flowcore-io/flowcore-pathways/commit/05496b993669449d8bfe758e2647d4f2a2dbbf06))
+* set defaults on write and process ([c01ac59](https://github.com/flowcore-io/flowcore-pathways/commit/c01ac59cd4097d832c009e90e7259644e84a9612))
+
 ## [0.13.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.13.1...v0.13.2) (2025-05-14)
 
 
