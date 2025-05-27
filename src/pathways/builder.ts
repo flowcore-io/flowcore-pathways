@@ -30,6 +30,7 @@ import {
   AUDIT_USER_MODE,
 } from "./constants.ts"
 import { FileEventSchema, FileInputSchema } from "./types.ts"
+import type { Buffer } from "node:buffer"
 
 /**
  * Default timeout for pathway processing in milliseconds (10 seconds)
@@ -957,13 +958,13 @@ export class PathwaysBuilder<
       )
     } else if (this.filePathways.has(path)) {
       const { fileId, fileName, fileContent, ...additionalProperties } = data as z.infer<typeof FileInputSchema>
-      const fileType = await fileTypeFromBuffer(fileContent)
+      const fileType = await fileTypeFromBuffer(fileContent as Buffer)
       eventIds = await (this.fileWriters[path] as SendFilehook)(
         {
           fileId,
           fileName,
           fileType: fileType?.mime ?? "application/octet-stream",
-          fileContent: new Blob([fileContent]),
+          fileContent: new Blob([fileContent as Buffer]),
           additionalProperties,
         },
         finalMetadata,

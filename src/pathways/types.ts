@@ -184,7 +184,7 @@ export type PathwayWriteOptions = WebhookSendOptions & {
 export const FileInputSchema: z.ZodObject<{
   fileId: z.ZodString
   fileName: z.ZodString
-  fileContent: z.ZodType<Buffer<ArrayBufferLike>, z.ZodTypeDef, Buffer<ArrayBufferLike>>
+  fileContent: z.ZodType<Buffer>
 }> = z.object({
   fileId: z.string(),
   fileName: z.string(),
