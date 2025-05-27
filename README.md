@@ -486,19 +486,19 @@ Events written through a session builder automatically include the session ID:
 ```typescript
 // Write an event with session context
 await session.write("order/placed", {
-  orderId: "ord-123",
-  userId: "user-456",
-  total: 99.99,
-  items: [{ id: "item-1", quantity: 2 }],
+  data: {
+    orderId: "ord-123",
+    userId: "user-456",
+    total: 99.99,
+    items: [{ id: "item-1", quantity: 2 }],
+  },
 })
 
 // You can override the session ID for a specific write
-await session.write(
-  "order/placed",
-  orderData,
-  {}, // No metadata
-  { sessionId: "different-session" },
-)
+await session.write("order/placed", {
+  data: orderData,
+  options: { sessionId: "different-session" },
+})
 ```
 
 #### Session ID in Audit Events
@@ -513,7 +513,7 @@ pathways.withAudit((path, event) => {
 })
 
 // Now when writing events through a session
-await session.write("order/placed", orderData)
+await session.write("order/placed", { data: orderData })
 // The session ID is automatically included in the audit metadata
 ```
 

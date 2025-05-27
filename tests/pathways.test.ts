@@ -120,7 +120,10 @@ Deno.test({
       })
 
       // Write to the pathway with fire-and-forget option
-      const eventId = await pathwayBuilder.write(pathwayKey, { test: "data" }, undefined, { fireAndForget: true })
+      const eventId = await pathwayBuilder.write(pathwayKey, {
+        data: { test: "data" },
+        options: { fireAndForget: true },
+      })
 
       // Get the last request
       const storedRequest = server.storedEvents.get(typeof eventId === "string" ? eventId : eventId[0])
@@ -205,7 +208,10 @@ Deno.test({
 
       // With fireAndForget: true, no error will be thrown back from write
       // We're just testing that the webhook was sent correctly
-      const eventId = await pathwayBuilder.write(pathwayKey, { test: "data" }, undefined, { fireAndForget: true })
+      const eventId = await pathwayBuilder.write(pathwayKey, {
+        data: { test: "data" },
+        options: { fireAndForget: true },
+      })
 
       // Verify the webhook was sent
       const storedRequest = server.storedEvents.get(typeof eventId === "string" ? eventId : eventId[0])
@@ -265,7 +271,7 @@ Deno.test({
       try {
         // Without fireAndForget, should wait for the event to be processed
         // but since our mock immediately returns processed=true, it won't time out
-        await pathwayBuilder.write(pathwayKey, { test: "data" }, undefined)
+        await pathwayBuilder.write(pathwayKey, { data: { test: "data" } })
 
         // Since the handler marks the event as processed before throwing,
         // write will return successfully even though the handler threw
@@ -308,7 +314,7 @@ Deno.test({
         // When using non-existent server, the network error should be thrown
         // regardless of fireAndForget setting, because the error happens during
         // the initial webhook send, not during processing
-        await pathwayBuilder.write(pathwayKey, { test: "data" })
+        await pathwayBuilder.write(pathwayKey, { data: { test: "data" } })
         throw new Error("Expected error was not thrown")
       } catch (error: unknown) {
         // We expect a network-related error
@@ -341,7 +347,10 @@ Deno.test({
       // Configure server to fail first N requests
       server.failNextRequests(3)
 
-      const eventId = await pathwayBuilder.write(pathwayKey, { test: "data" }, undefined, { fireAndForget: true })
+      const eventId = await pathwayBuilder.write(pathwayKey, {
+        data: { test: "data" },
+        options: { fireAndForget: true },
+      })
       assertExists(eventId)
 
       // Verify server received expected number of requests for retries
@@ -375,7 +384,11 @@ Deno.test({
         timestamp: new Date().toISOString(),
       }
 
-      const eventId = await pathwayBuilder.write(pathwayKey, { test: "data" }, metadata, { fireAndForget: true })
+      const eventId = await pathwayBuilder.write(pathwayKey, {
+        data: { test: "data" },
+        metadata,
+        options: { fireAndForget: true },
+      })
       assertExists(eventId)
 
       // Verify a request was made with the metadata
@@ -422,7 +435,7 @@ Deno.test({
             eventType: "test-event-type",
             schema: testSchema,
           })
-          .write(pathwayKey, { test: "data" })
+          .write(pathwayKey, { data: { test: "data" } })
 
         throw new Error("Expected authentication error was not thrown")
       } catch (error: unknown) {
