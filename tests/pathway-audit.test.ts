@@ -101,7 +101,10 @@ Deno.test({
       })
 
       // Write to the pathway with fire-and-forget option
-      const eventId = await pathwayBuilder.write(pathwayKey, { test: "data" }, undefined, { fireAndForget: true })
+      const eventId = await pathwayBuilder.write(pathwayKey, {
+        data: { test: "data" },
+        options: { fireAndForget: true },
+      })
 
       // Get the last request
       const storedRequest = server.storedEvents.get(typeof eventId === "string" ? eventId : eventId[0])
@@ -153,9 +156,7 @@ Deno.test({
       // Write to the pathway with user mode explicitly set
       const eventId = await pathwayBuilder.write(
         pathwayKey,
-        { test: "data" },
-        undefined,
-        { fireAndForget: true, auditMode: "user" },
+        { data: { test: "data" }, options: { fireAndForget: true, auditMode: "user" } },
       )
 
       // Get the last request
@@ -208,9 +209,7 @@ Deno.test({
       // Write to the pathway with system mode
       const eventId = await pathwayBuilder.write(
         pathwayKey,
-        { test: "data" },
-        undefined,
-        { fireAndForget: true, auditMode: "system" },
+        { data: { test: "data" }, options: { fireAndForget: true, auditMode: "system" } },
       )
 
       // Get the last request

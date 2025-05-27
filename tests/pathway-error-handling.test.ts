@@ -332,7 +332,10 @@ Deno.test({
       }
 
       // With fireAndForget:true, the write call should succeed even though the handler fails
-      const eventId = await pathwayBuilder.write(pathwayKey, { test: "data" }, undefined, { fireAndForget: true })
+      const eventId = await pathwayBuilder.write(pathwayKey, {
+        data: { test: "data" },
+        options: { fireAndForget: true },
+      })
       assertExists(eventId)
 
       // Since we're using fireAndForget, we need to manually trigger the handler
@@ -381,7 +384,10 @@ Deno.test({
       })
 
       // Write to pathway, which should successfully retry after failures
-      const eventId = await pathwayBuilder.write(pathwayKey, { test: "data" }, undefined, { fireAndForget: true })
+      const eventId = await pathwayBuilder.write(pathwayKey, {
+        data: { test: "data" },
+        options: { fireAndForget: true },
+      })
       assertExists(eventId)
 
       // Verify server received expected number of requests for retries

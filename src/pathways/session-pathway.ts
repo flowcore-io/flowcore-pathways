@@ -146,6 +146,6 @@ export class SessionPathwayBuilder<
     finalOptions.sessionId = options?.sessionId ?? this.sessionId
 
     // The PathwaysBuilder will handle session-specific user resolvers
-    return await this.pathwaysBuilder.write(path, data, metadata, finalOptions)
+    return await this.pathwaysBuilder.write(path, { data, metadata, options: finalOptions })
   }
 }
