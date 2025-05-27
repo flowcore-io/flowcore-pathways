@@ -1,9 +1,9 @@
-import { z, type ZodTypeAny } from "zod"
+import { type AnyZodObject, z } from "zod"
 import type {
   WebhookBuilder as WebhookBuilderType,
-  WebhookFileData,
   WebhookSendOptions,
 } from "npm:@flowcore/sdk-transformer-core@^2.3.6"
+import { fileTypeFromBuffer } from "file-type"
 import { Subject } from "rxjs"
 import { WebhookBuilder } from "../compatibility/flowcore-transformer-core.sdk.ts"
 import type { FlowcoreEvent } from "../contracts/event.ts"
@@ -29,6 +29,8 @@ import {
   AUDIT_USER_ID,
   AUDIT_USER_MODE,
 } from "./constants.ts"
+import type { Buffer } from "node:buffer"
+import { FileEventSchema } from "./types.ts"
 
 /**
  * Default timeout for pathway processing in milliseconds (10 seconds)
@@ -210,6 +212,7 @@ export class PathwaysBuilder<
   // deno-lint-ignore ban-types
   TPathway extends Record<string, { input: unknown; output: unknown }> = {},
   TWritablePaths extends keyof TPathway = never,
+  TFileWritablePaths extends keyof TPathway = never,
 > {
   private readonly pathways: TPathway = {} as TPathway
   private readonly handlers: Record<keyof TPathway, (event: FlowcoreEvent) => Promise<void> | void> = {} as Record<
@@ -240,7 +243,11 @@ export class PathwaysBuilder<
       TWritablePaths,
       SendWebhookBatch<TPathway[TWritablePaths]["output"]>
     >
-  private readonly schemas: Record<keyof TPathway, ZodTypeAny> = {} as Record<keyof TPathway, ZodTypeAny>
+  private readonly fileWriters: Record<TFileWritablePaths, SendFilehook> = {} as Record<
+    TFileWritablePaths,
+    SendFilehook
+  >
+  private readonly schemas: Record<keyof TPathway, AnyZodObject> = {} as Record<keyof TPathway, AnyZodObject>
   private readonly writable: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
   private readonly timeouts: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
   private readonly maxRetries: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
@@ -349,10 +356,10 @@ export class PathwaysBuilder<
    * @param state The PathwayState implementation to use
    * @returns The PathwaysBuilder instance with custom state configured
    */
-  withPathwayState(state: PathwayState): PathwaysBuilder<TPathway, TWritablePaths> {
+  withPathwayState(state: PathwayState): PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths> {
     this.logger.debug("Setting custom pathway state")
     this.pathwayState = state
-    return this as PathwaysBuilder<TPathway, TWritablePaths>
+    return this as PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths>
   }
 
   /**
@@ -360,10 +367,10 @@ export class PathwaysBuilder<
    * @param handler The handler function that receives pathway and event information
    * @returns The PathwaysBuilder instance with audit configured
    */
-  withAudit(handler: AuditHandler): PathwaysBuilder<TPathway, TWritablePaths> {
+  withAudit(handler: AuditHandler): PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths> {
     this.logger.debug("Configuring audit functionality")
     this.auditHandler = handler
-    return this as PathwaysBuilder<TPathway, TWritablePaths>
+    return this as PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths>
   }
 
   /**
@@ -371,10 +378,10 @@ export class PathwaysBuilder<
    * @param resolver The resolver function that resolves to the current user ID
    * @returns The PathwaysBuilder instance with custom user ID resolver configured
    */
-  withUserResolver(resolver: UserIdResolver): PathwaysBuilder<TPathway, TWritablePaths> {
+  withUserResolver(resolver: UserIdResolver): PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths> {
     this.logger.debug("Configuring user resolver")
     this.userIdResolver = resolver
-    return this as PathwaysBuilder<TPathway, TWritablePaths>
+    return this as PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths>
   }
 
   /**
@@ -410,14 +417,17 @@ export class PathwaysBuilder<
    * // The user ID will be automatically included in the metadata
    * ```
    */
-  withSessionUserResolver(sessionId: string, resolver: UserIdResolver): PathwaysBuilder<TPathway, TWritablePaths> {
+  withSessionUserResolver(
+    sessionId: string,
+    resolver: UserIdResolver,
+  ): PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths> {
     if (!this.sessionUserResolvers) {
       throw new Error("Session user resolvers not configured")
     }
 
     this.logger.debug("Configuring session-specific user resolver", { sessionId })
     this.sessionUserResolvers.set(sessionId, resolver, DEFAULT_SESSION_USER_RESOLVER_TTL_MS)
-    return this as PathwaysBuilder<TPathway, TWritablePaths>
+    return this as PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths>
   }
 
   /**
@@ -595,13 +605,24 @@ export class PathwaysBuilder<
   register<
     F extends string,
     E extends string,
-    S extends ZodTypeAny,
+    S extends AnyZodObject = AnyZodObject,
     W extends boolean = true,
+    FP extends boolean = false,
   >(
-    contract: PathwayContract<F, E, S> & { writable?: W; maxRetries?: number; retryDelayMs?: number },
+    contract: PathwayContract<F, E, S> & {
+      writable?: W
+      maxRetries?: number
+      retryDelayMs?: number
+      isFilePathway?: FP
+    },
   ): PathwaysBuilder<
-    TPathway & Record<PathwayKey<F, E>, { output: z.infer<S>; input: z.input<S> }>,
-    TWritablePaths | WritablePathway<PathwayKey<F, E>, W>
+    & TPathway
+    & Record<PathwayKey<F, E>, {
+      output: FP extends true ? z.infer<typeof FileEventSchema> & z.infer<S> : z.infer<S>
+      input: z.input<S>
+    }>,
+    TWritablePaths | WritablePathway<PathwayKey<F, E>, FP extends true ? false : W>,
+    TFileWritablePaths | WritablePathway<PathwayKey<F, E>, FP extends true ? W : false>
   > {
     const path = `${contract.flowType}/${contract.eventType}` as PathwayKey<F, E>
     const writable = contract.writable ?? true
@@ -624,7 +645,7 @@ export class PathwaysBuilder<
     if (writable) {
       if (contract.isFilePathway) {
         this.filePathways.add(path)
-        this.writers[path as TWritablePaths] = this.webhookBuilderFactory()
+        this.fileWriters[path as TFileWritablePaths] = this.webhookBuilderFactory()
           .buildFileWebhook(contract.flowType, contract.eventType).send as SendFilehook
       } else {
         this.writers[path as TWritablePaths] = this.webhookBuilderFactory()
@@ -651,7 +672,11 @@ export class PathwaysBuilder<
       this.retryDelays[path] = contract.retryDelayMs
     }
 
-    this.schemas[path] = contract.schema
+    if (contract.isFilePathway) {
+      this.schemas[path] = (contract.schema ?? z.object({})).merge(FileEventSchema)
+    } else {
+      this.schemas[path] = contract.schema ?? z.object({})
+    }
     this.writable[path] = writable
 
     this.logger.info(`Pathway registered successfully`, {
@@ -659,11 +684,17 @@ export class PathwaysBuilder<
       flowType: contract.flowType,
       eventType: contract.eventType,
       writable,
+      isFilePathway: contract.isFilePathway,
     })
 
     return this as PathwaysBuilder<
-      TPathway & Record<PathwayKey<F, E>, z.infer<S>>,
-      TWritablePaths | WritablePathway<PathwayKey<F, E>, W>
+      & TPathway
+      & Record<PathwayKey<F, E>, {
+        output: FP extends true ? z.infer<typeof FileEventSchema> & z.infer<S> : z.infer<S>
+        input: z.input<S>
+      }>,
+      TWritablePaths | WritablePathway<PathwayKey<F, E>, FP extends true ? false : W>,
+      TFileWritablePaths | WritablePathway<PathwayKey<F, E>, FP extends true ? W : false>
     >
   }
 
@@ -693,7 +724,7 @@ export class PathwaysBuilder<
   handle<TPath extends keyof TPathway>(
     path: TPath,
     handler: (event: FlowcoreEvent<TPathway[TPath]["output"]>) => Promise<void> | void,
-  ): PathwaysBuilder<TPathway, TWritablePaths> {
+  ): PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths> {
     const pathStr = String(path)
     this.logger.debug(`Setting handler for pathway`, { pathway: pathStr })
 
@@ -725,7 +756,7 @@ export class PathwaysBuilder<
     path: TPath,
     handler: (event: FlowcoreEvent<TPathway[TPath]["output"]>) => void,
     type: "before" | "after" | "all" = "before",
-  ): PathwaysBuilder<TPathway, TWritablePaths> {
+  ): PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths> {
     const pathStr = String(path)
 
     const pathway = this.pathways[path]
@@ -763,7 +794,7 @@ export class PathwaysBuilder<
   onError<TPath extends keyof TPathway>(
     path: TPath,
     handler: (error: Error, event: FlowcoreEvent<TPathway[TPath]["output"]>) => void,
-  ): PathwaysBuilder<TPathway, TWritablePaths> {
+  ): PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths> {
     const pathStr = String(path)
     this.logger.debug(`Setting error handler for pathway`, { pathway: pathStr })
 
@@ -790,7 +821,7 @@ export class PathwaysBuilder<
    */
   onAnyError(
     handler: (error: Error, event: FlowcoreEvent, pathway: string) => void,
-  ): PathwaysBuilder<TPathway, TWritablePaths> {
+  ): PathwaysBuilder<TPathway, TWritablePaths, TFileWritablePaths> {
     this.logger.debug(`Subscribing to all pathway errors`)
     this.globalErrorSubject.subscribe(({ pathway, event, error }) => handler(error, event, pathway))
     this.logger.debug(`Subscribed to all pathway errors`)
@@ -808,11 +839,14 @@ export class PathwaysBuilder<
    */
   async write<TPath extends TWritablePaths>(
     path: TPath,
-    inputData: TPathway[TPath]["input"],
-    metadata?: EventMetadata,
-    options?: PathwayWriteOptions,
+    input: {
+      data: TPathway[TPath]["input"]
+      metadata?: EventMetadata
+      options?: PathwayWriteOptions
+    },
   ): Promise<string | string[]> {
     const pathStr = String(path)
+    const { data: inputData, metadata, options } = input
 
     this.logger.debug(`Writing to pathway`, {
       pathway: pathStr,
@@ -831,6 +865,12 @@ export class PathwaysBuilder<
 
     if (!this.writable[path]) {
       const error = `Pathway ${pathStr} is not writable`
+      this.logger.error(error)
+      throw new Error(error)
+    }
+
+    if (this.filePathways.has(path)) {
+      const error = `Pathway ${pathStr} is a file pathway`
       this.logger.error(error)
       throw new Error(error)
     }
@@ -908,14 +948,8 @@ export class PathwaysBuilder<
       }
     }
     let eventIds: string | string[] = []
-    if (this.filePathways.has(path)) {
-      this.logger.debug(`Writing file data to pathway`, { pathway: pathStr })
-      const fileData = data as unknown as WebhookFileData
-      eventIds = await (this.writers[path] as SendFilehook)(fileData, finalMetadata, options)
-    } else {
-      this.logger.debug(`Writing webhook data to pathway`, { pathway: pathStr })
-      eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]["output"]>)(data, finalMetadata, options)
-    }
+    this.logger.debug(`Writing webhook data to pathway`, { pathway: pathStr })
+    eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]["output"]>)(data, finalMetadata, options)
 
     this.logger[this.logLevel.writeSuccess](`Successfully wrote to pathway`, {
       pathway: pathStr,
@@ -941,11 +975,14 @@ export class PathwaysBuilder<
 
   async writeBatch<TPath extends TWritablePaths>(
     path: TPath,
-    inputData: TPathway[TPath]["input"][],
-    metadata?: EventMetadata,
-    options?: PathwayWriteOptions,
+    input: {
+      data: TPathway[TPath]["input"][]
+      metadata?: EventMetadata
+      options?: PathwayWriteOptions
+    },
   ): Promise<string | string[]> {
     const pathStr = String(path)
+    const { data: inputData, metadata, options } = input
 
     this.logger.debug(`Writing batch to pathway`, {
       pathway: pathStr,
@@ -1056,6 +1093,161 @@ export class PathwaysBuilder<
 
     if (!options?.fireAndForget) {
       this.logger.debug(`Waiting for pathway to be processed`, {
+        pathway: pathStr,
+        eventIds: Array.isArray(eventIds) ? eventIds : [eventIds],
+      })
+
+      await Promise.all(
+        Array.isArray(eventIds)
+          ? eventIds.map((id) => this.waitForPathwayToBeProcessed(id))
+          : [this.waitForPathwayToBeProcessed(eventIds)],
+      )
+    }
+
+    return eventIds
+  }
+
+  async writeFile<TPath extends TFileWritablePaths>(
+    path: TPath,
+    input: {
+      file: {
+        id: string
+        name: string
+        data: Buffer
+      }
+      data: TPathway[TPath]["input"]
+      metadata?: EventMetadata
+      options?: PathwayWriteOptions
+    },
+  ): Promise<string[]> {
+    const { file, data: inputData, metadata, options } = input
+    const pathStr = String(path)
+
+    this.logger.debug(`Writing file to pathway`, {
+      pathway: pathStr,
+      metadata,
+      options: {
+        fireAndForget: options?.fireAndForget,
+        sessionId: options?.sessionId,
+      },
+    })
+
+    if (!this.filePathways.has(path)) {
+      const error = `File pathway ${pathStr} not found`
+      this.logger.error(error)
+      throw new Error(error)
+    }
+
+    if (!this.writable[path]) {
+      const error = `File pathway ${pathStr} is not writable`
+      this.logger.error(error)
+      throw new Error(error)
+    }
+
+    const schema = this.schemas[path]
+    const parsedData = schema.safeParse(inputData)
+    if (!parsedData.success) {
+      const errorMessage = `Invalid data for pathway ${pathStr}`
+      this.logger.error(errorMessage, new Error(errorMessage), {
+        pathway: pathStr,
+        schema: schema.toString(),
+      })
+      throw new Error(errorMessage)
+    }
+    const data = parsedData.data
+
+    // Create a copy of the metadata to avoid modifying the original
+    const finalMetadata: EventMetadata = metadata ? { ...metadata } : {}
+
+    // Check for session-specific user resolver
+    let userId: UserResolverEntity | undefined
+    if (options?.sessionId) {
+      const sessionUserResolver = this.getSessionUserResolver(options.sessionId)
+      if (sessionUserResolver) {
+        try {
+          userId = await sessionUserResolver()
+
+          this.logger.debug(`Using session-specific user resolver`, {
+            pathway: pathStr,
+            sessionId: options.sessionId,
+            userId,
+          })
+        } catch (error) {
+          this.logger.error(
+            `Error resolving session user ID`,
+            error instanceof Error ? error : new Error(String(error)),
+            {
+              pathway: pathStr,
+              sessionId: options.sessionId,
+            },
+          )
+        }
+      }
+    }
+
+    // Process audit metadata if audit is configured
+    if (this.userIdResolver) {
+      // Only use global resolver if we don't already have a user ID from a session resolver
+      if (!userId) {
+        this.logger.debug(`Resolving user ID for audit metadata`, { pathway: pathStr })
+        userId = await this.userIdResolver()
+      }
+    }
+
+    // Determine the audit mode: default is "user" unless explicitly specified as "system"
+    const auditMode = options?.auditMode ?? "user"
+
+    this.logger.debug(`Adding audit metadata`, {
+      pathway: pathStr,
+      auditMode,
+      userId,
+    })
+
+    if (userId) {
+      // Add appropriate audit metadata based on mode
+      if (auditMode === AUDIT_SYSTEM_MODE) {
+        finalMetadata[AUDIT_USER_ID] = "system"
+        finalMetadata[AUDIT_ON_BEHALF_OF] = userId.entityId
+        finalMetadata[AUDIT_MODE] = "system"
+        finalMetadata[AUDIT_ENTITY_TYPE] = userId.entityType
+      } else {
+        finalMetadata[AUDIT_USER_ID] = userId.entityId
+        finalMetadata[AUDIT_MODE] = AUDIT_USER_MODE // Always set mode for user
+        finalMetadata[AUDIT_ENTITY_TYPE] = userId.entityType
+      }
+    }
+
+    const fileType = await fileTypeFromBuffer(file.data)
+
+    console.log("Sending file to pathway", {
+      fileType: fileType?.mime ?? "application/octet-stream",
+      fileName: file.name,
+      fileId: file.id,
+      metadata: data,
+    })
+    const eventIds = await this.fileWriters[path](
+      {
+        fileContent: new Blob([file.data]),
+        fileName: file.name,
+        fileType: fileType?.mime ?? "application/octet-stream",
+        fileId: file.id,
+        additionalProperties: data,
+      },
+      finalMetadata,
+      options,
+    )
+
+    this.logger[this.logLevel.writeSuccess](`Successfully wrote file to pathway`, {
+      fileName: file.name,
+      fileType: fileType?.mime ?? "application/octet-stream",
+      bytes: file.data.length,
+      pathway: pathStr,
+      eventIds: Array.isArray(eventIds) ? eventIds : [eventIds],
+      fireAndForget: options?.fireAndForget,
+    })
+
+    if (!options?.fireAndForget) {
+      this.logger.debug(`Waiting for file pathway to be processed`, {
         pathway: pathStr,
         eventIds: Array.isArray(eventIds) ? eventIds : [eventIds],
       })

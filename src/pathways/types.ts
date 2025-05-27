@@ -1,4 +1,4 @@
-import type { ZodTypeAny } from "zod"
+import { type AnyZodObject, z } from "zod"
 import type { WebhookFileData, WebhookSendOptions } from "npm:@flowcore/sdk-transformer-core@^2.3.6"
 
 /**
@@ -16,7 +16,7 @@ type NonWritablePathwayError<T extends string> = T & {
  * @template E The event type
  * @template T The schema type
  */
-export interface PathwayContract<F extends string, E extends string, T extends ZodTypeAny> {
+export interface PathwayContract<F extends string, E extends string, T extends AnyZodObject> {
   /**
    * The flow type for this pathway
    */
@@ -30,7 +30,7 @@ export interface PathwayContract<F extends string, E extends string, T extends Z
   /**
    * The schema that defines the structure of events for this pathway
    */
-  schema: T
+  schema?: T
 
   /**
    * Whether the pathway is writable. Use `false as const` to make the pathway non-writable at compile time.
@@ -179,3 +179,25 @@ export type PathwayWriteOptions = WebhookSendOptions & {
    */
   sessionId?: string
 }
+
+export const FileEventSchema: z.ZodObject<{
+  fileName: z.ZodString
+  fileType: z.ZodString
+  fileSize: z.ZodNumber
+  data: z.ZodString
+  part: z.ZodNumber
+  totalParts: z.ZodNumber
+  checksum: z.ZodString
+  hashType: z.ZodString
+  fileId: z.ZodString
+}> = z.object({
+  fileName: z.string(),
+  fileType: z.string(),
+  fileSize: z.number(),
+  data: z.string(),
+  part: z.number(),
+  totalParts: z.number(),
+  checksum: z.string(),
+  hashType: z.string(),
+  fileId: z.string(),
+})
