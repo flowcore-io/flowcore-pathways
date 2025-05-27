@@ -1,5 +1,6 @@
 import { type AnyZodObject, z } from "zod"
 import type { WebhookFileData, WebhookSendOptions } from "npm:@flowcore/sdk-transformer-core@^2.3.6"
+import { Buffer } from "node:buffer"
 
 /**
  * Helper type to create a custom type error for non-writable pathways
@@ -179,6 +180,16 @@ export type PathwayWriteOptions = WebhookSendOptions & {
    */
   sessionId?: string
 }
+
+export const FileInputSchema: z.ZodObject<{
+  fileId: z.ZodString
+  fileName: z.ZodString
+  fileContent: z.ZodType<Buffer<ArrayBufferLike>, z.ZodTypeDef, Buffer<ArrayBufferLike>>
+}> = z.object({
+  fileId: z.string(),
+  fileName: z.string(),
+  fileContent: z.instanceof(Buffer),
+})
 
 export const FileEventSchema: z.ZodObject<{
   fileName: z.ZodString
