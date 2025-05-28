@@ -191,6 +191,8 @@ export const FileInputSchema: z.ZodObject<{
   fileContent: z.instanceof(Buffer),
 })
 
+export type FileInput = z.infer<typeof FileInputSchema>
+
 export const FileEventSchema: z.ZodObject<{
   fileName: z.ZodString
   fileType: z.ZodString
@@ -212,3 +214,5 @@ export const FileEventSchema: z.ZodObject<{
   hashType: z.string(),
   fileId: z.string(),
 })
+
+export type FileEvent = z.infer<typeof FileEventSchema>
