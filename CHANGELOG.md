@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.0...v0.15.1) (2025-05-28)
+
+
+### Bug Fixes
+
+* export file types ([203cc73](https://github.com/flowcore-io/flowcore-pathways/commit/203cc735aaedcf9bf44f045fd8a15916917b7ac1))
+
 ## [0.15.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.14.0...v0.15.0) (2025-05-27)
 
 
