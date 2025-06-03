@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.3](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.2...v0.15.3) (2025-06-03)
+
+
+### Bug Fixes
+
+* add debug ([c5b0776](https://github.com/flowcore-io/flowcore-pathways/commit/c5b0776af5edfb64a568e497e31ed5181c59bb2d))
+
 ## [0.15.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.1...v0.15.2) (2025-06-03)
 
 

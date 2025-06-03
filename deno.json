@@ -2,7 +2,7 @@
   "$schema": "https://deno.land/x/deno/cli/schemas/config-file.v1.json",
   "name": "@flowcore/pathways",
   "description": "A TypeScript Library for creating Flowcore Pathways, simplifying the integration with the flowcore platform",
-  "version": "0.15.2",
+  "version": "0.15.3",
   "license": "MIT",
   "exports": "./src/mod.ts",
   "publish": {
@@ -22,7 +22,7 @@
   },
   "imports": {
     "@deno/dnt": "jsr:@deno/dnt@^0.41.3",
-    "@flowcore/sdk-transformer-core": "npm:@flowcore/sdk-transformer-core@^2.5.0",
+    "@flowcore/sdk-transformer-core": "npm:@flowcore/sdk-transformer-core@^2.5.1",
     "file-type": "npm:file-type@^21.0.0",
     "node-cache": "npm:node-cache@^5.1.2",
     "rxjs": "npm:rxjs@^7.8.1",
