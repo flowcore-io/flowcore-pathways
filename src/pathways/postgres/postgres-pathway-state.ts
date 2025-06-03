@@ -1,5 +1,5 @@
 import type { PathwayState } from "../types.ts"
-import type { PostgresAdapter } from "./postgres-adapter.ts"
+import type { PostgresAdapter, PostgresPoolConfig } from "./postgres-adapter.ts"
 import { createPostgresAdapter } from "./postgres-adapter.ts"
 
 /**
@@ -21,6 +21,8 @@ export interface PostgresPathwayStateConnectionStringConfig {
   tableName?: string
   /** Time-to-live in milliseconds for processed events (default: 5 minutes) */
   ttlMs?: number
+  /** Connection pool configuration */
+  pool?: PostgresPoolConfig
 }
 
 /**
@@ -47,6 +49,8 @@ export interface PostgresPathwayStateParametersConfig {
   tableName?: string
   /** Time-to-live in milliseconds for processed events (default: 5 minutes) */
   ttlMs?: number
+  /** Connection pool configuration */
+  pool?: PostgresPoolConfig
 }
 
 /**
@@ -86,7 +90,13 @@ export type PostgresPathwayStateConfig =
  * const postgresState = createPostgresPathwayState({
  *   connectionString: "postgres://user:password@localhost:5432/mydb",
  *   tableName: "event_processing_state", // Optional
- *   ttlMs: 24 * 60 * 60 * 1000 // 24 hours (optional)
+ *   ttlMs: 24 * 60 * 60 * 1000, // 24 hours (optional)
+ *   pool: { // Optional connection pool configuration
+ *     max: 20, // Maximum 20 connections in pool
+ *     idle_timeout: 30, // Close idle connections after 30 seconds
+ *     connect_timeout: 10, // 10 second connection timeout
+ *     max_lifetime: 3600 // Connections live maximum 1 hour
+ *   }
  * });
  *
  * // Or with individual parameters
@@ -98,7 +108,12 @@ export type PostgresPathwayStateConfig =
  *   database: "mydb",
  *   ssl: false,
  *   tableName: "event_processing_state", // Optional
- *   ttlMs: 30 * 60 * 1000 // 30 minutes (optional)
+ *   ttlMs: 30 * 60 * 1000, // 30 minutes (optional)
+ *   pool: { // Optional connection pool configuration
+ *     max: 15, // Maximum 15 connections in pool
+ *     idle_timeout: 60, // Close idle connections after 60 seconds
+ *     connect_timeout: 5 // 5 second connection timeout
+ *   }
  * });
  *
  * // Use with PathwaysBuilder
@@ -171,6 +186,7 @@ export class PostgresPathwayState implements PathwayState {
       // Use connection string if provided
       this.postgres = await createPostgresAdapter({
         connectionString: this.config.connectionString,
+        pool: this.config.pool,
       })
     } else {
       // We know this must be the parameters config due to the type union
@@ -182,6 +198,7 @@ export class PostgresPathwayState implements PathwayState {
         password: this.config.password as string,
         database: this.config.database as string,
         ssl: this.config.ssl,
+        pool: this.config.pool,
       })
     }
 
@@ -376,6 +393,17 @@ export class PostgresPathwayState implements PathwayState {
  *   connectionString: "postgres://user:pass@localhost:5432/db",
  *   tableName: "my_custom_event_state",
  *   ttlMs: 7 * 24 * 60 * 60 * 1000 // 1 week
+ * });
+ *
+ * // With connection pool configuration
+ * const state = createPostgresPathwayState({
+ *   connectionString: "postgres://user:pass@localhost:5432/db",
+ *   pool: {
+ *     max: 25, // Maximum 25 connections
+ *     idle_timeout: 120, // Close idle connections after 2 minutes
+ *     connect_timeout: 15, // 15 second connection timeout
+ *     max_lifetime: 1800 // Connections live maximum 30 minutes
+ *   }
  * });
  *
  * // Use with PathwaysBuilder

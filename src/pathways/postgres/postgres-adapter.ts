@@ -1,4 +1,18 @@
 /**
+ * Connection pool configuration options for PostgreSQL
+ */
+export interface PostgresPoolConfig {
+  /** Maximum number of connections in the pool (default: 10) */
+  max?: number
+  /** Maximum lifetime in seconds for connections (default: random between 45-90 minutes) */
+  max_lifetime?: number
+  /** Idle connection timeout in seconds (default: 0 - no timeout) */
+  idle_timeout?: number
+  /** Connect timeout in seconds (default: 30) */
+  connect_timeout?: number
+}
+
+/**
  * Configuration for PostgreSQL connection using a connection string
  */
 export interface PostgresConnectionStringConfig {
@@ -12,6 +26,9 @@ export interface PostgresConnectionStringConfig {
   password?: never
   database?: never
   ssl?: never
+
+  /** Connection pool configuration */
+  pool?: PostgresPoolConfig
 }
 
 /**
@@ -33,6 +50,9 @@ export interface PostgresParametersConfig {
   database: string
   /** Whether to use SSL for the connection */
   ssl?: boolean
+
+  /** Connection pool configuration */
+  pool?: PostgresPoolConfig
 }
 
 /**
@@ -95,7 +115,7 @@ interface PostgresClient {
  * @private
  */
 interface PostgresModule {
-  default: (connectionString: string) => PostgresClient
+  default: (connectionString: string, options?: any) => PostgresClient
 }
 
 /**
@@ -103,7 +123,7 @@ interface PostgresModule {
  */
 export class PostgresJsAdapter implements PostgresAdapter {
   /** The postgres.js client factory function */
-  private postgres: ((connectionString: string) => PostgresClient) | null = null
+  private postgres: ((connectionString: string, options?: any) => PostgresClient) | null = null
   /** The active postgres.js client */
   private sql: PostgresClient | null = null
   /** The PostgreSQL configuration */
@@ -142,7 +162,26 @@ export class PostgresJsAdapter implements PostgresAdapter {
     try {
       const module = await import("postgres") as PostgresModule
       this.postgres = module.default
-      this.sql = this.postgres(this.connectionString)
+      
+      // Build postgres.js options from pool configuration
+      const postgresOptions: any = {}
+      
+      if (this.config.pool) {
+        if (this.config.pool.max !== undefined) {
+          postgresOptions.max = this.config.pool.max
+        }
+        if (this.config.pool.max_lifetime !== undefined) {
+          postgresOptions.max_lifetime = this.config.pool.max_lifetime
+        }
+        if (this.config.pool.idle_timeout !== undefined) {
+          postgresOptions.idle_timeout = this.config.pool.idle_timeout
+        }
+        if (this.config.pool.connect_timeout !== undefined) {
+          postgresOptions.connect_timeout = this.config.pool.connect_timeout
+        }
+      }
+      
+      this.sql = this.postgres(this.connectionString, postgresOptions)
     } catch (error) {
       console.error("Failed to connect to PostgreSQL:", error)
       throw error
