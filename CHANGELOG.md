@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.1...v0.15.2) (2025-06-03)
+
+
+### Bug Fixes
+
+* update transformer core ([1b621ef](https://github.com/flowcore-io/flowcore-pathways/commit/1b621ef076016d6ef0cf378a883a113df6c022c0))
+
 ## [0.15.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.0...v0.15.1) (2025-05-28)
 
 
