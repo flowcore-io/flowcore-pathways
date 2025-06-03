@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.3...v0.16.0) (2025-06-03)
+
+
+### Features
+
+* **postgres:** :sparkles: add connection pool configuration options for PostgreSQL ([9ba9966](https://github.com/flowcore-io/flowcore-pathways/commit/9ba9966706c13bba441ef8538a0ecfe405191307))
+
+
+### Bug Fixes
+
+* **postgres:** :art: clean up whitespace in postgres-adapter.ts ([d16e0a9](https://github.com/flowcore-io/flowcore-pathways/commit/d16e0a9dfc0b02e533143dfcc5fe34e57bf22cea))
+* **postgres:** :art: update PostgresJsOptions interface for better type safety ([0fee92e](https://github.com/flowcore-io/flowcore-pathways/commit/0fee92eaad3ceb9a387cb6cee9d3029a254b8c15))
+
 ## [0.15.3](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.2...v0.15.3) (2025-06-03)
 
 
