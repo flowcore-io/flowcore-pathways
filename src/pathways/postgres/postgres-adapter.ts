@@ -179,10 +179,10 @@ export class PostgresJsAdapter implements PostgresAdapter {
     try {
       const module = await import("postgres") as PostgresModule
       this.postgres = module.default
-      
+
       // Build postgres.js options from pool configuration
       const postgresOptions: PostgresJsOptions = {}
-      
+
       if (this.config.pool) {
         if (this.config.pool.max !== undefined) {
           postgresOptions.max = this.config.pool.max
@@ -197,7 +197,7 @@ export class PostgresJsAdapter implements PostgresAdapter {
           postgresOptions.connect_timeout = this.config.pool.connect_timeout
         }
       }
-      
+
       this.sql = this.postgres(this.connectionString, postgresOptions)
     } catch (error) {
       console.error("Failed to connect to PostgreSQL:", error)
