@@ -22,7 +22,7 @@
   },
   "imports": {
     "@deno/dnt": "jsr:@deno/dnt@^0.41.3",
-    "@flowcore/sdk-transformer-core": "npm:@flowcore/sdk-transformer-core@^2.4.0",
+    "@flowcore/sdk-transformer-core": "npm:@flowcore/sdk-transformer-core@^2.5.0",
     "file-type": "npm:file-type@^21.0.0",
     "node-cache": "npm:node-cache@^5.1.2",
     "rxjs": "npm:rxjs@^7.8.1",
