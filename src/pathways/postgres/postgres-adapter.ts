@@ -13,6 +13,23 @@ export interface PostgresPoolConfig {
 }
 
 /**
+ * Options that can be passed to postgres.js
+ * @private
+ */
+interface PostgresJsOptions {
+  /** Maximum number of connections in the pool */
+  max?: number
+  /** Maximum lifetime in seconds for connections */
+  max_lifetime?: number
+  /** Idle connection timeout in seconds */
+  idle_timeout?: number
+  /** Connect timeout in seconds */
+  connect_timeout?: number
+  /** Additional postgres.js options */
+  [key: string]: unknown
+}
+
+/**
  * Configuration for PostgreSQL connection using a connection string
  */
 export interface PostgresConnectionStringConfig {
@@ -115,7 +132,7 @@ interface PostgresClient {
  * @private
  */
 interface PostgresModule {
-  default: (connectionString: string, options?: any) => PostgresClient
+  default: (connectionString: string, options?: PostgresJsOptions) => PostgresClient
 }
 
 /**
@@ -123,7 +140,7 @@ interface PostgresModule {
  */
 export class PostgresJsAdapter implements PostgresAdapter {
   /** The postgres.js client factory function */
-  private postgres: ((connectionString: string, options?: any) => PostgresClient) | null = null
+  private postgres: ((connectionString: string, options?: PostgresJsOptions) => PostgresClient) | null = null
   /** The active postgres.js client */
   private sql: PostgresClient | null = null
   /** The PostgreSQL configuration */
@@ -164,7 +181,7 @@ export class PostgresJsAdapter implements PostgresAdapter {
       this.postgres = module.default
       
       // Build postgres.js options from pool configuration
-      const postgresOptions: any = {}
+      const postgresOptions: PostgresJsOptions = {}
       
       if (this.config.pool) {
         if (this.config.pool.max !== undefined) {
