@@ -31,6 +31,7 @@ import {
 } from "./constants.ts"
 import { FileEventSchema, FileInputSchema } from "./types.ts"
 import type { Buffer } from "node:buffer"
+import process from "node:process"
 
 /**
  * Default timeout for pathway processing in milliseconds (10 seconds)
@@ -959,6 +960,7 @@ export class PathwaysBuilder<
     } else if (this.filePathways.has(path)) {
       const { fileId, fileName, fileContent, ...additionalProperties } = data as z.infer<typeof FileInputSchema>
       const fileType = await fileTypeFromBuffer(fileContent as Buffer)
+      process.env.DEBUG?.includes("pathways") && console.log("additionalProperties", additionalProperties)
       eventIds = await (this.fileWriters[path] as SendFilehook)(
         {
           fileId,
