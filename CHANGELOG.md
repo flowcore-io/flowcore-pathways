@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.0...v0.16.1) (2025-06-04)
+
+
+### Bug Fixes
+
+* **session-pathway:** :art: update write method to accept structured input ([86e54a7](https://github.com/flowcore-io/flowcore-pathways/commit/86e54a79cb8bef32677f308eb51a50eef6d1f071))
+
 ## [0.16.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.3...v0.16.0) (2025-06-03)
 
 ### Features
