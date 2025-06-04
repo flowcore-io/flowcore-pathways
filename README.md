@@ -23,6 +23,7 @@ Pathways helps you build event-driven applications with type-safe pathways for p
   - [Custom Loggers](#custom-loggers)
   - [Retry Mechanisms](#retry-mechanisms)
   - [Session Pathways](#session-pathways)
+- [File Pathways](#file-pathways)
 - [API Reference](#api-reference)
 
 ## Installation
@@ -210,6 +211,21 @@ const eventId3 = await pathways.write("order/placed", {
     fireAndForget: true,
   },
 })
+
+// Batch write multiple events
+const eventIds = await pathways.write("order/placed", {
+  batch: true,
+  data: [orderData1, orderData2, orderData3],
+})
+
+// Batch write with metadata
+const eventIds2 = await pathways.write("order/placed", {
+  batch: true,
+  data: [orderData1, orderData2],
+  metadata: {
+    source: "bulk-import",
+  },
+})
 ```
 
 ### Error Handling
@@ -354,18 +370,18 @@ Enable auditing to track events:
 
 ```typescript
 // Set up auditing
-pathways.withAudit(
-  // Audit handler
-  (path, event) => {
+pathways
+  .withAudit((path, event) => {
     console.log(`Audit: ${path} event ${event.eventId}`)
     logToAuditSystem(path, event)
-  },
-  // User ID resolver
-  async () => {
+  })
+  .withUserResolver(async () => {
     // Get the current user ID from context
-    return getCurrentUserId()
-  },
-)
+    return {
+      entityId: "user-123",
+      entityType: "user",
+    }
+  })
 ```
 
 ### Custom Loggers
@@ -502,6 +518,12 @@ await session.write("order/placed", {
   data: orderData,
   options: { sessionId: "different-session" },
 })
+
+// Batch write events with session context
+await session.write("user/actions", {
+  batch: true,
+  data: [actionData1, actionData2, actionData3],
+})
 ```
 
 #### Session ID in Audit Events
@@ -518,6 +540,228 @@ pathways.withAudit((path, event) => {
 // Now when writing events through a session
 await session.write("order/placed", { data: orderData })
 // The session ID is automatically included in the audit metadata
+```
+
+### File Pathways
+
+File pathways provide a specialized way to handle file uploads and processing in your Flowcore applications. They
+automatically handle file type detection, binary content processing, and provide a structured approach to file
+management.
+
+#### Registering File Pathways
+
+Register a file pathway by setting the `isFilePathway` flag to `true`:
+
+```typescript
+import { z } from "zod"
+
+// Define additional properties schema for your file
+const documentSchema = z.object({
+  documentType: z.enum(["invoice", "receipt", "contract"]),
+  department: z.string(),
+  metadata: z.record(z.string()).optional(),
+})
+
+// Register a file pathway
+pathways.register({
+  flowType: "document",
+  eventType: "uploaded",
+  schema: documentSchema, // Additional properties beyond the file itself
+  isFilePathway: true, // This marks it as a file pathway
+  writable: true,
+})
+```
+
+#### Writing Files to Pathways
+
+File pathways use a special input format that includes file content and metadata:
+
+```typescript
+import { readFile } from "node:fs/promises"
+
+// Read file content (as Buffer for Node.js/Bun, Uint8Array for Deno)
+const fileContent = await readFile("./invoice.pdf")
+
+// Write a file to a pathway
+const eventId = await pathways.write("document/uploaded", {
+  data: {
+    fileId: "file-123", // Unique identifier for the file
+    fileName: "invoice-2024.pdf", // Original filename
+    fileContent: fileContent, // File content as Buffer/Uint8Array
+    // Additional properties defined in your schema
+    documentType: "invoice",
+    department: "finance",
+    metadata: {
+      customer: "ACME Corp",
+      amount: "1500.00",
+    },
+  },
+})
+```
+
+#### File Input Schema
+
+File pathways automatically include these required fields:
+
+```typescript
+// Built-in file fields (automatically added)
+interface FileInput {
+  fileId: string // Unique identifier for the file
+  fileName: string // Original filename with extension
+  fileContent: Buffer | Uint8Array // Binary file content
+  // ... your additional schema properties
+}
+```
+
+#### File Event Schema
+
+When processed, file events include automatic file type detection:
+
+```typescript
+// Built-in file event fields (automatically added to your schema)
+interface FileEvent {
+  fileId: string // Unique identifier for the file
+  fileName: string // Original filename
+  fileType: string // MIME type (automatically detected)
+  fileContent: Blob // File content as Blob
+  // ... your additional schema properties
+}
+```
+
+#### Handling File Events
+
+Handle file events just like regular events, but with access to file-specific properties:
+
+```typescript
+pathways.handle("document/uploaded", async (event) => {
+  const { fileId, fileName, fileType, fileContent, documentType, department } = event.payload
+
+  console.log(`Processing file: ${fileName} (${fileType})`)
+  console.log(`Document type: ${documentType}, Department: ${department}`)
+
+  // Process the file content
+  if (fileType === "application/pdf") {
+    await processPDFDocument(fileContent, event.payload.metadata)
+  } else if (fileType.startsWith("image/")) {
+    await processImageFile(fileContent, documentType)
+  }
+
+  // Store file metadata
+  await storeFileMetadata({
+    fileId,
+    fileName,
+    fileType,
+    documentType,
+    department,
+    processedAt: new Date(),
+  })
+})
+```
+
+#### File Pathway Limitations
+
+File pathways have some specific limitations:
+
+```typescript
+// ❌ Batch writes are NOT supported for file pathways
+// This will throw an error:
+await pathways.write("document/uploaded", {
+  batch: true, // Error: Batch is not possible for file pathways
+  data: [fileData1, fileData2],
+})
+
+// ✅ Write files individually instead:
+for (const fileData of fileDataArray) {
+  await pathways.write("document/uploaded", { data: fileData })
+}
+```
+
+#### Complete File Pathway Example
+
+Here's a complete example of setting up and using file pathways:
+
+```typescript
+import { PathwaysBuilder } from "@flowcore/pathways"
+import { z } from "zod"
+import { readFile } from "node:fs/promises"
+
+// Define schema for additional file properties
+const documentSchema = z.object({
+  documentType: z.enum(["invoice", "receipt", "contract", "report"]),
+  department: z.string(),
+  tags: z.array(z.string()).optional(),
+  metadata: z.record(z.string()).optional(),
+})
+
+const pathways = new PathwaysBuilder({
+  baseUrl: "https://api.flowcore.io",
+  tenant: "your-tenant",
+  dataCore: "your-data-core",
+  apiKey: "your-api-key",
+})
+
+// Register file pathway
+pathways
+  .register({
+    flowType: "document",
+    eventType: "uploaded",
+    schema: documentSchema,
+    isFilePathway: true,
+  })
+  .handle("document/uploaded", async (event) => {
+    const { fileId, fileName, fileType, documentType, department } = event.payload
+
+    console.log(`Processing ${documentType} from ${department}: ${fileName}`)
+
+    // File type-specific processing
+    switch (fileType) {
+      case "application/pdf":
+        await extractPDFText(event.payload.fileContent)
+        break
+      case "image/jpeg":
+      case "image/png":
+        await extractImageMetadata(event.payload.fileContent)
+        break
+      default:
+        console.log(`Unsupported file type: ${fileType}`)
+    }
+
+    // Trigger downstream processing
+    await pathways.write("document/processed", {
+      data: {
+        fileId,
+        fileName,
+        documentType,
+        department,
+        processedAt: new Date().toISOString(),
+        status: "completed",
+      },
+    })
+  })
+
+// Upload a file
+async function uploadDocument(filePath: string, documentType: string, department: string) {
+  const fileContent = await readFile(filePath)
+  const fileName = filePath.split("/").pop() || "unknown"
+
+  return await pathways.write("document/uploaded", {
+    data: {
+      fileId: `doc-${Date.now()}`,
+      fileName,
+      fileContent,
+      documentType,
+      department,
+      tags: ["automated-upload"],
+      metadata: {
+        uploadedAt: new Date().toISOString(),
+        source: "api",
+      },
+    },
+  })
+}
+
+// Usage
+await uploadDocument("./invoice.pdf", "invoice", "finance")
 ```
 
 ## API Reference
