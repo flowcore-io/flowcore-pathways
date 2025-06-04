@@ -87,9 +87,7 @@ Deno.test({
         // Write data to the pathway
         const eventId = await sessionBuilder.write(
           "test-flow/test-event",
-          { message: "Hello from session test" },
-          {}, // No metadata
-          { fireAndForget: true },
+          { data: { message: "Hello from session test" }, options: { fireAndForget: true } },
         )
 
         // Verify the event was stored on the server
@@ -143,17 +141,13 @@ Deno.test({
         // Write with session 1
         const eventId1 = await sessionBuilder1.write(
           "user-flow/user-event",
-          { message: "Hello from user 1" },
-          {}, // No metadata
-          { fireAndForget: true },
+          { data: { message: "Hello from user 1" }, options: { fireAndForget: true } },
         )
 
         // Write with session 2
         const eventId2 = await sessionBuilder2.write(
           "user-flow/user-event",
-          { message: "Hello from user 2" },
-          {}, // No metadata
-          { fireAndForget: true },
+          { data: { message: "Hello from user 2" }, options: { fireAndForget: true } },
         )
 
         // Verify the events were stored and have the correct user IDs in metadata
@@ -211,17 +205,16 @@ Deno.test({
         // Write with default session
         const eventId1 = await sessionBuilder.write(
           "option-flow/option-event",
-          { message: "Hello from default session" },
-          {}, // No metadata
-          { fireAndForget: true },
+          { data: { message: "Hello from default session" }, options: { fireAndForget: true } },
         )
 
         // Write with explicit session in options
         const eventId2 = await sessionBuilder.write(
           "option-flow/option-event",
-          { message: "Hello from explicit session" },
-          {}, // No metadata
-          { sessionId: explicitSessionId, fireAndForget: true },
+          {
+            data: { message: "Hello from explicit session" },
+            options: { sessionId: explicitSessionId, fireAndForget: true },
+          },
         )
 
         // Verify the events

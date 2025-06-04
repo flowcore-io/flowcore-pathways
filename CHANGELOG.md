@@ -2,80 +2,86 @@
 
 ## [0.16.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.3...v0.16.0) (2025-06-03)
 
-
 ### Features
 
-* **postgres:** :sparkles: add connection pool configuration options for PostgreSQL ([9ba9966](https://github.com/flowcore-io/flowcore-pathways/commit/9ba9966706c13bba441ef8538a0ecfe405191307))
-
+- **postgres:** :sparkles: add connection pool configuration options for PostgreSQL
+  ([9ba9966](https://github.com/flowcore-io/flowcore-pathways/commit/9ba9966706c13bba441ef8538a0ecfe405191307))
 
 ### Bug Fixes
 
-* **postgres:** :art: clean up whitespace in postgres-adapter.ts ([d16e0a9](https://github.com/flowcore-io/flowcore-pathways/commit/d16e0a9dfc0b02e533143dfcc5fe34e57bf22cea))
-* **postgres:** :art: update PostgresJsOptions interface for better type safety ([0fee92e](https://github.com/flowcore-io/flowcore-pathways/commit/0fee92eaad3ceb9a387cb6cee9d3029a254b8c15))
+- **postgres:** :art: clean up whitespace in postgres-adapter.ts
+  ([d16e0a9](https://github.com/flowcore-io/flowcore-pathways/commit/d16e0a9dfc0b02e533143dfcc5fe34e57bf22cea))
+- **postgres:** :art: update PostgresJsOptions interface for better type safety
+  ([0fee92e](https://github.com/flowcore-io/flowcore-pathways/commit/0fee92eaad3ceb9a387cb6cee9d3029a254b8c15))
 
 ## [0.15.3](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.2...v0.15.3) (2025-06-03)
 
-
 ### Bug Fixes
 
-* add debug ([c5b0776](https://github.com/flowcore-io/flowcore-pathways/commit/c5b0776af5edfb64a568e497e31ed5181c59bb2d))
+- add debug
+  ([c5b0776](https://github.com/flowcore-io/flowcore-pathways/commit/c5b0776af5edfb64a568e497e31ed5181c59bb2d))
 
 ## [0.15.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.1...v0.15.2) (2025-06-03)
 
-
 ### Bug Fixes
 
-* update transformer core ([1b621ef](https://github.com/flowcore-io/flowcore-pathways/commit/1b621ef076016d6ef0cf378a883a113df6c022c0))
+- update transformer core
+  ([1b621ef](https://github.com/flowcore-io/flowcore-pathways/commit/1b621ef076016d6ef0cf378a883a113df6c022c0))
 
 ## [0.15.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.0...v0.15.1) (2025-05-28)
 
-
 ### Bug Fixes
 
-* export file types ([203cc73](https://github.com/flowcore-io/flowcore-pathways/commit/203cc735aaedcf9bf44f045fd8a15916917b7ac1))
+- export file types
+  ([203cc73](https://github.com/flowcore-io/flowcore-pathways/commit/203cc735aaedcf9bf44f045fd8a15916917b7ac1))
 
 ## [0.15.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.14.0...v0.15.0) (2025-05-27)
 
-
 ### Features
 
-* file writer + changes to write and writeBatch args ([5cbbb8f](https://github.com/flowcore-io/flowcore-pathways/commit/5cbbb8f83c5b8cdba11436565c4d36c1ad3faa61))
-* unified write method ([19f00bd](https://github.com/flowcore-io/flowcore-pathways/commit/19f00bd550d5b167e0104d9c8ef5a2751a909041))
-
+- file writer + changes to write and writeBatch args
+  ([5cbbb8f](https://github.com/flowcore-io/flowcore-pathways/commit/5cbbb8f83c5b8cdba11436565c4d36c1ad3faa61))
+- unified write method
+  ([19f00bd](https://github.com/flowcore-io/flowcore-pathways/commit/19f00bd550d5b167e0104d9c8ef5a2751a909041))
 
 ### Bug Fixes
 
-* fix session pathway ([5b8b1a0](https://github.com/flowcore-io/flowcore-pathways/commit/5b8b1a0b846f97adb679ce79ddd61bdc8868caf9))
-* fix types ([2235058](https://github.com/flowcore-io/flowcore-pathways/commit/22350588845db0a1e320d80928653210048b9a29))
-* update readme ([2285c96](https://github.com/flowcore-io/flowcore-pathways/commit/2285c960d9f3d95c09092c91ab8b93b4fc98a94f))
-* update tests and readme ([c3af713](https://github.com/flowcore-io/flowcore-pathways/commit/c3af7133196bb5da5cf7f342c2922bb7ad778fe9))
+- fix session pathway
+  ([5b8b1a0](https://github.com/flowcore-io/flowcore-pathways/commit/5b8b1a0b846f97adb679ce79ddd61bdc8868caf9))
+- fix types
+  ([2235058](https://github.com/flowcore-io/flowcore-pathways/commit/22350588845db0a1e320d80928653210048b9a29))
+- update readme
+  ([2285c96](https://github.com/flowcore-io/flowcore-pathways/commit/2285c960d9f3d95c09092c91ab8b93b4fc98a94f))
+- update tests and readme
+  ([c3af713](https://github.com/flowcore-io/flowcore-pathways/commit/c3af7133196bb5da5cf7f342c2922bb7ad778fe9))
 
 ## [0.14.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.13.2...v0.14.0) (2025-05-23)
 
-
 ### Features
 
-* switch from typebox to zod ([e20e8f8](https://github.com/flowcore-io/flowcore-pathways/commit/e20e8f81a9cf68eaa598be5d43ef34f346f136ea))
-
+- switch from typebox to zod
+  ([e20e8f8](https://github.com/flowcore-io/flowcore-pathways/commit/e20e8f81a9cf68eaa598be5d43ef34f346f136ea))
 
 ### Bug Fixes
 
-* fix tests ([05496b9](https://github.com/flowcore-io/flowcore-pathways/commit/05496b993669449d8bfe758e2647d4f2a2dbbf06))
-* set defaults on write and process ([c01ac59](https://github.com/flowcore-io/flowcore-pathways/commit/c01ac59cd4097d832c009e90e7259644e84a9612))
+- fix tests
+  ([05496b9](https://github.com/flowcore-io/flowcore-pathways/commit/05496b993669449d8bfe758e2647d4f2a2dbbf06))
+- set defaults on write and process
+  ([c01ac59](https://github.com/flowcore-io/flowcore-pathways/commit/c01ac59cd4097d832c009e90e7259644e84a9612))
 
 ## [0.13.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.13.1...v0.13.2) (2025-05-14)
 
-
 ### Performance Improvements
 
-* ability to adjust the log level of internal logs ([eaeb9c5](https://github.com/flowcore-io/flowcore-pathways/commit/eaeb9c58a53be3effb6ba54621535a531b11e82e))
+- ability to adjust the log level of internal logs
+  ([eaeb9c5](https://github.com/flowcore-io/flowcore-pathways/commit/eaeb9c58a53be3effb6ba54621535a531b11e82e))
 
 ## [0.13.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.13.0...v0.13.1) (2025-04-22)
 
-
 ### Bug Fixes
 
-* **pathways:** :art: extract audit constants for better readability ([9a349b8](https://github.com/flowcore-io/flowcore-pathways/commit/9a349b865e8bc5627a50a4b132d368fcba4bf986))
+- **pathways:** :art: extract audit constants for better readability
+  ([9a349b8](https://github.com/flowcore-io/flowcore-pathways/commit/9a349b865e8bc5627a50a4b132d368fcba4bf986))
 
 ## [0.13.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.12.0...v0.13.0) (2025-04-22)
 

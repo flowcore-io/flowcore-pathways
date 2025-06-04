@@ -53,8 +53,14 @@ function generateUUID(): string {
  * session.withUserResolver(async () => getCurrentUserId());
  *
  * // Write events with session context
- * await session.write("order/placed", orderData);
- * await session.write("user/action", actionData);
+ * await session.write("order/placed", { data: orderData });
+ * await session.write("user/action", { data: actionData });
+ *
+ * // Write batch events with session context
+ * await session.write("user/actions", {
+ *   batch: true,
+ *   data: [actionData1, actionData2]
+ * });
  *
  * // All events will be associated with the same session ID
  * ```
@@ -116,7 +122,7 @@ export class SessionPathwayBuilder<
    * });
    *
    * // When writing events, the user ID will be automatically included
-   * await session.write("user/action", actionData);
+   * await session.write("user/action", { data: actionData });
    * ```
    */
   withUserResolver(resolver: UserIdResolver): this {
@@ -128,17 +134,20 @@ export class SessionPathwayBuilder<
    * Writes data to a pathway, proxying to the underlying PathwaysBuilder
    *
    * @param path The pathway to write to
-   * @param data The data to write
-   * @param metadata Optional metadata to include with the event
-   * @param options Optional write options
+   * @param input Object containing the data, metadata, options, and optional batch flag
    * @returns A promise that resolves to the event ID(s)
    */
-  async write<TPath extends TWritablePaths>(
+  async write<TPath extends TWritablePaths, B extends boolean = false>(
     path: TPath,
-    data: TPathway[TPath]["input"],
-    metadata?: EventMetadata,
-    options?: PathwayWriteOptions,
+    input: {
+      batch?: B
+      data: B extends true ? TPathway[TPath]["input"][] : TPathway[TPath]["input"]
+      metadata?: EventMetadata
+      options?: PathwayWriteOptions
+    },
   ): Promise<string | string[]> {
+    const { data, metadata, options, batch } = input
+
     // Create new options object with session ID
     const finalOptions: PathwayWriteOptions = options ? { ...options } : {}
 
@@ -146,6 +155,11 @@ export class SessionPathwayBuilder<
     finalOptions.sessionId = options?.sessionId ?? this.sessionId
 
     // The PathwaysBuilder will handle session-specific user resolvers
-    return await this.pathwaysBuilder.write(path, { data, metadata, options: finalOptions })
+    return await this.pathwaysBuilder.write(path, {
+      batch,
+      data,
+      metadata,
+      options: finalOptions,
+    })
   }
 }
