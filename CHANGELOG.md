@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.16.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.1...v0.16.2) (2025-06-12)
+
+
+### Bug Fixes
+
+* allow userIdResolver to be regular return also ([8420480](https://github.com/flowcore-io/flowcore-pathways/commit/84204800a8c6e7d27ca6c4bac3f95019159d301a))
+* change metadata ([18dcbbd](https://github.com/flowcore-io/flowcore-pathways/commit/18dcbbd3573ec7c7b52fd6af20896a3730a1a388))
+* change metadata ([a7a9bfa](https://github.com/flowcore-io/flowcore-pathways/commit/a7a9bfa5f98b2021660d99b7d864283b5cbca615))
+* fix some tests ([705870c](https://github.com/flowcore-io/flowcore-pathways/commit/705870c7fd8d220b33be71a6e4aaddd50afcb9fe))
+* make zod a peer dependency in npm package ([930033e](https://github.com/flowcore-io/flowcore-pathways/commit/930033e3d586a61ee0099a55ddb6ee5f48565c5a))
+* make zod a peer dependency in npm package ([de3b93f](https://github.com/flowcore-io/flowcore-pathways/commit/de3b93fe8882199159d9090ba5f81f8b47e1a424))
+
 ## [0.16.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.0...v0.16.1) (2025-06-04)
 
 
