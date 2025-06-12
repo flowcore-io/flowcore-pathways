@@ -123,7 +123,8 @@ Deno.test({
       assertExists(metadataHeader, "Metadata header should exist")
 
       const metadata = decodeMetadataFromHeader(metadataHeader)
-      assertEquals(metadata["audit/user-id"], "test-user-123")
+      assertEquals(metadata["audit/entity-id"], "test-user-123")
+      assertEquals(metadata["audit/entity-type"], "user")
       assertEquals(metadata["audit/mode"], "user")
     })
 
@@ -176,7 +177,8 @@ Deno.test({
       assertExists(metadataHeader, "Metadata header should exist")
 
       const metadata = decodeMetadataFromHeader(metadataHeader)
-      assertEquals(metadata["audit/user-id"], "test-user-123")
+      assertEquals(metadata["audit/entity-id"], "test-user-123")
+      assertEquals(metadata["audit/entity-type"], "user")
       assertEquals(metadata["audit/mode"], "user")
     })
 
@@ -229,8 +231,10 @@ Deno.test({
       assertExists(metadataHeader, "Metadata header should exist")
 
       const metadata = decodeMetadataFromHeader(metadataHeader)
-      assertEquals(metadata["audit/user-id"], "system")
-      assertEquals(metadata["audit/on-behalf-of"], "test-user-123")
+      assertEquals(metadata["audit/on-behalf-of-id"], "test-user-123")
+      assertEquals(metadata["audit/on-behalf-of-type"], "user")
+      assertEquals(metadata["audit/entity-id"], "system")
+      assertEquals(metadata["audit/entity-type"], "system")
       assertEquals(metadata["audit/mode"], "system")
     })
 
