@@ -22,11 +22,13 @@ import type {
   WritablePathway,
 } from "./types.ts"
 import {
+  AUDIT_ENTITY_ID,
   AUDIT_ENTITY_TYPE,
   AUDIT_MODE,
-  AUDIT_ON_BEHALF_OF,
+  AUDIT_ON_BEHALF_OF_ID,
+  AUDIT_ON_BEHALF_OF_TYPE,
+  AUDIT_SESSION_ID,
   AUDIT_SYSTEM_MODE,
-  AUDIT_USER_ID,
   AUDIT_USER_MODE,
 } from "./constants.ts"
 import { FileEventSchema, FileInputSchema } from "./types.ts"
@@ -939,16 +941,22 @@ export class PathwaysBuilder<
     if (userId) {
       // Add appropriate audit metadata based on mode
       if (auditMode === AUDIT_SYSTEM_MODE) {
-        finalMetadata[AUDIT_USER_ID] = "system"
-        finalMetadata[AUDIT_ON_BEHALF_OF] = userId.entityId
-        finalMetadata[AUDIT_MODE] = "system"
-        finalMetadata[AUDIT_ENTITY_TYPE] = userId.entityType
+        finalMetadata[AUDIT_MODE] = AUDIT_SYSTEM_MODE
+        finalMetadata[AUDIT_ENTITY_TYPE] = "system"
+        finalMetadata[AUDIT_ENTITY_ID] = "system"
+        finalMetadata[AUDIT_ON_BEHALF_OF_TYPE] = userId.entityType
+        finalMetadata[AUDIT_ON_BEHALF_OF_ID] = userId.entityId
       } else {
-        finalMetadata[AUDIT_USER_ID] = userId.entityId
-        finalMetadata[AUDIT_MODE] = AUDIT_USER_MODE // Always set mode for user
+        finalMetadata[AUDIT_MODE] = AUDIT_USER_MODE
         finalMetadata[AUDIT_ENTITY_TYPE] = userId.entityType
+        finalMetadata[AUDIT_ENTITY_ID] = userId.entityId
       }
     }
+
+    if (options?.sessionId) {
+      finalMetadata[AUDIT_SESSION_ID] = options.sessionId
+    }
+
     let eventIds: string | string[] = []
     this.logger.debug(`Writing webhook data to pathway`, { pathway: pathStr, batch })
     if (batch) {
