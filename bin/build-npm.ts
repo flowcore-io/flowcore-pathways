@@ -31,9 +31,13 @@ await build({
     },
     dependencies: {
       "bun-sqlite-key-value": undefined as unknown as string,
+      "zod": undefined as unknown as string,
     },
     devDependencies: {
       "@types/ws": "^8.5.10",
+    },
+    peerDependencies: {
+      "zod": "^3.25.63",
     },
   },
   postBuild() {
