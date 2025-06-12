@@ -83,7 +83,7 @@ export type UserResolverEntity = {
  * Async function that resolves to the current user ID
  * Used for audit functionality to track which user initiated an action
  */
-export type UserIdResolver = () => Promise<UserResolverEntity>
+export type UserIdResolver = () => Promise<UserResolverEntity> | UserResolverEntity
 
 /**
  * Extended webhook send options with additional audit-specific options
