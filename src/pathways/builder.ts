@@ -1067,7 +1067,11 @@ export class PathwaysBuilder<
     })
   }
 
-  
+  /**
+   * Converts Zod validation errors to a human-readable string
+   * @param errors Array of Zod validation error objects
+   * @returns A formatted error message string
+   */
   // note: using "any", here because I cannot justify spending this much time on an issue this small
   // because deno doesn't like to play nice with cursor - unless I type config the entire project to compensate for deno's weird little world...
   private validationErrorToString(errors:any): string {
