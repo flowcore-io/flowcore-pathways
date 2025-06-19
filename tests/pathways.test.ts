@@ -139,7 +139,8 @@ Deno.test({
       )
     })
 
-    await t.step("Pathway Writing - Invalid Event", async () => {
+    await t.step("Pathway Writing - Invalid Event - Missing data object", async () => {
+      // Assert
       await server.start()
 
       const builder = new PathwaysBuilder({
@@ -165,11 +166,53 @@ Deno.test({
       })
 
       try {
-        // @ts-expect-error Testing invalid data type (number instead of string)
+        // Act
+        // @ts-expect-error Testing missing data object around payload content
         await pathwayBuilder.write(pathwayKey, { test: 123 })
       } catch (error: unknown) {
+        // Assert
         if (error instanceof Error) {
-          assertEquals(error.message, "Invalid data for pathway test-flow-type/test-event-type")
+          assertEquals(error.message, "Invalid data for pathway test-flow-type/test-event-type. Required - expected \"object\", received \"undefined\"")
+        } else {
+          throw error
+        }
+      }
+    })
+
+    await t.step("Pathway Writing - Invalid Event - Payload does not match schema", async () => {
+      // Assert
+      await server.start()
+
+      const builder = new PathwaysBuilder({
+        baseUrl: `http://localhost:${server.port}`,
+        tenant: "test-tenant",
+        dataCore: "test-data-core",
+        apiKey: "test-api-key",
+        pathwayTimeoutMs: 1000,
+      })
+      // Track builder instances for cleanup
+      pathwaysInstances.push(builder)
+
+      const pathwayKey = "test-flow-type/test-event-type" as const
+
+      const pathwayBuilder = builder.register({
+        flowType: "test-flow-type",
+        eventType: "test-event-type",
+        schema: testSchema,
+      })
+
+      pathwayBuilder.handle(pathwayKey, async (event: FlowcoreEvent) => {
+        console.log("Received event:", event)
+      })
+
+      try {
+        // Act
+        // @ts-expect-error Testing invalid data type (number instead of string)
+        await pathwayBuilder.write(pathwayKey, { data: { test: 123 } })
+      } catch (error: unknown) {
+        // Assert
+        if (error instanceof Error) {
+          assertEquals(error.message, "Invalid data for pathway test-flow-type/test-event-type. test: Expected string, received number - expected \"string\", received \"number\"")
         } else {
           throw error
         }

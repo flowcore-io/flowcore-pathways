@@ -471,8 +471,12 @@ export class PathwaysBuilder<
       const parsedPayload = this.schemas[pathway].safeParse(data.payload)
       try {
         if (!parsedPayload.success) {
-          const error = `Event payload does not match schema for pathway ${pathwayStr}`
-          this.logger.error(error)
+          const error = `Event payload does not match schema for pathway ${pathwayStr}. ${this.validationErrorToString(parsedPayload.error.errors)}`
+          this.logger.error(error, {
+            pathway: pathwayStr,
+            schema: this.schemas[pathway].toString(),
+            validationErrors: parsedPayload.error.errors, // Keep all errors in the logs for debugging
+          })
           throw new Error(error)
         }
       } catch (err) {
@@ -882,10 +886,11 @@ export class PathwaysBuilder<
     const schema = batch ? z.array(this.inputSchemas[path]) : this.inputSchemas[path]
     const parsedData = schema.safeParse(inputData)
     if (!parsedData.success) {
-      const errorMessage = `Invalid data for pathway ${pathStr}`
-      this.logger.error(errorMessage, new Error(errorMessage), {
+      const errorMessage = `Invalid data for pathway ${pathStr}. ${this.validationErrorToString(parsedData.error.errors)}`
+      this.logger.error(errorMessage, {
         pathway: pathStr,
         schema: schema.toString(),
+        validationErrors: parsedData.error.errors, // Keep all errors in the logs for debugging
       })
       throw new Error(errorMessage)
     }
@@ -1061,4 +1066,21 @@ export class PathwaysBuilder<
       attempts,
     })
   }
+
+  
+  // note: using "any", here because I cannot justify spending this much time on an issue this small
+  // because deno doesn't like to play nice with cursor - unless I type config the entire project to compensate for deno's weird little world...
+  private validationErrorToString(errors:any): string {
+    const primaryError = errors[0]
+
+    if(!primaryError) {
+      return "Unknown validation error";
+    }
+
+    const path = primaryError.path.join(".");
+    const pathOutput = path ? `${path}: ` : "";
+    
+    return `${pathOutput}${primaryError.message} - expected "${primaryError.expected}", received "${primaryError.received}"`
+  }
+
 }
