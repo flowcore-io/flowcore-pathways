@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.3](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.2...v0.16.3) (2025-06-20)
+
+
+### Bug Fixes
+
+* enhance error logging and validation feedback in PathwaysBuilder ([7346aba](https://github.com/flowcore-io/flowcore-pathways/commit/7346ababec419f46f6102408e41ce2580b41dcdf))
+
 ## [0.16.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.1...v0.16.2) (2025-06-12)
 
 
