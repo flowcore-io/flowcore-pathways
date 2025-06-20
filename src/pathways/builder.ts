@@ -471,7 +471,8 @@ export class PathwaysBuilder<
       const parsedPayload = this.schemas[pathway].safeParse(data.payload)
       try {
         if (!parsedPayload.success) {
-          const error = `Event payload does not match schema for pathway ${pathwayStr}. ${this.validationErrorToString(parsedPayload.error.errors)}`
+          const validationMessage = this.validationErrorToString(parsedPayload.error)
+          const error = `Event payload does not match schema for pathway ${pathwayStr}. ${validationMessage}`
           this.logger.error(error, {
             pathway: pathwayStr,
             schema: this.schemas[pathway].toString(),
@@ -886,7 +887,8 @@ export class PathwaysBuilder<
     const schema = batch ? z.array(this.inputSchemas[path]) : this.inputSchemas[path]
     const parsedData = schema.safeParse(inputData)
     if (!parsedData.success) {
-      const errorMessage = `Invalid data for pathway ${pathStr}. ${this.validationErrorToString(parsedData.error.errors)}`
+      const validationMessage = this.validationErrorToString(parsedData.error)
+      const errorMessage = `Invalid data for pathway ${pathStr}. ${validationMessage}`
       this.logger.error(errorMessage, {
         pathway: pathStr,
         schema: schema.toString(),
@@ -1067,24 +1069,22 @@ export class PathwaysBuilder<
     })
   }
 
+  
   /**
-   * Converts Zod validation errors to a human-readable string
-   * @param errors Array of Zod validation error objects
+   * Converts a Zod validation error to a human-readable string
+   * @param error The Zod validation error to convert
    * @returns A formatted error message string
    */
-  // note: using "any", here because I cannot justify spending this much time on an issue this small
-  // because deno doesn't like to play nice with cursor - unless I type config the entire project to compensate for deno's weird little world...
-  private validationErrorToString(errors:any): string {
-    const primaryError = errors[0]
+  private validationErrorToString<Input, Output>(error:z.SafeParseReturnType<Input, Output>["error"]): string {
+    const primaryError = error?.errors[0]
 
     if(!primaryError) {
       return "Unknown validation error";
     }
-
+    
     const path = primaryError.path.join(".");
     const pathOutput = path ? `${path}: ` : "";
     
-    return `${pathOutput}${primaryError.message} - expected "${primaryError.expected}", received "${primaryError.received}"`
+    return `${pathOutput}${primaryError.message}`
   }
-
 }
