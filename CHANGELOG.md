@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.4](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.3...v0.16.4) (2025-07-25)
+
+
+### Bug Fixes
+
+* add logging on send fail ([3c0da76](https://github.com/flowcore-io/flowcore-pathways/commit/3c0da76353da03e110102250c466dde7cd3cd48c))
+
 ## [0.16.3](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.2...v0.16.3) (2025-06-20)
 
 
