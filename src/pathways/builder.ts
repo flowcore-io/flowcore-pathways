@@ -971,7 +971,13 @@ export class PathwaysBuilder<
         data as unknown as TPathway[TPath]["output"][],
         finalMetadata,
         options,
-      )
+      ).catch((error) => {
+        this.logger.error(`Error writing batch to pathway`, {
+          pathway: pathStr,
+          error,
+        })
+        throw error
+      })
     } else if (this.filePathways.has(path)) {
       const { fileId, fileName, fileContent, ...additionalProperties } = data as z.infer<typeof FileInputSchema>
       const fileType = await fileTypeFromBuffer(fileContent as Buffer)
@@ -986,9 +992,24 @@ export class PathwaysBuilder<
         },
         finalMetadata,
         options,
-      )
+      ).catch((error) => {
+        this.logger.error(`Error writing file to pathway`, {
+          pathway: pathStr,
+          fileId,
+          fileName,
+          error,
+        })
+        throw error
+      })
     } else {
       eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]["output"]>)(data, finalMetadata, options)
+        .catch((error) => {
+          this.logger.error(`Error writing webhook to pathway`, {
+            pathway: pathStr,
+            error,
+          })
+          throw error
+        })
     }
 
     this.logger[this.logLevel.writeSuccess](`Successfully wrote to pathway`, {
@@ -1069,22 +1090,21 @@ export class PathwaysBuilder<
     })
   }
 
-  
   /**
    * Converts a Zod validation error to a human-readable string
    * @param error The Zod validation error to convert
    * @returns A formatted error message string
    */
-  private validationErrorToString<Input, Output>(error:z.SafeParseReturnType<Input, Output>["error"]): string {
+  private validationErrorToString<Input, Output>(error: z.SafeParseReturnType<Input, Output>["error"]): string {
     const primaryError = error?.errors[0]
 
-    if(!primaryError) {
-      return "Unknown validation error";
+    if (!primaryError) {
+      return "Unknown validation error"
     }
-    
-    const path = primaryError.path.join(".");
-    const pathOutput = path ? `${path}: ` : "";
-    
+
+    const path = primaryError.path.join(".")
+    const pathOutput = path ? `${path}: ` : ""
+
     return `${pathOutput}${primaryError.message}`
   }
 }
