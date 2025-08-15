@@ -1,5 +1,5 @@
 import { type AnyZodObject, z } from "zod"
-import type { WebhookFileData, WebhookSendOptions } from "npm:@flowcore/sdk-transformer-core@^2.3.6"
+import type { WebhookFileData, WebhookSendOptions } from "npm:@flowcore/sdk-transformer-core@^2.5.1"
 import { Buffer } from "node:buffer"
 
 /**

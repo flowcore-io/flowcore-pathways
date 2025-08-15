@@ -2,7 +2,7 @@ import { type AnyZodObject, z } from "zod"
 import type {
   WebhookBuilder as WebhookBuilderType,
   WebhookSendOptions,
-} from "npm:@flowcore/sdk-transformer-core@^2.3.6"
+} from "npm:@flowcore/sdk-transformer-core@^2.5.1"
 import { fileTypeFromBuffer } from "file-type"
 import { Subject } from "rxjs"
 import { WebhookBuilder } from "../compatibility/flowcore-transformer-core.sdk.ts"
