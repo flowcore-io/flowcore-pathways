@@ -999,7 +999,7 @@ export class PathwaysBuilder<
           fileId,
           fileName,
           fileType: fileType?.mime ?? "application/octet-stream",
-          fileContent: new Blob([fileContent as Buffer]),
+          fileContent: new Blob([new Uint8Array(fileContent as Buffer)]),
           additionalProperties,
         },
         finalMetadata,
