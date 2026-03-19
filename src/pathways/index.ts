@@ -13,6 +13,8 @@
  */
 export * from "./builder.ts"
 export * from "./cluster/index.ts"
+export { PathwayProvisioner } from "./provisioner.ts"
+export type { PathwayProvisionerOptions, ProvisionerRegistration } from "./provisioner.ts"
 export * from "./constants.ts"
 export * from "./internal-pathway.state.ts"
 export * from "./kv/kv-adapter.ts"

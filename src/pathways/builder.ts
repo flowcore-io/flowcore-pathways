@@ -22,6 +22,7 @@ import type { PathwayClusterOptions } from "./cluster/types.ts"
 import { ClusterManager } from "./cluster/cluster-manager.ts"
 import type { PathwayPumpOptions } from "./pump/types.ts"
 import { PathwayPump } from "./pump/pathway-pump.ts"
+import { PathwayProvisioner } from "./provisioner.ts"
 import {
   AUDIT_ENTITY_ID,
   AUDIT_ENTITY_TYPE,
@@ -278,6 +279,13 @@ export class PathwaysBuilder<
   private readonly apiKey: string
   private readonly logLevel: InternalLogLevelConfig
 
+  // Provisioning descriptions
+  private readonly flowTypeDescriptions: Map<string, string> = new Map()
+  private readonly eventTypeDescriptions: Map<string, string> = new Map()
+  private readonly dataCoreDescription?: string
+  private readonly dataCoreAccessControl: string
+  private readonly dataCoreDeleteProtection: boolean
+
   // Cluster + pump
   private clusterManager: ClusterManager | null = null
   private pathwayPump: PathwayPump | null = null
@@ -307,6 +315,9 @@ export class PathwaysBuilder<
     enableSessionUserResolvers,
     overrideSessionUserResolvers,
     logLevel,
+    dataCoreDescription,
+    dataCoreAccessControl,
+    dataCoreDeleteProtection,
   }: {
     baseUrl: string
     tenant: string
@@ -317,6 +328,9 @@ export class PathwaysBuilder<
     enableSessionUserResolvers?: boolean
     overrideSessionUserResolvers?: SessionUserResolver
     logLevel?: LogLevelConfig
+    dataCoreDescription?: string
+    dataCoreAccessControl?: string
+    dataCoreDeleteProtection?: boolean
   }) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger()
@@ -331,6 +345,11 @@ export class PathwaysBuilder<
     this.tenant = tenant
     this.dataCore = dataCore
     this.apiKey = apiKey
+
+    // Store provisioning config
+    this.dataCoreDescription = dataCoreDescription
+    this.dataCoreAccessControl = dataCoreAccessControl ?? "private"
+    this.dataCoreDeleteProtection = dataCoreDeleteProtection ?? false
 
     if (enableSessionUserResolvers) {
       this.sessionUserResolvers = overrideSessionUserResolvers ?? new SessionUser()
@@ -699,6 +718,14 @@ export class PathwaysBuilder<
       this.inputSchemas[path] = contract.schema ?? z.object({})
     }
     this.writable[path] = writable
+
+    // Store provisioning descriptions
+    if (contract.description !== undefined) {
+      this.eventTypeDescriptions.set(path, contract.description)
+    }
+    if (contract.flowTypeDescription !== undefined) {
+      this.flowTypeDescriptions.set(contract.flowType, contract.flowTypeDescription)
+    }
 
     this.logger.info(`Pathway registered successfully`, {
       pathway: path,
@@ -1152,12 +1179,49 @@ export class PathwaysBuilder<
   }
 
   /**
+   * Provision Flowcore infrastructure (data core, flow types, event types).
+   * Creates missing resources when descriptions are provided, updates descriptions
+   * when they differ. Fails if a resource is missing and no description is provided.
+   * Additive only — never deletes.
+   */
+  async provision(): Promise<void> {
+    const registrations = Object.keys(this.pathways).map((key) => {
+      const [flowType, eventType] = key.split("/")
+      return {
+        flowType,
+        eventType,
+        flowTypeDescription: this.flowTypeDescriptions.get(flowType),
+        eventTypeDescription: this.eventTypeDescriptions.get(key),
+      }
+    })
+
+    const provisioner = new PathwayProvisioner({
+      tenant: this.tenant,
+      dataCore: this.dataCore,
+      apiKey: this.apiKey,
+      dataCoreDescription: this.dataCoreDescription,
+      dataCoreAccessControl: this.dataCoreAccessControl,
+      dataCoreDeleteProtection: this.dataCoreDeleteProtection,
+      registrations,
+      logger: this.logger,
+    })
+
+    await provisioner.provision()
+  }
+
+  /**
    * Start the data pump to auto-fetch events from Flowcore.
    * If cluster is active, pump only runs on the leader instance.
    */
   async startPump(options: PathwayPumpOptions): Promise<PathwayPump> {
     if (this.pathwayPump) {
       throw new Error("Pump already started")
+    }
+
+    // Auto-provision infrastructure if requested
+    if (options.autoProvision) {
+      this.logger.info("Auto-provisioning Flowcore infrastructure before starting pump")
+      await this.provision()
     }
 
     // If cluster active and not leader, don't start pump

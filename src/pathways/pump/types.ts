@@ -8,6 +8,8 @@ export interface PathwayPumpOptions {
   notifier?: PumpNotifierConfig
   bufferSize?: number
   maxRedeliveryCount?: number
+  /** If true, calls provision() before starting the pump */
+  autoProvision?: boolean
 }
 
 /**
