@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.17.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.4...v0.17.0) (2026-03-19)
+
+
+### Features
+
+* add cluster mode and data pump integration ([231384a](https://github.com/flowcore-io/flowcore-pathways/commit/231384a8685993040c1d2b637822499f9f756000))
+* add cluster mode and data pump integration ([9ca0fcb](https://github.com/flowcore-io/flowcore-pathways/commit/9ca0fcb10a9e7c8a6f266dc2c568e30a0b4e9672))
+* add declarative registration and auto-provisioning ([ee7f36a](https://github.com/flowcore-io/flowcore-pathways/commit/ee7f36ae87fb3fd901b9a9f918ffc82b19008939))
+
+
+### Bug Fixes
+
+* replace inline npm: specifiers with import map references ([470732f](https://github.com/flowcore-io/flowcore-pathways/commit/470732fac377ed5d3f54d3ef852d792dbb58cef6))
+* resolve lint errors in cluster manager ([a809b6a](https://github.com/flowcore-io/flowcore-pathways/commit/a809b6a1daee16b276ffdb9c88a9f31233592275))
+* resolve pre-existing Buffer/BlobPart type error in file pathway write ([ba08aa3](https://github.com/flowcore-io/flowcore-pathways/commit/ba08aa334eb51c86894c6a39ee2010c22fc16dc5))
+* use runtime transport abstraction for cross-platform npm build ([9e4f7b9](https://github.com/flowcore-io/flowcore-pathways/commit/9e4f7b90ce45f1f8bfae913aeeb970971fad5dea))
+
 ## [0.16.4](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.3...v0.16.4) (2025-07-25)
 
 ### Bug Fixes
