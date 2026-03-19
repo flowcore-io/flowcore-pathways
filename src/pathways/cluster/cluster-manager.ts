@@ -3,6 +3,8 @@ import type { Logger } from "../logger.ts"
 import { NoopLogger } from "../logger.ts"
 import type {
   ClusterRole,
+  ClusterSocket,
+  ClusterTransport,
   PathwayClusterOptions,
   PathwayCoordinator,
   PendingDelivery,
@@ -19,6 +21,37 @@ const DEFAULT_DELIVERY_TIMEOUT_MS = 30_000
 const LEASE_KEY = "pathway-cluster-leader"
 
 /**
+ * Creates a default transport using Deno APIs.
+ * Uses runtime detection to avoid compile-time dependency on Deno types.
+ */
+function createDefaultTransport(): ClusterTransport {
+  // deno-lint-ignore no-explicit-any
+  const D = (globalThis as any).Deno
+  if (!D?.serve) {
+    throw new Error(
+      "Default cluster transport requires Deno. Provide a custom ClusterTransport via options.transport for Node.js.",
+    )
+  }
+
+  return {
+    async startServer(port, onConnection) {
+      const server = D.serve({ port, hostname: "0.0.0.0" }, (req: Request) => {
+        if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+          return new Response("Expected WebSocket", { status: 426 })
+        }
+        const { socket, response } = D.upgradeWebSocket(req)
+        socket.onopen = () => onConnection(socket as unknown as ClusterSocket)
+        return response
+      })
+      return { shutdown: () => server.shutdown() }
+    },
+    connect(address) {
+      return new WebSocket(address) as unknown as ClusterSocket
+    },
+  }
+}
+
+/**
  * ClusterManager handles distributed event processing via leader election and WS workers.
  *
  * Lifecycle: register → heartbeat loop → leader election loop
@@ -28,6 +61,7 @@ const LEASE_KEY = "pathway-cluster-leader"
  */
 export class ClusterManager {
   private readonly coordinator: PathwayCoordinator
+  private readonly transport: ClusterTransport
   private readonly instanceId: string
   private readonly advertisedAddress: string
   private readonly port: number
@@ -46,18 +80,19 @@ export class ClusterManager {
   private deliveryTimeoutTimer: ReturnType<typeof setInterval> | null = null
 
   // Leader state
-  private workerConnections: Map<string, WebSocket> = new Map()
+  private workerConnections: Map<string, ClusterSocket> = new Map()
   private pendingDeliveries: Map<string, PendingDelivery> = new Map()
   private workerAddresses: string[] = []
   private roundRobinIndex = 0
 
   // Worker state
-  private wsServer: ReturnType<typeof Deno.serve> | null = null
-  private leaderConnection: WebSocket | null = null
+  private wsServer: { shutdown(): Promise<void> } | null = null
+  private leaderConnection: ClusterSocket | null = null
   private eventHandler: ((pathway: string, event: FlowcoreEvent) => Promise<void>) | null = null
 
   constructor(options: PathwayClusterOptions, logger?: Logger) {
     this.coordinator = options.coordinator
+    this.transport = options.transport ?? createDefaultTransport()
     this.instanceId = crypto.randomUUID()
     this.advertisedAddress = options.advertisedAddress
     this.port = options.port
@@ -93,7 +128,7 @@ export class ClusterManager {
     await this.coordinator.register(this.instanceId, this.advertisedAddress)
 
     // Start WS server for accepting connections (both leader and worker need this)
-    this.startWsServer()
+    await this.startWsServer()
 
     // Start heartbeat loop
     this.heartbeatTimer = setInterval(async () => {
@@ -143,7 +178,7 @@ export class ClusterManager {
     }
 
     // Close worker connections (leader side)
-    for (const [addr, ws] of this.workerConnections) {
+    for (const [, ws] of this.workerConnections) {
       try {
         ws.close()
       } catch {
@@ -195,7 +230,6 @@ export class ClusterManager {
    */
   async processEvent(pathway: string, event: FlowcoreEvent): Promise<void> {
     if (this.role !== "leader") {
-      // If not leader, process locally (shouldn't normally happen for cluster-routed events)
       this.logger.warn("processEvent called on non-leader instance, processing locally", {
         instanceId: this.instanceId,
         role: this.role,
@@ -268,11 +302,9 @@ export class ClusterManager {
         this.role = "worker"
         this.cleanupLeaderState()
       } else {
-        // Refresh worker list
         await this.refreshWorkers()
       }
     } else {
-      // Try to become leader
       await this.tryAcquireLease()
     }
   }
@@ -287,7 +319,6 @@ export class ClusterManager {
       .filter((i) => i.instanceId !== this.instanceId)
       .map((i) => i.address)
 
-    // Connect to new workers, disconnect from removed workers
     const currentAddresses = new Set(this.workerConnections.keys())
     const newAddresses = new Set(newWorkers)
 
@@ -309,7 +340,7 @@ export class ClusterManager {
     // Connect to new workers
     for (const addr of newAddresses) {
       if (!currentAddresses.has(addr)) {
-        this.connectToWorker(addr)
+        await this.connectToWorker(addr)
       }
     }
 
@@ -332,20 +363,13 @@ export class ClusterManager {
 
   // --- Private: WS Server (accepts connections from leader) ---
 
-  private startWsServer(): void {
-    this.wsServer = Deno.serve({ port: this.port, hostname: "0.0.0.0" }, (req) => {
-      if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
-        return new Response("Expected WebSocket", { status: 426 })
-      }
+  private async startWsServer(): Promise<void> {
+    const transport = this.transport
+    this.wsServer = await transport.startServer(this.port, (socket: ClusterSocket) => {
+      this.logger.debug("WS connection opened from leader")
+      this.leaderConnection = socket
 
-      const { socket, response } = Deno.upgradeWebSocket(req)
-
-      socket.onopen = () => {
-        this.logger.debug("WS connection opened from leader")
-        this.leaderConnection = socket
-      }
-
-      socket.onmessage = async (event) => {
+      socket.onmessage = async (event: { data: string }) => {
         try {
           const msg: WsMessage = JSON.parse(event.data)
           await this.handleWorkerMessage(socket, msg)
@@ -364,20 +388,17 @@ export class ClusterManager {
         }
       }
 
-      socket.onerror = (err) => {
+      socket.onerror = (err: unknown) => {
         this.logger.error("WS error", new Error(String(err)))
       }
-
-      return response
     })
 
     this.logger.info("WS server started", { port: this.port })
   }
 
-  private async handleWorkerMessage(socket: WebSocket, msg: WsMessage): Promise<void> {
+  private async handleWorkerMessage(socket: ClusterSocket, msg: WsMessage): Promise<void> {
     switch (msg.type) {
       case "events": {
-        // Worker receives events from leader, process them
         const ackEventIds: string[] = []
         const failEventIds: string[] = []
 
@@ -421,16 +442,17 @@ export class ClusterManager {
 
   // --- Private: WS Client (leader connects to workers) ---
 
-  private connectToWorker(address: string): void {
+  private async connectToWorker(address: string): Promise<void> {
     try {
-      const ws = new WebSocket(address)
+      const transport = this.transport
+      const ws = transport.connect(address)
 
       ws.onopen = () => {
         this.logger.info("Connected to worker", { address })
         this.workerConnections.set(address, ws)
       }
 
-      ws.onmessage = (event) => {
+      ws.onmessage = (event: { data: string }) => {
         try {
           const msg: WsMessage = JSON.parse(event.data)
           this.handleLeaderMessage(address, msg)
@@ -448,7 +470,7 @@ export class ClusterManager {
         this.workerAddresses = this.workerAddresses.filter((a) => a !== address)
       }
 
-      ws.onerror = (err) => {
+      ws.onerror = (err: unknown) => {
         this.logger.error("Worker WS error", new Error(String(err)), { address })
         this.workerConnections.delete(address)
       }
@@ -480,7 +502,6 @@ export class ClusterManager {
         break
       }
       case "pong": {
-        // heartbeat response, no action needed
         break
       }
       default:

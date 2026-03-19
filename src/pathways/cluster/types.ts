@@ -21,6 +21,7 @@ export interface PathwayClusterOptions {
   coordinator: PathwayCoordinator
   advertisedAddress: string
   port: number
+  transport?: ClusterTransport
   workerConcurrency?: number
   leaseTtlMs?: number
   leaseRenewIntervalMs?: number
@@ -63,6 +64,34 @@ export interface WsPingMessage {
 
 export interface WsPongMessage {
   type: "pong"
+}
+
+/**
+ * Minimal WebSocket-like interface for cross-platform compatibility
+ */
+export interface ClusterSocket {
+  send(data: string): void
+  close(): void
+  readonly readyState: number
+  onopen: ((event: unknown) => void) | null
+  onmessage: ((event: { data: string }) => void) | null
+  onclose: ((event: unknown) => void) | null
+  onerror: ((event: unknown) => void) | null
+}
+
+/**
+ * Transport abstraction for cluster WS server/client.
+ * Implement this interface for different runtimes (Deno, Node.js, etc.)
+ */
+export interface ClusterTransport {
+  /** Start a WS server on the given port. Call onConnection for each new socket. */
+  startServer(
+    port: number,
+    onConnection: (socket: ClusterSocket) => void,
+  ): Promise<{ shutdown(): Promise<void> }>
+
+  /** Connect to a remote WS address and return a socket. */
+  connect(address: string): ClusterSocket
 }
 
 /**

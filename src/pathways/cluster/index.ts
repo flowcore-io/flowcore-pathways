@@ -1,5 +1,7 @@
 export type {
   ClusterRole,
+  ClusterSocket,
+  ClusterTransport,
   PathwayClusterOptions,
   PathwayCoordinator,
   PendingDelivery,
