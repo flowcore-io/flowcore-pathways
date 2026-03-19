@@ -212,7 +212,10 @@ Deno.test({
       } catch (error: unknown) {
         // Assert
         if (error instanceof Error) {
-          assertEquals(error.message, "Invalid data for pathway test-flow-type/test-event-type. test: Expected string, received number")
+          assertEquals(
+            error.message,
+            "Invalid data for pathway test-flow-type/test-event-type. test: Expected string, received number",
+          )
         } else {
           throw error
         }
