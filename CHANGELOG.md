@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.0...v0.17.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* migrate npm publish to blacksmith trusted auth (no classic tokens) ([04764d7](https://github.com/flowcore-io/flowcore-pathways/commit/04764d7a6f6e216324ce65edd2ba0cc6a097f22f))
+
 ## [0.17.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.4...v0.17.0) (2026-03-19)
 
 
