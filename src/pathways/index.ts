@@ -12,10 +12,12 @@
  * @module
  */
 export * from "./builder.ts"
+export * from "./cluster/index.ts"
 export * from "./constants.ts"
 export * from "./internal-pathway.state.ts"
 export * from "./kv/kv-adapter.ts"
 export * from "./logger.ts"
 export * from "./postgres/index.ts"
+export * from "./pump/index.ts"
 export * from "./session-pathway.ts"
 export * from "./types.ts"

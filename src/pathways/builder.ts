@@ -21,6 +21,10 @@ import type {
   SendWebhookBatch,
   WritablePathway,
 } from "./types.ts"
+import type { PathwayClusterOptions } from "./cluster/types.ts"
+import { ClusterManager } from "./cluster/cluster-manager.ts"
+import type { PathwayPumpOptions } from "./pump/types.ts"
+import { PathwayPump } from "./pump/pathway-pump.ts"
 import {
   AUDIT_ENTITY_ID,
   AUDIT_ENTITY_TYPE,
@@ -277,6 +281,11 @@ export class PathwaysBuilder<
   private readonly apiKey: string
   private readonly logLevel: InternalLogLevelConfig
 
+  // Cluster + pump
+  private clusterManager: ClusterManager | null = null
+  private pathwayPump: PathwayPump | null = null
+  private clusterBypassProcess = false
+
   /**
    * Creates a new PathwaysBuilder instance
    * @param options Configuration options for the PathwaysBuilder
@@ -497,6 +506,12 @@ export class PathwaysBuilder<
         eventId: data.eventId,
       })
       this.auditHandler(pathwayStr, data)
+    }
+
+    // Route through cluster if active and not bypassed (bypass = worker processing locally)
+    if (this.clusterManager && !this.clusterBypassProcess) {
+      await this.clusterManager.processEvent(pathwayStr, data)
+      return
     }
 
     if (this.handlers[pathway]) {
@@ -1088,6 +1103,117 @@ export class PathwaysBuilder<
       elapsedTime: Date.now() - startTime,
       attempts,
     })
+  }
+
+  /**
+   * Start cluster mode for distributed event processing.
+   * This instance joins the cluster and either becomes a leader (distributes events)
+   * or a worker (receives and processes events).
+   */
+  async startCluster(options: PathwayClusterOptions): Promise<ClusterManager> {
+    if (this.clusterManager) {
+      throw new Error("Cluster already started")
+    }
+
+    this.clusterManager = new ClusterManager(options, this.logger)
+
+    // Set handler: when cluster needs to process locally, call process() with bypass
+    this.clusterManager.setEventHandler(async (pathway: string, event: FlowcoreEvent) => {
+      this.clusterBypassProcess = true
+      try {
+        await this.process(pathway as keyof TPathway, event)
+      } finally {
+        this.clusterBypassProcess = false
+      }
+    })
+
+    await this.clusterManager.start()
+
+    this.logger.info("Cluster started", {
+      advertisedAddress: options.advertisedAddress,
+      port: options.port,
+    })
+
+    return this.clusterManager
+  }
+
+  /**
+   * Stop cluster mode
+   */
+  async stopCluster(): Promise<void> {
+    if (!this.clusterManager) return
+    await this.clusterManager.stop()
+    this.clusterManager = null
+    this.logger.info("Cluster stopped")
+  }
+
+  /**
+   * Whether cluster mode is currently active
+   */
+  get isClusterActive(): boolean {
+    return this.clusterManager !== null && this.clusterManager.isRunning
+  }
+
+  /**
+   * Start the data pump to auto-fetch events from Flowcore.
+   * If cluster is active, pump only runs on the leader instance.
+   */
+  async startPump(options: PathwayPumpOptions): Promise<PathwayPump> {
+    if (this.pathwayPump) {
+      throw new Error("Pump already started")
+    }
+
+    // If cluster active and not leader, don't start pump
+    if (this.clusterManager && !this.clusterManager.isLeader) {
+      this.logger.info("Not starting pump — this instance is not the cluster leader")
+      // Still create the pump but don't start it — it can be started if we become leader
+      this.pathwayPump = new PathwayPump(options, this.logger)
+      this.pathwayPump.configure({
+        tenant: this.tenant,
+        dataCore: this.dataCore,
+        apiKey: this.apiKey,
+        baseUrl: this.baseUrl,
+        processEvent: async (pathway: string, event: FlowcoreEvent) => {
+          await this.process(pathway as keyof TPathway, event)
+        },
+      })
+      return this.pathwayPump
+    }
+
+    this.pathwayPump = new PathwayPump(options, this.logger)
+    this.pathwayPump.configure({
+      tenant: this.tenant,
+      dataCore: this.dataCore,
+      apiKey: this.apiKey,
+      baseUrl: this.baseUrl,
+      processEvent: async (pathway: string, event: FlowcoreEvent) => {
+        await this.process(pathway as keyof TPathway, event)
+      },
+    })
+
+    // Collect registered pathways
+    const registrations = Object.keys(this.pathways).map((key) => {
+      const [flowType, eventType] = key.split("/")
+      return { flowType, eventType }
+    })
+
+    await this.pathwayPump.start(registrations)
+
+    this.logger.info("Pump started", {
+      pathways: registrations.length,
+    })
+
+    return this.pathwayPump
+  }
+
+  /**
+   * Stop the data pump
+   */
+  async stopPump(): Promise<void> {
+    if (!this.pathwayPump) return
+    await this.pathwayPump.stop()
+    this.pathwayPump = null
+    this.logger.info("Pump stopped")
   }
 
   /**

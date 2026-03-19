@@ -26,6 +26,7 @@
     "file-type": "npm:file-type@^21.0.0",
     "node-cache": "npm:node-cache@^5.1.2",
     "rxjs": "npm:rxjs@^7.8.1",
+    "@flowcore/data-pump": "jsr:@flowcore/data-pump@^0.16.4",
     "postgres": "npm:postgres@^3.4.3",
     "zod": "npm:zod@^3.25.63"
   },
