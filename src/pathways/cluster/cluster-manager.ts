@@ -34,7 +34,7 @@ function createDefaultTransport(): ClusterTransport {
   }
 
   return {
-    async startServer(port, onConnection) {
+    startServer(port, onConnection) {
       const server = D.serve({ port, hostname: "0.0.0.0" }, (req: Request) => {
         if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
           return new Response("Expected WebSocket", { status: 426 })
@@ -43,7 +43,7 @@ function createDefaultTransport(): ClusterTransport {
         socket.onopen = () => onConnection(socket as unknown as ClusterSocket)
         return response
       })
-      return { shutdown: () => server.shutdown() }
+      return Promise.resolve({ shutdown: () => server.shutdown() })
     },
     connect(address) {
       return new WebSocket(address) as unknown as ClusterSocket
@@ -340,7 +340,7 @@ export class ClusterManager {
     // Connect to new workers
     for (const addr of newAddresses) {
       if (!currentAddresses.has(addr)) {
-        await this.connectToWorker(addr)
+        this.connectToWorker(addr)
       }
     }
 
@@ -364,8 +364,7 @@ export class ClusterManager {
   // --- Private: WS Server (accepts connections from leader) ---
 
   private async startWsServer(): Promise<void> {
-    const transport = this.transport
-    this.wsServer = await transport.startServer(this.port, (socket: ClusterSocket) => {
+    this.wsServer = await this.transport.startServer(this.port, (socket: ClusterSocket) => {
       this.logger.debug("WS connection opened from leader")
       this.leaderConnection = socket
 
@@ -442,10 +441,9 @@ export class ClusterManager {
 
   // --- Private: WS Client (leader connects to workers) ---
 
-  private async connectToWorker(address: string): Promise<void> {
+  private connectToWorker(address: string): void {
     try {
-      const transport = this.transport
-      const ws = transport.connect(address)
+      const ws = this.transport.connect(address)
 
       ws.onopen = () => {
         this.logger.info("Connected to worker", { address })
@@ -524,7 +522,7 @@ export class ClusterManager {
     return worker
   }
 
-  private async distributeToWorker(workerAddress: string, pathway: string, event: FlowcoreEvent): Promise<void> {
+  private distributeToWorker(workerAddress: string, _pathway: string, event: FlowcoreEvent): Promise<void> {
     const ws = this.workerConnections.get(workerAddress)
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       throw new Error(`Worker ${workerAddress} not connected`)
