@@ -1,8 +1,5 @@
 import { type AnyZodObject, z } from "zod"
-import type {
-  WebhookBuilder as WebhookBuilderType,
-  WebhookSendOptions,
-} from "npm:@flowcore/sdk-transformer-core@^2.3.6"
+import type { WebhookBuilder as WebhookBuilderType, WebhookSendOptions } from "@flowcore/sdk-transformer-core"
 import { fileTypeFromBuffer } from "file-type"
 import { Subject } from "rxjs"
 import { WebhookBuilder } from "../compatibility/flowcore-transformer-core.sdk.ts"
@@ -21,6 +18,11 @@ import type {
   SendWebhookBatch,
   WritablePathway,
 } from "./types.ts"
+import type { PathwayClusterOptions } from "./cluster/types.ts"
+import { ClusterManager } from "./cluster/cluster-manager.ts"
+import type { PathwayPumpOptions } from "./pump/types.ts"
+import { PathwayPump } from "./pump/pathway-pump.ts"
+import { PathwayProvisioner } from "./provisioner.ts"
 import {
   AUDIT_ENTITY_ID,
   AUDIT_ENTITY_TYPE,
@@ -277,6 +279,18 @@ export class PathwaysBuilder<
   private readonly apiKey: string
   private readonly logLevel: InternalLogLevelConfig
 
+  // Provisioning descriptions
+  private readonly flowTypeDescriptions: Map<string, string> = new Map()
+  private readonly eventTypeDescriptions: Map<string, string> = new Map()
+  private readonly dataCoreDescription?: string
+  private readonly dataCoreAccessControl: string
+  private readonly dataCoreDeleteProtection: boolean
+
+  // Cluster + pump
+  private clusterManager: ClusterManager | null = null
+  private pathwayPump: PathwayPump | null = null
+  private clusterBypassProcess = false
+
   /**
    * Creates a new PathwaysBuilder instance
    * @param options Configuration options for the PathwaysBuilder
@@ -301,6 +315,9 @@ export class PathwaysBuilder<
     enableSessionUserResolvers,
     overrideSessionUserResolvers,
     logLevel,
+    dataCoreDescription,
+    dataCoreAccessControl,
+    dataCoreDeleteProtection,
   }: {
     baseUrl: string
     tenant: string
@@ -311,6 +328,9 @@ export class PathwaysBuilder<
     enableSessionUserResolvers?: boolean
     overrideSessionUserResolvers?: SessionUserResolver
     logLevel?: LogLevelConfig
+    dataCoreDescription?: string
+    dataCoreAccessControl?: string
+    dataCoreDeleteProtection?: boolean
   }) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger()
@@ -325,6 +345,11 @@ export class PathwaysBuilder<
     this.tenant = tenant
     this.dataCore = dataCore
     this.apiKey = apiKey
+
+    // Store provisioning config
+    this.dataCoreDescription = dataCoreDescription
+    this.dataCoreAccessControl = dataCoreAccessControl ?? "private"
+    this.dataCoreDeleteProtection = dataCoreDeleteProtection ?? false
 
     if (enableSessionUserResolvers) {
       this.sessionUserResolvers = overrideSessionUserResolvers ?? new SessionUser()
@@ -497,6 +522,12 @@ export class PathwaysBuilder<
         eventId: data.eventId,
       })
       this.auditHandler(pathwayStr, data)
+    }
+
+    // Route through cluster if active and not bypassed (bypass = worker processing locally)
+    if (this.clusterManager && !this.clusterBypassProcess) {
+      await this.clusterManager.processEvent(pathwayStr, data)
+      return
     }
 
     if (this.handlers[pathway]) {
@@ -687,6 +718,14 @@ export class PathwaysBuilder<
       this.inputSchemas[path] = contract.schema ?? z.object({})
     }
     this.writable[path] = writable
+
+    // Store provisioning descriptions
+    if (contract.description !== undefined) {
+      this.eventTypeDescriptions.set(path, contract.description)
+    }
+    if (contract.flowTypeDescription !== undefined) {
+      this.flowTypeDescriptions.set(contract.flowType, contract.flowTypeDescription)
+    }
 
     this.logger.info(`Pathway registered successfully`, {
       pathway: path,
@@ -987,7 +1026,7 @@ export class PathwaysBuilder<
           fileId,
           fileName,
           fileType: fileType?.mime ?? "application/octet-stream",
-          fileContent: new Blob([fileContent as Buffer]),
+          fileContent: new Blob([new Uint8Array(fileContent as Buffer)]),
           additionalProperties,
         },
         finalMetadata,
@@ -1088,6 +1127,154 @@ export class PathwaysBuilder<
       elapsedTime: Date.now() - startTime,
       attempts,
     })
+  }
+
+  /**
+   * Start cluster mode for distributed event processing.
+   * This instance joins the cluster and either becomes a leader (distributes events)
+   * or a worker (receives and processes events).
+   */
+  async startCluster(options: PathwayClusterOptions): Promise<ClusterManager> {
+    if (this.clusterManager) {
+      throw new Error("Cluster already started")
+    }
+
+    this.clusterManager = new ClusterManager(options, this.logger)
+
+    // Set handler: when cluster needs to process locally, call process() with bypass
+    this.clusterManager.setEventHandler(async (pathway: string, event: FlowcoreEvent) => {
+      this.clusterBypassProcess = true
+      try {
+        await this.process(pathway as keyof TPathway, event)
+      } finally {
+        this.clusterBypassProcess = false
+      }
+    })
+
+    await this.clusterManager.start()
+
+    this.logger.info("Cluster started", {
+      advertisedAddress: options.advertisedAddress,
+      port: options.port,
+    })
+
+    return this.clusterManager
+  }
+
+  /**
+   * Stop cluster mode
+   */
+  async stopCluster(): Promise<void> {
+    if (!this.clusterManager) return
+    await this.clusterManager.stop()
+    this.clusterManager = null
+    this.logger.info("Cluster stopped")
+  }
+
+  /**
+   * Whether cluster mode is currently active
+   */
+  get isClusterActive(): boolean {
+    return this.clusterManager !== null && this.clusterManager.isRunning
+  }
+
+  /**
+   * Provision Flowcore infrastructure (data core, flow types, event types).
+   * Creates missing resources when descriptions are provided, updates descriptions
+   * when they differ. Fails if a resource is missing and no description is provided.
+   * Additive only — never deletes.
+   */
+  async provision(): Promise<void> {
+    const registrations = Object.keys(this.pathways).map((key) => {
+      const [flowType, eventType] = key.split("/")
+      return {
+        flowType,
+        eventType,
+        flowTypeDescription: this.flowTypeDescriptions.get(flowType),
+        eventTypeDescription: this.eventTypeDescriptions.get(key),
+      }
+    })
+
+    const provisioner = new PathwayProvisioner({
+      tenant: this.tenant,
+      dataCore: this.dataCore,
+      apiKey: this.apiKey,
+      dataCoreDescription: this.dataCoreDescription,
+      dataCoreAccessControl: this.dataCoreAccessControl,
+      dataCoreDeleteProtection: this.dataCoreDeleteProtection,
+      registrations,
+      logger: this.logger,
+    })
+
+    await provisioner.provision()
+  }
+
+  /**
+   * Start the data pump to auto-fetch events from Flowcore.
+   * If cluster is active, pump only runs on the leader instance.
+   */
+  async startPump(options: PathwayPumpOptions): Promise<PathwayPump> {
+    if (this.pathwayPump) {
+      throw new Error("Pump already started")
+    }
+
+    // Auto-provision infrastructure if requested
+    if (options.autoProvision) {
+      this.logger.info("Auto-provisioning Flowcore infrastructure before starting pump")
+      await this.provision()
+    }
+
+    // If cluster active and not leader, don't start pump
+    if (this.clusterManager && !this.clusterManager.isLeader) {
+      this.logger.info("Not starting pump — this instance is not the cluster leader")
+      // Still create the pump but don't start it — it can be started if we become leader
+      this.pathwayPump = new PathwayPump(options, this.logger)
+      this.pathwayPump.configure({
+        tenant: this.tenant,
+        dataCore: this.dataCore,
+        apiKey: this.apiKey,
+        baseUrl: this.baseUrl,
+        processEvent: async (pathway: string, event: FlowcoreEvent) => {
+          await this.process(pathway as keyof TPathway, event)
+        },
+      })
+      return this.pathwayPump
+    }
+
+    this.pathwayPump = new PathwayPump(options, this.logger)
+    this.pathwayPump.configure({
+      tenant: this.tenant,
+      dataCore: this.dataCore,
+      apiKey: this.apiKey,
+      baseUrl: this.baseUrl,
+      processEvent: async (pathway: string, event: FlowcoreEvent) => {
+        await this.process(pathway as keyof TPathway, event)
+      },
+    })
+
+    // Collect registered pathways
+    const registrations = Object.keys(this.pathways).map((key) => {
+      const [flowType, eventType] = key.split("/")
+      return { flowType, eventType }
+    })
+
+    await this.pathwayPump.start(registrations)
+
+    this.logger.info("Pump started", {
+      pathways: registrations.length,
+    })
+
+    return this.pathwayPump
+  }
+
+  /**
+   * Stop the data pump
+   */
+  async stopPump(): Promise<void> {
+    if (!this.pathwayPump) return
+    await this.pathwayPump.stop()
+    this.pathwayPump = null
+    this.logger.info("Pump stopped")
   }
 
   /**

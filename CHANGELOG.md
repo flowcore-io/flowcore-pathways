@@ -2,36 +2,41 @@
 
 ## [0.16.4](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.3...v0.16.4) (2025-07-25)
 
-
 ### Bug Fixes
 
-* add logging on send fail ([3c0da76](https://github.com/flowcore-io/flowcore-pathways/commit/3c0da76353da03e110102250c466dde7cd3cd48c))
+- add logging on send fail
+  ([3c0da76](https://github.com/flowcore-io/flowcore-pathways/commit/3c0da76353da03e110102250c466dde7cd3cd48c))
 
 ## [0.16.3](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.2...v0.16.3) (2025-06-20)
 
-
 ### Bug Fixes
 
-* enhance error logging and validation feedback in PathwaysBuilder ([7346aba](https://github.com/flowcore-io/flowcore-pathways/commit/7346ababec419f46f6102408e41ce2580b41dcdf))
+- enhance error logging and validation feedback in PathwaysBuilder
+  ([7346aba](https://github.com/flowcore-io/flowcore-pathways/commit/7346ababec419f46f6102408e41ce2580b41dcdf))
 
 ## [0.16.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.1...v0.16.2) (2025-06-12)
 
-
 ### Bug Fixes
 
-* allow userIdResolver to be regular return also ([8420480](https://github.com/flowcore-io/flowcore-pathways/commit/84204800a8c6e7d27ca6c4bac3f95019159d301a))
-* change metadata ([18dcbbd](https://github.com/flowcore-io/flowcore-pathways/commit/18dcbbd3573ec7c7b52fd6af20896a3730a1a388))
-* change metadata ([a7a9bfa](https://github.com/flowcore-io/flowcore-pathways/commit/a7a9bfa5f98b2021660d99b7d864283b5cbca615))
-* fix some tests ([705870c](https://github.com/flowcore-io/flowcore-pathways/commit/705870c7fd8d220b33be71a6e4aaddd50afcb9fe))
-* make zod a peer dependency in npm package ([930033e](https://github.com/flowcore-io/flowcore-pathways/commit/930033e3d586a61ee0099a55ddb6ee5f48565c5a))
-* make zod a peer dependency in npm package ([de3b93f](https://github.com/flowcore-io/flowcore-pathways/commit/de3b93fe8882199159d9090ba5f81f8b47e1a424))
+- allow userIdResolver to be regular return also
+  ([8420480](https://github.com/flowcore-io/flowcore-pathways/commit/84204800a8c6e7d27ca6c4bac3f95019159d301a))
+- change metadata
+  ([18dcbbd](https://github.com/flowcore-io/flowcore-pathways/commit/18dcbbd3573ec7c7b52fd6af20896a3730a1a388))
+- change metadata
+  ([a7a9bfa](https://github.com/flowcore-io/flowcore-pathways/commit/a7a9bfa5f98b2021660d99b7d864283b5cbca615))
+- fix some tests
+  ([705870c](https://github.com/flowcore-io/flowcore-pathways/commit/705870c7fd8d220b33be71a6e4aaddd50afcb9fe))
+- make zod a peer dependency in npm package
+  ([930033e](https://github.com/flowcore-io/flowcore-pathways/commit/930033e3d586a61ee0099a55ddb6ee5f48565c5a))
+- make zod a peer dependency in npm package
+  ([de3b93f](https://github.com/flowcore-io/flowcore-pathways/commit/de3b93fe8882199159d9090ba5f81f8b47e1a424))
 
 ## [0.16.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.0...v0.16.1) (2025-06-04)
 
-
 ### Bug Fixes
 
-* **session-pathway:** :art: update write method to accept structured input ([86e54a7](https://github.com/flowcore-io/flowcore-pathways/commit/86e54a79cb8bef32677f308eb51a50eef6d1f071))
+- **session-pathway:** :art: update write method to accept structured input
+  ([86e54a7](https://github.com/flowcore-io/flowcore-pathways/commit/86e54a79cb8bef32677f308eb51a50eef6d1f071))
 
 ## [0.16.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.15.3...v0.16.0) (2025-06-03)
 

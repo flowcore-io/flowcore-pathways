@@ -6,7 +6,7 @@
  *
  * @module
  */
-import transformerCore from "npm:@flowcore/sdk-transformer-core@^2.3.6"
+import transformerCore from "@flowcore/sdk-transformer-core"
 
 /**
  * WebhookBuilder from the transformer core SDK for sending webhook events
@@ -18,4 +18,4 @@ export const { WebhookBuilder } = transformerCore
  *
  * These options control how webhook requests are sent, including timestamps and headers.
  */
-export type { WebhookSendOptions } from "npm:@flowcore/sdk-transformer-core@^2.3.6"
+export type { WebhookSendOptions } from "@flowcore/sdk-transformer-core"

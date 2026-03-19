@@ -1,5 +1,5 @@
 import { type AnyZodObject, z } from "zod"
-import type { WebhookFileData, WebhookSendOptions } from "npm:@flowcore/sdk-transformer-core@^2.3.6"
+import type { WebhookFileData, WebhookSendOptions } from "@flowcore/sdk-transformer-core"
 import { Buffer } from "node:buffer"
 
 /**
@@ -84,6 +84,18 @@ export interface PathwayContract<F extends string, E extends string, T extends A
    * Whether this pathway is for file processing
    */
   isFilePathway?: boolean
+
+  /**
+   * Description for the event type. When provided, the provisioner will create/update
+   * this event type on the platform. When undefined, the event type must pre-exist.
+   */
+  description?: string
+
+  /**
+   * Description for the flow type. When provided, the provisioner will create/update
+   * this flow type on the platform. When undefined, the flow type must pre-exist.
+   */
+  flowTypeDescription?: string
 }
 
 /**
