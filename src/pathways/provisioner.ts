@@ -10,7 +10,7 @@ import {
   FlowTypeListCommand,
   FlowTypeUpdateCommand,
   NotFoundException,
-  TenantTranslateNameToIdCommand,
+  TenantFetchCommand,
 } from "@flowcore/sdk"
 import type { Logger } from "./logger.ts"
 import { NoopLogger } from "./logger.ts"
@@ -84,7 +84,7 @@ export class PathwayProvisioner {
     this.logger.info("Starting provisioning", { tenant: this.tenant, dataCore: this.dataCore })
 
     // Step 1: Fetch tenant
-    const tenant = await client.execute(new TenantTranslateNameToIdCommand({ tenant: this.tenant }))
+    const tenant = await client.execute(new TenantFetchCommand({ tenant: this.tenant }))
     const tenantId = tenant.id
     this.logger.info("Tenant resolved", { tenantId })
 
