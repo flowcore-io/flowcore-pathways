@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.1...v0.17.2) (2026-03-20)
+
+
+### Bug Fixes
+
+* use lightweight TenantTranslateNameToIdCommand instead of TenantFetchCommand ([466b040](https://github.com/flowcore-io/flowcore-pathways/commit/466b0400290644e9fb5c870c2fef04ec177f9719))
+
 ## [0.17.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.0...v0.17.1) (2026-03-19)
 
 
