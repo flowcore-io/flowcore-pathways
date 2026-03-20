@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.3](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.2...v0.17.3) (2026-03-20)
+
+
+### Bug Fixes
+
+* suppress PostgreSQL NOTICE messages from CREATE TABLE IF NOT EXISTS ([#43](https://github.com/flowcore-io/flowcore-pathways/issues/43)) ([3def1d9](https://github.com/flowcore-io/flowcore-pathways/commit/3def1d9c6e9711f529010d77eaedd0b17f2799f0))
+
 ## [0.17.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.1...v0.17.2) (2026-03-20)
 
 
