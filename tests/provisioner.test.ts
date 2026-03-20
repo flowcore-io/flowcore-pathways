@@ -81,7 +81,7 @@ Deno.test({
       const commands: string[] = []
 
       const client = createMockClient({
-        TenantFetchCommand: () => baseTenant(),
+        TenantTranslateNameToIdCommand: () => baseTenant(),
         DataCoreFetchCommand: () => {
           throw new NotFoundException("DataCore", {})
         },
@@ -136,7 +136,7 @@ Deno.test({
 
     await t.step("fails when data core missing and no description", async () => {
       const client = createMockClient({
-        TenantFetchCommand: () => baseTenant(),
+        TenantTranslateNameToIdCommand: () => baseTenant(),
         DataCoreFetchCommand: () => {
           throw new NotFoundException("DataCore", {})
         },
@@ -161,7 +161,7 @@ Deno.test({
 
     await t.step("fails when flow type missing and no flowTypeDescription", async () => {
       const client = createMockClient({
-        TenantFetchCommand: () => baseTenant(),
+        TenantTranslateNameToIdCommand: () => baseTenant(),
         DataCoreFetchCommand: () => baseDataCore({ description: "desc" }),
         FlowTypeListCommand: () => [],
       })
@@ -188,7 +188,7 @@ Deno.test({
 
     await t.step("fails when event type missing and no description", async () => {
       const client = createMockClient({
-        TenantFetchCommand: () => baseTenant(),
+        TenantTranslateNameToIdCommand: () => baseTenant(),
         DataCoreFetchCommand: () => baseDataCore({ description: "desc" }),
         FlowTypeListCommand: () => [baseFlowType("user", "ft-001")],
         EventTypeListCommand: () => [],
@@ -218,7 +218,7 @@ Deno.test({
       let updatedDescription: string | undefined
 
       const client = createMockClient({
-        TenantFetchCommand: () => baseTenant(),
+        TenantTranslateNameToIdCommand: () => baseTenant(),
         DataCoreFetchCommand: () => baseDataCore({ description: "Old desc" }),
         DataCoreUpdateCommand: (cmd) => {
           updatedDescription = cmd.input.description as string
@@ -254,7 +254,7 @@ Deno.test({
       let updatedFlowDesc: string | undefined
 
       const client = createMockClient({
-        TenantFetchCommand: () => baseTenant(),
+        TenantTranslateNameToIdCommand: () => baseTenant(),
         DataCoreFetchCommand: () => baseDataCore(),
         FlowTypeListCommand: () => [baseFlowType("user", "ft-001", "Old flow desc")],
         FlowTypeUpdateCommand: (cmd) => {
@@ -289,7 +289,7 @@ Deno.test({
       let updatedEventDesc: string | undefined
 
       const client = createMockClient({
-        TenantFetchCommand: () => baseTenant(),
+        TenantTranslateNameToIdCommand: () => baseTenant(),
         DataCoreFetchCommand: () => baseDataCore(),
         FlowTypeListCommand: () => [baseFlowType("user", "ft-001")],
         EventTypeListCommand: () => [baseEventType("created", "et-001", "ft-001", "Old event desc")],
@@ -319,8 +319,8 @@ Deno.test({
       const commands: string[] = []
 
       const client = createMockClient({
-        TenantFetchCommand: () => {
-          commands.push("TenantFetchCommand")
+        TenantTranslateNameToIdCommand: () => {
+          commands.push("TenantTranslateNameToIdCommand")
           return baseTenant()
         },
         DataCoreFetchCommand: () => {
@@ -359,7 +359,7 @@ Deno.test({
 
       // Should only have read commands, no create/update
       assertEquals(commands, [
-        "TenantFetchCommand",
+        "TenantTranslateNameToIdCommand",
         "DataCoreFetchCommand",
         "FlowTypeListCommand",
         "EventTypeListCommand",
@@ -370,7 +370,7 @@ Deno.test({
       const commands: string[] = []
 
       const client = createMockClient({
-        TenantFetchCommand: () => baseTenant(),
+        TenantTranslateNameToIdCommand: () => baseTenant(),
         DataCoreFetchCommand: () => baseDataCore(),
         FlowTypeListCommand: () => {
           // Return extra flow types that are NOT in registrations
@@ -415,7 +415,7 @@ Deno.test({
       const commands: string[] = []
 
       const client = createMockClient({
-        TenantFetchCommand: () => baseTenant(),
+        TenantTranslateNameToIdCommand: () => baseTenant(),
         DataCoreFetchCommand: () => {
           commands.push("DataCoreFetchCommand")
           return baseDataCore({ description: "Existing desc" })
@@ -453,7 +453,7 @@ Deno.test({
       const createdEventTypes: string[] = []
 
       const client = createMockClient({
-        TenantFetchCommand: () => baseTenant(),
+        TenantTranslateNameToIdCommand: () => baseTenant(),
         DataCoreFetchCommand: () => baseDataCore(),
         FlowTypeListCommand: () => [],
         FlowTypeCreateCommand: (cmd) => {
