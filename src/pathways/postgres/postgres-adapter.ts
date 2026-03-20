@@ -198,6 +198,9 @@ export class PostgresJsAdapter implements PostgresAdapter {
         }
       }
 
+      // Suppress PostgreSQL NOTICE messages (e.g. from CREATE TABLE IF NOT EXISTS)
+      postgresOptions.onnotice = () => {}
+
       this.sql = this.postgres(this.connectionString, postgresOptions)
     } catch (error) {
       console.error("Failed to connect to PostgreSQL:", error)
