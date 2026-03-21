@@ -124,8 +124,9 @@ export class ClusterManager {
       advertisedAddress: this.advertisedAddress,
     })
 
-    // Register this instance
-    await this.coordinator.register(this.instanceId, this.advertisedAddress)
+    // Register this instance with full WebSocket URL
+    const wsAddress = `ws://${this.advertisedAddress}:${this.port}`
+    await this.coordinator.register(this.instanceId, wsAddress)
 
     // Start WS server for accepting connections (both leader and worker need this)
     await this.startWsServer()
