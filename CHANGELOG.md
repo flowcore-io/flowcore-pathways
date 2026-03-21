@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.5](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.4...v0.17.5) (2026-03-21)
+
+
+### Bug Fixes
+
+* auto-start pump when instance becomes cluster leader ([#47](https://github.com/flowcore-io/flowcore-pathways/issues/47)) ([fe74d59](https://github.com/flowcore-io/flowcore-pathways/commit/fe74d592ddd97dcacae79a3e017575a0e980c269))
+
 ## [0.17.4](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.3...v0.17.4) (2026-03-21)
 
 
