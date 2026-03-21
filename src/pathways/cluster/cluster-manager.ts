@@ -89,6 +89,7 @@ export class ClusterManager {
   private wsServer: { shutdown(): Promise<void> } | null = null
   private leaderConnection: ClusterSocket | null = null
   private eventHandler: ((pathway: string, event: FlowcoreEvent) => Promise<void>) | null = null
+  private leadershipChangeHandler: ((isLeader: boolean) => void) | null = null
 
   constructor(options: PathwayClusterOptions, logger?: Logger) {
     this.coordinator = options.coordinator
@@ -110,6 +111,14 @@ export class ClusterManager {
    */
   setEventHandler(handler: (pathway: string, event: FlowcoreEvent) => Promise<void>) {
     this.eventHandler = handler
+  }
+
+  /**
+   * Set a callback that fires when this instance becomes or loses leadership.
+   * Used by PathwaysBuilder to auto-start the pump when becoming leader.
+   */
+  onLeadershipChange(handler: (isLeader: boolean) => void) {
+    this.leadershipChangeHandler = handler
   }
 
   /**
@@ -301,6 +310,7 @@ export class ClusterManager {
         this.logger.warn("Lost leader lease", { instanceId: this.instanceId })
         this.role = "worker"
         this.cleanupLeaderState()
+        this.leadershipChangeHandler?.(false)
       } else {
         await this.refreshWorkers()
       }
@@ -311,6 +321,7 @@ export class ClusterManager {
 
   private async onBecomeLeader(): Promise<void> {
     await this.refreshWorkers()
+    this.leadershipChangeHandler?.(true)
   }
 
   private async refreshWorkers(): Promise<void> {
