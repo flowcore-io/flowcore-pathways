@@ -1151,6 +1151,31 @@ export class PathwaysBuilder<
       }
     })
 
+    // Listen for leadership changes to auto-start/stop the pump
+    this.clusterManager.onLeadershipChange((isLeader: boolean) => {
+      if (isLeader && this.pathwayPump && !this.pathwayPump.isRunning) {
+        this.logger.info("Became leader, starting pump")
+        const registrations = Object.keys(this.pathways).map((key) => {
+          const [flowType, eventType] = key.split("/")
+          return { flowType, eventType }
+        })
+        this.pathwayPump.start(registrations).catch((err) => {
+          this.logger.error(
+            "Failed to start pump after becoming leader",
+            err instanceof Error ? err : new Error(String(err)),
+          )
+        })
+      } else if (!isLeader && this.pathwayPump?.isRunning) {
+        this.logger.info("Lost leadership, stopping pump")
+        this.pathwayPump.stop().catch((err) => {
+          this.logger.error(
+            "Failed to stop pump after losing leadership",
+            err instanceof Error ? err : new Error(String(err)),
+          )
+        })
+      }
+    })
+
     await this.clusterManager.start()
 
     this.logger.info("Cluster started", {
