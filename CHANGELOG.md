@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.4](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.3...v0.17.4) (2026-03-21)
+
+
+### Bug Fixes
+
+* register cluster instances with full ws:// URL including port ([#45](https://github.com/flowcore-io/flowcore-pathways/issues/45)) ([0cb1493](https://github.com/flowcore-io/flowcore-pathways/commit/0cb1493618bb4ed5c049336c23e9bf28c3b2079d))
+
 ## [0.17.3](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.2...v0.17.3) (2026-03-20)
 
 
