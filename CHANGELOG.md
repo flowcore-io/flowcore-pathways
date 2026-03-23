@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.5...v0.18.0) (2026-03-23)
+
+
+### Features
+
+* add Node.js/Bun cluster transport with runtime auto-detection ([#49](https://github.com/flowcore-io/flowcore-pathways/issues/49)) ([31ebc99](https://github.com/flowcore-io/flowcore-pathways/commit/31ebc9992ad41f9447258dc6af550881b0da34be))
+
 ## [0.17.5](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.4...v0.17.5) (2026-03-21)
 
 
