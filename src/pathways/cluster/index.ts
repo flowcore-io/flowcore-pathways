@@ -13,4 +13,5 @@ export type {
   WsPongMessage,
 } from "./types.ts"
 export { ClusterManager } from "./cluster-manager.ts"
+export { createNodeTransport } from "./node-transport.ts"
 export { createPostgresPathwayCoordinator, PostgresPathwayCoordinator } from "./postgres-coordinator.ts"
