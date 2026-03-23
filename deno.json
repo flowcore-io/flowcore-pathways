@@ -30,6 +30,7 @@
     "@flowcore/data-pump": "jsr:@flowcore/data-pump@^0.16.4",
     "@flowcore/sdk": "npm:@flowcore/sdk@^1.54.0",
     "postgres": "npm:postgres@^3.4.3",
+    "ws": "npm:ws@^8.18.0",
     "zod": "npm:zod@^3.25.63"
   },
   "fmt": {

@@ -12,6 +12,7 @@ import type {
   WsFailMessage,
   WsMessage,
 } from "./types.ts"
+import { createNodeTransport } from "./node-transport.ts"
 
 const DEFAULT_LEASE_TTL_MS = 30_000
 const DEFAULT_LEASE_RENEW_INTERVAL_MS = 10_000
@@ -21,34 +22,32 @@ const DEFAULT_DELIVERY_TIMEOUT_MS = 30_000
 const LEASE_KEY = "pathway-cluster-leader"
 
 /**
- * Creates a default transport using Deno APIs.
- * Uses runtime detection to avoid compile-time dependency on Deno types.
+ * Creates a default transport with runtime auto-detection.
+ * Uses Deno APIs when available, falls back to ws-based Node.js transport.
  */
 function createDefaultTransport(): ClusterTransport {
   // deno-lint-ignore no-explicit-any
   const D = (globalThis as any).Deno
-  if (!D?.serve) {
-    throw new Error(
-      "Default cluster transport requires Deno. Provide a custom ClusterTransport via options.transport for Node.js.",
-    )
+  if (D?.serve) {
+    return {
+      startServer(port, onConnection) {
+        const server = D.serve({ port, hostname: "0.0.0.0" }, (req: Request) => {
+          if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+            return new Response("Expected WebSocket", { status: 426 })
+          }
+          const { socket, response } = D.upgradeWebSocket(req)
+          socket.onopen = () => onConnection(socket as unknown as ClusterSocket)
+          return response
+        })
+        return Promise.resolve({ shutdown: () => server.shutdown() })
+      },
+      connect(address) {
+        return new WebSocket(address) as unknown as ClusterSocket
+      },
+    }
   }
 
-  return {
-    startServer(port, onConnection) {
-      const server = D.serve({ port, hostname: "0.0.0.0" }, (req: Request) => {
-        if (req.headers.get("upgrade")?.toLowerCase() !== "websocket") {
-          return new Response("Expected WebSocket", { status: 426 })
-        }
-        const { socket, response } = D.upgradeWebSocket(req)
-        socket.onopen = () => onConnection(socket as unknown as ClusterSocket)
-        return response
-      })
-      return Promise.resolve({ shutdown: () => server.shutdown() })
-    },
-    connect(address) {
-      return new WebSocket(address) as unknown as ClusterSocket
-    },
-  }
+  return createNodeTransport()
 }
 
 /**

@@ -31,6 +31,7 @@ await build({
     },
     dependencies: {
       "bun-sqlite-key-value": undefined as unknown as string,
+      "ws": "^8.18.0",
       "zod": undefined as unknown as string,
     },
     devDependencies: {
