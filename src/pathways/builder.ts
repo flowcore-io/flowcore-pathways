@@ -20,7 +20,7 @@ import type {
 } from "./types.ts"
 import type { PathwayClusterOptions } from "./cluster/types.ts"
 import { ClusterManager } from "./cluster/cluster-manager.ts"
-import type { PathwayPumpOptions } from "./pump/types.ts"
+import type { PathwayPumpOptions, PumpState } from "./pump/types.ts"
 import { PathwayPump } from "./pump/pathway-pump.ts"
 import { PathwayProvisioner } from "./provisioner.ts"
 import {
@@ -1176,6 +1176,14 @@ export class PathwaysBuilder<
       }
     })
 
+    // Wire reset handler: leader receives reset requests and delegates to pump
+    this.clusterManager.onReset(async (position?: PumpState) => {
+      if (!this.pathwayPump) {
+        throw new Error("Pump not running on this leader")
+      }
+      await this.pathwayPump.reset(position)
+    })
+
     await this.clusterManager.start()
 
     this.logger.info("Cluster started", {
@@ -1300,6 +1308,27 @@ export class PathwaysBuilder<
     await this.pathwayPump.stop()
     this.pathwayPump = null
     this.logger.info("Pump stopped")
+  }
+
+  /**
+   * Reset the data pump to a specific position or clear state and restart.
+   * In cluster mode, the request is routed to the leader automatically.
+   *
+   * @param position - Target position { timeBucket, eventId? }. If omitted, clears persisted state
+   *                   and restarts from the live position. To replay from the very beginning,
+   *                   pass the first time bucket explicitly.
+   */
+  async resetPump(position?: PumpState): Promise<void> {
+    if (!this.pathwayPump) {
+      throw new Error("Pump not started — call startPump() first")
+    }
+
+    if (this.clusterManager) {
+      await this.clusterManager.requestReset(position)
+      return
+    }
+
+    await this.pathwayPump.reset(position)
   }
 
   /**

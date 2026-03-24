@@ -1,4 +1,5 @@
 import type { FlowcoreEvent } from "../../contracts/event.ts"
+import type { PumpState } from "../pump/types.ts"
 
 /**
  * Coordinator interface for distributed cluster coordination
@@ -39,6 +40,9 @@ export type WsMessage =
   | WsFailMessage
   | WsPingMessage
   | WsPongMessage
+  | WsResetMessage
+  | WsResetAckMessage
+  | WsResetFailMessage
 
 export interface WsEventsMessage {
   type: "events"
@@ -64,6 +68,23 @@ export interface WsPingMessage {
 
 export interface WsPongMessage {
   type: "pong"
+}
+
+export interface WsResetMessage {
+  type: "reset"
+  resetId: string
+  position?: PumpState
+}
+
+export interface WsResetAckMessage {
+  type: "reset-ack"
+  resetId: string
+}
+
+export interface WsResetFailMessage {
+  type: "reset-fail"
+  resetId: string
+  error: string
 }
 
 /**

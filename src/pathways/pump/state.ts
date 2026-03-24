@@ -52,6 +52,14 @@ class PostgresPumpStateManager implements PumpStateManager {
       [this.flowType, state.timeBucket, state.eventId ?? null],
     )
   }
+
+  async clearState(): Promise<void> {
+    await this.ensureInitialized()
+    await this.adapter.execute(
+      `DELETE FROM ${this.tableName} WHERE flow_type = $1`,
+      [this.flowType],
+    )
+  }
 }
 
 /**

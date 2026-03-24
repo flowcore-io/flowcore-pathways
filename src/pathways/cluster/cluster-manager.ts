@@ -1,6 +1,7 @@
 import type { FlowcoreEvent } from "../../contracts/event.ts"
 import type { Logger } from "../logger.ts"
 import { NoopLogger } from "../logger.ts"
+import type { PumpState } from "../pump/types.ts"
 import type {
   ClusterRole,
   ClusterSocket,
@@ -11,6 +12,7 @@ import type {
   WsAckMessage,
   WsFailMessage,
   WsMessage,
+  WsResetMessage,
 } from "./types.ts"
 import { createNodeTransport } from "./node-transport.ts"
 
@@ -89,6 +91,8 @@ export class ClusterManager {
   private leaderConnection: ClusterSocket | null = null
   private eventHandler: ((pathway: string, event: FlowcoreEvent) => Promise<void>) | null = null
   private leadershipChangeHandler: ((isLeader: boolean) => void) | null = null
+  private resetHandler: ((position?: PumpState) => Promise<void>) | null = null
+  private pendingResets: Map<string, { resolve: () => void; reject: (error: Error) => void; sentAt: number }> = new Map()
 
   constructor(options: PathwayClusterOptions, logger?: Logger) {
     this.coordinator = options.coordinator
@@ -118,6 +122,50 @@ export class ClusterManager {
    */
   onLeadershipChange(handler: (isLeader: boolean) => void) {
     this.leadershipChangeHandler = handler
+  }
+
+  /**
+   * Set a callback that handles pump reset requests on the leader.
+   */
+  onReset(handler: (position?: PumpState) => Promise<void>) {
+    this.resetHandler = handler
+  }
+
+  /**
+   * Request a pump reset. Routes to the leader automatically.
+   * - If this instance is the leader: executes the reset directly.
+   * - If this instance is a worker: forwards the request to the leader via WebSocket.
+   */
+  async requestReset(position?: PumpState): Promise<void> {
+    if (this.role === "unknown") {
+      throw new Error("Cluster role not yet established — cannot reset")
+    }
+
+    if (this.role === "leader") {
+      if (!this.resetHandler) {
+        throw new Error("No reset handler set on ClusterManager")
+      }
+      await this.resetHandler(position)
+      return
+    }
+
+    // Worker: forward to leader via WS
+    if (!this.leaderConnection || this.leaderConnection.readyState !== WebSocket.OPEN) {
+      throw new Error("Not connected to leader — cannot forward reset")
+    }
+
+    const resetId = crypto.randomUUID()
+    return new Promise<void>((resolve, reject) => {
+      this.pendingResets.set(resetId, { resolve, reject, sentAt: Date.now() })
+
+      const msg: WsResetMessage = { type: "reset", resetId, position }
+      try {
+        this.leaderConnection!.send(JSON.stringify(msg))
+      } catch (err) {
+        this.pendingResets.delete(resetId)
+        reject(err instanceof Error ? err : new Error(String(err)))
+      }
+    })
   }
 
   /**
@@ -221,6 +269,12 @@ export class ClusterManager {
       delivery.reject(new Error("Cluster manager stopped"))
     }
     this.pendingDeliveries.clear()
+
+    // Reject pending resets
+    for (const [, pending] of this.pendingResets) {
+      pending.reject(new Error("Cluster manager stopped"))
+    }
+    this.pendingResets.clear()
 
     // Unregister
     try {
@@ -445,6 +499,22 @@ export class ClusterManager {
         socket.send(JSON.stringify({ type: "pong" }))
         break
       }
+      case "reset-ack": {
+        const pending = this.pendingResets.get(msg.resetId)
+        if (pending) {
+          this.pendingResets.delete(msg.resetId)
+          pending.resolve()
+        }
+        break
+      }
+      case "reset-fail": {
+        const pending = this.pendingResets.get(msg.resetId)
+        if (pending) {
+          this.pendingResets.delete(msg.resetId)
+          pending.reject(new Error(msg.error))
+        }
+        break
+      }
       default:
         break
     }
@@ -461,10 +531,10 @@ export class ClusterManager {
         this.workerConnections.set(address, ws)
       }
 
-      ws.onmessage = (event: { data: string }) => {
+      ws.onmessage = async (event: { data: string }) => {
         try {
           const msg: WsMessage = JSON.parse(event.data)
-          this.handleLeaderMessage(address, msg)
+          await this.handleLeaderMessage(address, msg)
         } catch (err) {
           this.logger.error(
             "Error handling worker response",
@@ -492,7 +562,7 @@ export class ClusterManager {
     }
   }
 
-  private handleLeaderMessage(workerAddress: string, msg: WsMessage): void {
+  private async handleLeaderMessage(workerAddress: string, msg: WsMessage): Promise<void> {
     switch (msg.type) {
       case "ack": {
         const delivery = this.pendingDeliveries.get(msg.deliveryId)
@@ -511,6 +581,25 @@ export class ClusterManager {
         break
       }
       case "pong": {
+        break
+      }
+      case "reset": {
+        const resetMsg = msg as WsResetMessage
+        const ws = this.workerConnections.get(workerAddress)
+        if (!ws) break
+        try {
+          if (!this.resetHandler) {
+            throw new Error("No reset handler set on leader")
+          }
+          await this.resetHandler(resetMsg.position)
+          ws.send(JSON.stringify({ type: "reset-ack", resetId: resetMsg.resetId }))
+        } catch (err) {
+          ws.send(JSON.stringify({
+            type: "reset-fail",
+            resetId: resetMsg.resetId,
+            error: err instanceof Error ? err.message : String(err),
+          }))
+        }
         break
       }
       default:
@@ -580,6 +669,12 @@ export class ClusterManager {
       if (now - delivery.sentAt > this.deliveryTimeoutMs) {
         this.pendingDeliveries.delete(id)
         delivery.reject(new Error(`Delivery ${id} to ${delivery.workerAddress} timed out`))
+      }
+    }
+    for (const [id, pending] of this.pendingResets) {
+      if (now - pending.sentAt > this.deliveryTimeoutMs) {
+        this.pendingResets.delete(id)
+        pending.reject(new Error(`Reset ${id} timed out`))
       }
     }
   }
