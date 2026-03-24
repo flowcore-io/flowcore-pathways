@@ -23,6 +23,7 @@ export type PumpStateManagerFactory = (flowType: string) => PumpStateManager
 export interface PumpStateManager {
   getState(): Promise<PumpState | null> | PumpState | null
   setState(state: PumpState): Promise<void> | void
+  clearState?(): Promise<void> | void
 }
 
 /**

@@ -1,7 +1,7 @@
 import type { FlowcoreEvent } from "../../contracts/event.ts"
 import type { Logger } from "../logger.ts"
 import { NoopLogger } from "../logger.ts"
-import type { PathwayPumpOptions, PumpNotifierConfig, PumpStateManagerFactory } from "./types.ts"
+import type { PathwayPumpOptions, PumpNotifierConfig, PumpState, PumpStateManager, PumpStateManagerFactory } from "./types.ts"
 
 /**
  * Registered pathway info needed for pump grouping
@@ -28,6 +28,7 @@ export class PathwayPump {
   private readonly logger: Logger
 
   private pumps: Map<string, DataPumpInstance> = new Map()
+  private stateManagers: Map<string, PumpStateManager> = new Map()
   private running = false
 
   // Required config from PathwaysBuilder
@@ -94,6 +95,7 @@ export class PathwayPump {
 
     for (const [flowType, eventTypes] of flowTypeGroups) {
       const stateManager = this.stateManagerFactory(flowType)
+      this.stateManagers.set(flowType, stateManager)
 
       const notifierOptions = this.buildNotifierOptions(flowType, eventTypes)
 
@@ -164,6 +166,45 @@ export class PathwayPump {
     }
 
     this.pumps.clear()
+    this.stateManagers.clear()
+  }
+
+  /**
+   * Reset all pumps to a specific position, or clear state and bounce if no position given.
+   * Uses @flowcore/data-pump's restart() to reposition the cursor without recreating instances.
+   *
+   * @param position - Target position { timeBucket, eventId? }. If omitted, clears persisted state
+   *                   and restarts pumps (pump will start from live position).
+   *                   To replay from the very beginning, pass the first time bucket explicitly.
+   */
+  async reset(position?: PumpState): Promise<void> {
+    if (!this.running) {
+      throw new Error("PathwayPump is not running — cannot reset")
+    }
+
+    this.logger.info("Resetting data pumps", { position })
+
+    for (const [flowType, pump] of this.pumps) {
+      try {
+        if (position) {
+          await pump.restart({ timeBucket: position.timeBucket, eventId: position.eventId })
+        } else {
+          // Clear persisted state then restart pump from live
+          const stateManager = this.stateManagers.get(flowType)
+          if (stateManager?.clearState) {
+            await stateManager.clearState()
+          }
+          await pump.restart({ timeBucket: new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14) })
+        }
+        this.logger.info("Data pump reset", { flowType, position })
+      } catch (err) {
+        this.logger.error(
+          `Error resetting pump for ${flowType}`,
+          err instanceof Error ? err : new Error(String(err)),
+        )
+        throw err
+      }
+    }
   }
 
   get isRunning(): boolean {
