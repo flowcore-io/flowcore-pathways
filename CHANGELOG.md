@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.18.0...v0.19.0) (2026-03-24)
+
+
+### Features
+
+* add cluster-aware pump reset functionality ([#51](https://github.com/flowcore-io/flowcore-pathways/issues/51)) ([03f110b](https://github.com/flowcore-io/flowcore-pathways/commit/03f110b2a3e63f1ce12b05993e3da042cb2a7199))
+
 ## [0.18.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.5...v0.18.0) (2026-03-23)
 
 
