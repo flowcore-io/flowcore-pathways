@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.19.0...v0.20.0) (2026-03-26)
+
+
+### Features
+
+* wire pulse config through PathwayPump to FlowcoreDataPump ([c0aa851](https://github.com/flowcore-io/flowcore-pathways/commit/c0aa8512a9c78e562d3cd78fe3bb7be6c5566a0c))
+
 ## [0.19.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.18.0...v0.19.0) (2026-03-24)
 
 
