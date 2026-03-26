@@ -1,7 +1,13 @@
 import type { FlowcoreEvent } from "../../contracts/event.ts"
 import type { Logger } from "../logger.ts"
 import { NoopLogger } from "../logger.ts"
-import type { PathwayPumpOptions, PumpNotifierConfig, PumpState, PumpStateManager, PumpStateManagerFactory } from "./types.ts"
+import type {
+  PathwayPumpOptions,
+  PumpNotifierConfig,
+  PumpState,
+  PumpStateManager,
+  PumpStateManagerFactory,
+} from "./types.ts"
 
 /**
  * Registered pathway info needed for pump grouping
@@ -26,6 +32,7 @@ export class PathwayPump {
   private readonly bufferSize: number
   private readonly maxRedeliveryCount: number
   private readonly logger: Logger
+  private readonly pulseConfig?: { intervalMs?: number; pathwayId?: string }
 
   private pumps: Map<string, DataPumpInstance> = new Map()
   private stateManagers: Map<string, PumpStateManager> = new Map()
@@ -46,6 +53,7 @@ export class PathwayPump {
     this.bufferSize = options.bufferSize ?? 1000
     this.maxRedeliveryCount = options.maxRedeliveryCount ?? 3
     this.logger = logger ?? new NoopLogger()
+    this.pulseConfig = options.pulse
   }
 
   /**
@@ -99,7 +107,7 @@ export class PathwayPump {
 
       const notifierOptions = this.buildNotifierOptions(flowType, eventTypes)
 
-      const pump = await FlowcoreDataPump.create({
+      const pumpOptions: Record<string, unknown> = {
         auth: { apiKey: this.apiKey },
         dataSource: {
           tenant: this.tenant,
@@ -130,7 +138,18 @@ export class PathwayPump {
               meta,
             ),
         },
-      })
+      }
+
+      if (this.pulseConfig) {
+        pumpOptions.pulse = {
+          url: this.baseUrl,
+          intervalMs: this.pulseConfig.intervalMs,
+          pathwayId: this.pulseConfig.pathwayId ?? "unknown",
+        }
+      }
+
+      // deno-lint-ignore no-explicit-any
+      const pump = await FlowcoreDataPump.create(pumpOptions as any)
 
       this.pumps.set(flowType, pump)
 

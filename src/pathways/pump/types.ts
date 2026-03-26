@@ -10,6 +10,13 @@ export interface PathwayPumpOptions {
   maxRedeliveryCount?: number
   /** If true, calls provision() before starting the pump */
   autoProvision?: boolean
+  /** Optional pulse reporting to control plane */
+  pulse?: {
+    /** Pulse interval in milliseconds (default: 30000) */
+    intervalMs?: number
+    /** Pathway ID for this pump (required for pulse) */
+    pathwayId?: string
+  }
 }
 
 /**
