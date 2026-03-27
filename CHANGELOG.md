@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.20.0...v0.20.1) (2026-03-27)
+
+
+### Bug Fixes
+
+* use explicit pulse URL instead of baseUrl for pulse reporting ([4605c34](https://github.com/flowcore-io/flowcore-pathways/commit/4605c34426804c5fb6081bbe0463dee50cea13d1))
+
 ## [0.20.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.19.0...v0.20.0) (2026-03-26)
 
 
