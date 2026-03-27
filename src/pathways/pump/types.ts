@@ -12,9 +12,11 @@ export interface PathwayPumpOptions {
   autoProvision?: boolean
   /** Optional pulse reporting to control plane */
   pulse?: {
+    /** Control plane API URL for pulse endpoint */
+    url: string
     /** Pulse interval in milliseconds (default: 30000) */
     intervalMs?: number
-    /** Pathway ID for this pump (required for pulse) */
+    /** Pathway ID for this pump */
     pathwayId?: string
   }
 }

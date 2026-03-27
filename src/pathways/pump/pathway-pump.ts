@@ -32,7 +32,7 @@ export class PathwayPump {
   private readonly bufferSize: number
   private readonly maxRedeliveryCount: number
   private readonly logger: Logger
-  private readonly pulseConfig?: { intervalMs?: number; pathwayId?: string }
+  private readonly pulseConfig?: { url: string; intervalMs?: number; pathwayId?: string }
 
   private pumps: Map<string, DataPumpInstance> = new Map()
   private stateManagers: Map<string, PumpStateManager> = new Map()
@@ -142,7 +142,7 @@ export class PathwayPump {
 
       if (this.pulseConfig) {
         pumpOptions.pulse = {
-          url: this.baseUrl,
+          url: this.pulseConfig.url,
           intervalMs: this.pulseConfig.intervalMs,
           pathwayId: this.pulseConfig.pathwayId ?? "unknown",
         }
