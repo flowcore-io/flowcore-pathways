@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.20.1...v0.21.0) (2026-03-30)
+
+
+### Features
+
+* bump SDK + data-pump for fc_ key websocket support ([#55](https://github.com/flowcore-io/flowcore-pathways/issues/55)) ([7e0676f](https://github.com/flowcore-io/flowcore-pathways/commit/7e0676f8e2685c8049ae4305bb1c6932834b5abc))
+
 ## [0.20.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.20.0...v0.20.1) (2026-03-27)
 
 
