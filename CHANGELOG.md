@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.21.0...v0.21.1) (2026-03-31)
+
+
+### Bug Fixes
+
+* restart individual flow type pumps on error with exponential backoff ([#57](https://github.com/flowcore-io/flowcore-pathways/issues/57)) ([2644e71](https://github.com/flowcore-io/flowcore-pathways/commit/2644e711713fe1694522a95708e37de3872008f0))
+
 ## [0.21.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.20.1...v0.21.0) (2026-03-30)
 
 
