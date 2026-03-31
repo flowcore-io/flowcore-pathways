@@ -20,6 +20,12 @@ interface PathwayRegistration {
 // deno-lint-ignore no-explicit-any
 type DataPumpInstance = any
 
+// deno-lint-ignore no-explicit-any
+type DataPumpConstructor = any
+
+const RESTART_BASE_MS = 1_000
+const RESTART_MAX_MS = 30_000
+
 /**
  * PathwayPump orchestrates data pump instances for auto-fetching events from Flowcore.
  *
@@ -37,6 +43,9 @@ export class PathwayPump {
   private pumps: Map<string, DataPumpInstance> = new Map()
   private stateManagers: Map<string, PumpStateManager> = new Map()
   private running = false
+  private restartAttempts: Map<string, number> = new Map()
+  private flowTypeEventTypes: Map<string, string[]> = new Map()
+  private dataPumpConstructor: DataPumpConstructor = null
 
   // Required config from PathwaysBuilder
   private tenant = ""
@@ -100,67 +109,93 @@ export class PathwayPump {
 
     // Dynamically import @flowcore/data-pump
     const { FlowcoreDataPump } = await import("@flowcore/data-pump")
+    this.dataPumpConstructor = FlowcoreDataPump
 
     for (const [flowType, eventTypes] of flowTypeGroups) {
-      const stateManager = this.stateManagerFactory(flowType)
-      this.stateManagers.set(flowType, stateManager)
-
-      const notifierOptions = this.buildNotifierOptions(flowType, eventTypes)
-
-      const pumpOptions: Record<string, unknown> = {
-        auth: { apiKey: this.apiKey },
-        dataSource: {
-          tenant: this.tenant,
-          dataCore: this.dataCore,
-          flowType,
-          eventTypes,
-        },
-        stateManager,
-        processor: {
-          concurrency: 1,
-          handler: async (events: FlowcoreEvent[]) => {
-            for (const event of events) {
-              const pathway = `${event.flowType}/${event.eventType}`
-              await this.processEvent!(pathway, event)
-            }
-          },
-        },
-        bufferSize: this.bufferSize,
-        maxRedeliveryCount: this.maxRedeliveryCount,
-        notifier: notifierOptions,
-        logger: {
-          debug: (msg: string, meta?: Record<string, unknown>) => this.logger.debug(msg, meta),
-          info: (msg: string, meta?: Record<string, unknown>) => this.logger.info(msg, meta),
-          warn: (msg: string, meta?: Record<string, unknown>) => this.logger.warn(msg, meta),
-          error: (msg: string | Error, meta?: Record<string, unknown>) =>
-            this.logger.error(
-              msg instanceof Error ? msg.message : msg,
-              meta,
-            ),
-        },
-      }
-
-      if (this.pulseConfig) {
-        pumpOptions.pulse = {
-          url: this.pulseConfig.url,
-          intervalMs: this.pulseConfig.intervalMs,
-          pathwayId: this.pulseConfig.pathwayId ?? "unknown",
-        }
-      }
-
-      // deno-lint-ignore no-explicit-any
-      const pump = await FlowcoreDataPump.create(pumpOptions as any)
-
-      this.pumps.set(flowType, pump)
-
-      await pump.start((error?: Error) => {
-        if (error) {
-          this.logger.error(`Data pump error for flowType ${flowType}`, error, { flowType })
-        }
-      })
-
-      this.logger.info("Data pump started", { flowType, eventTypes })
+      this.flowTypeEventTypes.set(flowType, eventTypes)
+      await this.startPumpForFlowType(flowType, eventTypes)
     }
+  }
+
+  /**
+   * Start (or restart) a pump for a specific flow type.
+   */
+  private async startPumpForFlowType(flowType: string, eventTypes: string[]): Promise<void> {
+    const stateManager = this.stateManagerFactory(flowType)
+    this.stateManagers.set(flowType, stateManager)
+
+    const notifierOptions = this.buildNotifierOptions(flowType, eventTypes)
+
+    const pumpOptions: Record<string, unknown> = {
+      auth: { apiKey: this.apiKey },
+      dataSource: {
+        tenant: this.tenant,
+        dataCore: this.dataCore,
+        flowType,
+        eventTypes,
+      },
+      stateManager,
+      processor: {
+        concurrency: 1,
+        handler: async (events: FlowcoreEvent[]) => {
+          for (const event of events) {
+            const pathway = `${event.flowType}/${event.eventType}`
+            await this.processEvent!(pathway, event)
+          }
+        },
+      },
+      bufferSize: this.bufferSize,
+      maxRedeliveryCount: this.maxRedeliveryCount,
+      notifier: notifierOptions,
+      logger: {
+        debug: (msg: string, meta?: Record<string, unknown>) => this.logger.debug(msg, meta),
+        info: (msg: string, meta?: Record<string, unknown>) => this.logger.info(msg, meta),
+        warn: (msg: string, meta?: Record<string, unknown>) => this.logger.warn(msg, meta),
+        error: (msg: string | Error, meta?: Record<string, unknown>) =>
+          this.logger.error(
+            msg instanceof Error ? msg.message : msg,
+            meta,
+          ),
+      },
+    }
+
+    if (this.pulseConfig) {
+      pumpOptions.pulse = {
+        url: this.pulseConfig.url,
+        intervalMs: this.pulseConfig.intervalMs,
+        pathwayId: this.pulseConfig.pathwayId ?? "unknown",
+      }
+    }
+
+    // deno-lint-ignore no-explicit-any
+    const pump = await this.dataPumpConstructor.create(pumpOptions as any)
+
+    this.pumps.set(flowType, pump)
+
+    await pump.start((error?: Error) => {
+      if (error) {
+        this.logger.error(`Data pump error for flowType ${flowType}`, error, { flowType })
+        if (!this.running) return
+        const attempts = (this.restartAttempts.get(flowType) ?? 0) + 1
+        this.restartAttempts.set(flowType, attempts)
+        const delay = Math.min(RESTART_BASE_MS * Math.pow(2, attempts - 1), RESTART_MAX_MS)
+        this.logger.warn(`Restarting pump for flowType ${flowType} in ${delay}ms (attempt ${attempts})`)
+        setTimeout(async () => {
+          if (!this.running) return
+          try {
+            await this.startPumpForFlowType(flowType, eventTypes)
+          } catch (restartError) {
+            this.logger.error(
+              `Failed to restart pump for flowType ${flowType}`,
+              restartError instanceof Error ? restartError : new Error(String(restartError)),
+            )
+          }
+        }, delay)
+      }
+    })
+
+    this.restartAttempts.set(flowType, 0)
+    this.logger.info("Data pump started", { flowType, eventTypes })
   }
 
   /**
@@ -186,6 +221,8 @@ export class PathwayPump {
 
     this.pumps.clear()
     this.stateManagers.clear()
+    this.restartAttempts.clear()
+    this.flowTypeEventTypes.clear()
   }
 
   /**
