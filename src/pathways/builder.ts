@@ -1277,6 +1277,47 @@ export class PathwaysBuilder<
     })
 
     await provisioner.provision()
+
+    // Step 4: Register virtual pathway with CP (when pathwayName is set)
+    if (this.pathwayName) {
+      const flowTypes = [...new Set(registrations.map((r) => r.flowType))]
+      const cpBaseUrl = this.pulseUrl.replace(/\/api\/v1\/pump-pulse$/, "")
+
+      const response = await fetch(
+        `${cpBaseUrl}/api/v1/pathways/by-name/${encodeURIComponent(this.pathwayName)}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `ApiKey ${this.apiKey}`,
+          },
+          body: JSON.stringify({
+            tenant: this.tenant,
+            dataCore: this.dataCore,
+            virtualConfig: {
+              resetUrl: `${this.advertisedUrl}${this.resetPath}`,
+              authHeaders: { "x-pump-reset-secret": this.resetSecret },
+              flowTypes,
+            },
+          }),
+        },
+      )
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => "")
+        throw new Error(
+          `Failed to register virtual pathway "${this.pathwayName}": ${response.status} ${text}`,
+        )
+      }
+
+      const result = await response.json() as { pathwayId: string; status: string }
+      this.pathwayId = result.pathwayId
+      this.logger.info("Virtual pathway registered", {
+        pathwayName: this.pathwayName,
+        pathwayId: this.pathwayId,
+        status: result.status,
+      })
+    }
   }
 
   /**
@@ -1292,6 +1333,19 @@ export class PathwaysBuilder<
     if (options.autoProvision) {
       this.logger.info("Auto-provisioning Flowcore infrastructure before starting pump")
       await this.provision()
+    }
+
+    // Auto-configure pulse when pathwayName was provisioned and no explicit pulse config
+    if (this.pathwayId && !options.pulse) {
+      options = {
+        ...options,
+        pulse: {
+          url: this.pulseUrl,
+          intervalMs: this.pulseIntervalMs,
+          pathwayId: this.pathwayId,
+        },
+      }
+      this.logger.info("Auto-configured pulse", { pathwayId: this.pathwayId, url: this.pulseUrl })
     }
 
     // If cluster active and not leader, don't start pump
