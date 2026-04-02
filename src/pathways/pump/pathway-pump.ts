@@ -233,14 +233,18 @@ export class PathwayPump {
    *                   and restarts pumps (pump will start from live position).
    *                   To replay from the very beginning, pass the first time bucket explicitly.
    */
-  async reset(position?: PumpState): Promise<void> {
+  async reset(position?: PumpState, flowTypes?: string[]): Promise<string[]> {
     if (!this.running) {
       throw new Error("PathwayPump is not running — cannot reset")
     }
 
-    this.logger.info("Resetting data pumps", { position })
+    this.logger.info("Resetting data pumps", { position, flowTypes })
+
+    const resetFlowTypes: string[] = []
 
     for (const [flowType, pump] of this.pumps) {
+      if (flowTypes && !flowTypes.includes(flowType)) continue
+
       try {
         if (position) {
           await pump.restart({ timeBucket: position.timeBucket, eventId: position.eventId })
@@ -252,6 +256,7 @@ export class PathwayPump {
           }
           await pump.restart({ timeBucket: new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14) })
         }
+        resetFlowTypes.push(flowType)
         this.logger.info("Data pump reset", { flowType, position })
       } catch (err) {
         this.logger.error(
@@ -261,10 +266,16 @@ export class PathwayPump {
         throw err
       }
     }
+
+    return resetFlowTypes
   }
 
   get isRunning(): boolean {
     return this.running
+  }
+
+  get registeredFlowTypes(): string[] {
+    return [...this.pumps.keys()]
   }
 
   // deno-lint-ignore no-explicit-any
