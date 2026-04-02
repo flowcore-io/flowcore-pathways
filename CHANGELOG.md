@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.21.1...v0.22.0) (2026-04-02)
+
+
+### Features
+
+* auto-provisioned virtual pathways with pulse + reset ([#59](https://github.com/flowcore-io/flowcore-pathways/issues/59)) ([82ff956](https://github.com/flowcore-io/flowcore-pathways/commit/82ff9563abd7a82bc4ec28943794c6528fe7a009))
+
 ## [0.21.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.21.0...v0.21.1) (2026-03-31)
 
 
