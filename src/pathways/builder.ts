@@ -1355,17 +1355,20 @@ export class PathwaysBuilder<
    *                   and restarts from the live position. To replay from the very beginning,
    *                   pass the first time bucket explicitly.
    */
-  async resetPump(position?: PumpState): Promise<void> {
+  async resetPump(position?: PumpState, flowTypes?: string[]): Promise<string[]> {
     if (!this.pathwayPump) {
       throw new Error("Pump not started — call startPump() first")
     }
 
     if (this.clusterManager) {
+      if (flowTypes?.length) {
+        this.logger.warn("flowTypes filter is not supported in cluster mode reset — resetting all flow types")
+      }
       await this.clusterManager.requestReset(position)
-      return
+      return [...this.pathwayPump.registeredFlowTypes]
     }
 
-    await this.pathwayPump.reset(position)
+    return await this.pathwayPump.reset(position, flowTypes)
   }
 
   /**
