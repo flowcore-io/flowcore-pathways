@@ -286,6 +286,15 @@ export class PathwaysBuilder<
   private readonly dataCoreAccessControl: string
   private readonly dataCoreDeleteProtection: boolean
 
+  // Virtual pathway auto-provisioning
+  private readonly pathwayName?: string
+  private readonly advertisedUrl?: string
+  private readonly resetSecret?: string
+  private readonly resetPath: string
+  private readonly pulseUrl: string
+  private readonly pulseIntervalMs: number
+  private pathwayId?: string
+
   // Cluster + pump
   private clusterManager: ClusterManager | null = null
   private pathwayPump: PathwayPump | null = null
@@ -318,6 +327,12 @@ export class PathwaysBuilder<
     dataCoreDescription,
     dataCoreAccessControl,
     dataCoreDeleteProtection,
+    pathwayName,
+    advertisedUrl,
+    resetSecret,
+    resetPath,
+    pulseUrl,
+    pulseIntervalMs,
   }: {
     baseUrl: string
     tenant: string
@@ -331,6 +346,12 @@ export class PathwaysBuilder<
     dataCoreDescription?: string
     dataCoreAccessControl?: string
     dataCoreDeleteProtection?: boolean
+    pathwayName?: string
+    advertisedUrl?: string
+    resetSecret?: string
+    resetPath?: string
+    pulseUrl?: string
+    pulseIntervalMs?: number
   }) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger()
@@ -350,6 +371,22 @@ export class PathwaysBuilder<
     this.dataCoreDescription = dataCoreDescription
     this.dataCoreAccessControl = dataCoreAccessControl ?? "private"
     this.dataCoreDeleteProtection = dataCoreDeleteProtection ?? false
+
+    // Store virtual pathway auto-provisioning config
+    if (pathwayName) {
+      if (!advertisedUrl) {
+        throw new Error("advertisedUrl is required when pathwayName is set")
+      }
+      if (!resetSecret) {
+        throw new Error("resetSecret is required when pathwayName is set")
+      }
+    }
+    this.pathwayName = pathwayName
+    this.advertisedUrl = advertisedUrl
+    this.resetSecret = resetSecret
+    this.resetPath = resetPath ?? "/reset"
+    this.pulseUrl = pulseUrl ?? "https://data-pathways.api.flowcore.io/api/v1/pump-pulse"
+    this.pulseIntervalMs = pulseIntervalMs ?? 30_000
 
     if (enableSessionUserResolvers) {
       this.sessionUserResolvers = overrideSessionUserResolvers ?? new SessionUser()
