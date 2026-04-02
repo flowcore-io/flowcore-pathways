@@ -185,4 +185,53 @@ export class PathwayRouter {
       throw new Error(`Failed to process event in pathway ${pathwayKey}: ${errorObj.message}`)
     }
   }
+
+  /**
+   * Process an incoming virtual reset callback from the Data Pathways CP.
+   * Validates the secret, resolves which pumps to reset, and calls resetPump().
+   *
+   * @param body The reset callback body from the CP
+   * @param providedSecret The secret from the x-pump-reset-secret header
+   * @returns Result with success status and list of flow types that were reset
+   */
+  async processReset(
+    body: ResetCallbackBody,
+    providedSecret: string | null,
+  ): Promise<{ success: boolean; flowTypesReset: string[] }> {
+    // Validate secret key (same pattern as processEvent)
+    if (!providedSecret || providedSecret !== this.secretKey) {
+      const errorMsg = "Invalid secret key"
+      this.logger.error(errorMsg, new Error(errorMsg))
+      throw new Error(errorMsg)
+    }
+
+    this.logger.debug("Processing reset request", {
+      pathwayId: body.pathwayId,
+      mode: body.mode,
+      flowTypes: body.flowTypes,
+    })
+
+    const position = body.position
+      ? { timeBucket: body.position.timeBucket ?? "", eventId: body.position.eventId }
+      : undefined
+
+    const flowTypesReset = await this.pathways.resetPump(position, body.flowTypes)
+
+    this.logger.info("Reset completed", { flowTypesReset })
+
+    return { success: true, flowTypesReset }
+  }
+}
+
+/**
+ * Body shape for virtual reset callbacks from the Data Pathways CP.
+ */
+export interface ResetCallbackBody {
+  pathwayId: string
+  position?: { timeBucket?: string; eventId?: string }
+  flowTypes?: string[]
+  mode: "datapumpRestart" | "hardReset"
+  reason?: string
+  restartRequestId: string
+  stopAt?: string | null
 }
