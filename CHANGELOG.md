@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.22.0...v0.22.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* format ApiKey header as keyId:fullKey for CP auth ([#61](https://github.com/flowcore-io/flowcore-pathways/issues/61)) ([e49c17a](https://github.com/flowcore-io/flowcore-pathways/commit/e49c17a8ca6cd8e38150222a8ceaa6e77fca1f69))
+
 ## [0.22.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.21.1...v0.22.0) (2026-04-02)
 
 
