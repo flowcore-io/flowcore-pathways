@@ -1289,7 +1289,9 @@ export class PathwaysBuilder<
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `ApiKey ${this.apiKey}`,
+            Authorization: `ApiKey ${
+              this.apiKey.startsWith("fc_") ? `${this.apiKey.split("_")[1]}:${this.apiKey}` : this.apiKey
+            }`,
           },
           body: JSON.stringify({
             tenant: this.tenant,
