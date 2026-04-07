@@ -288,6 +288,7 @@ export class PathwaysBuilder<
 
   // Virtual pathway auto-provisioning
   private readonly pathwayName?: string
+  private readonly pathwayLabels: Record<string, string>
   private readonly advertisedUrl?: string
   private readonly resetSecret?: string
   private readonly resetPath: string
@@ -328,6 +329,7 @@ export class PathwaysBuilder<
     dataCoreAccessControl,
     dataCoreDeleteProtection,
     pathwayName,
+    pathwayLabels,
     advertisedUrl,
     resetSecret,
     resetPath,
@@ -347,6 +349,7 @@ export class PathwaysBuilder<
     dataCoreAccessControl?: string
     dataCoreDeleteProtection?: boolean
     pathwayName?: string
+    pathwayLabels?: Record<string, string>
     advertisedUrl?: string
     resetSecret?: string
     resetPath?: string
@@ -382,6 +385,7 @@ export class PathwaysBuilder<
       }
     }
     this.pathwayName = pathwayName
+    this.pathwayLabels = pathwayLabels ?? {}
     this.advertisedUrl = advertisedUrl
     this.resetSecret = resetSecret
     this.resetPath = resetPath ?? "/reset"
@@ -1296,6 +1300,7 @@ export class PathwaysBuilder<
           body: JSON.stringify({
             tenant: this.tenant,
             dataCore: this.dataCore,
+            labels: this.pathwayLabels,
             virtualConfig: {
               resetUrl: `${this.advertisedUrl}${this.resetPath}`,
               authHeaders: { "x-pump-reset-secret": this.resetSecret },
