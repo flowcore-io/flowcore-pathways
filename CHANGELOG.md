@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.22.1...v0.23.0) (2026-04-07)
+
+
+### Features
+
+* add pathwayLabels for virtual pathway metadata ([#63](https://github.com/flowcore-io/flowcore-pathways/issues/63)) ([8f0048a](https://github.com/flowcore-io/flowcore-pathways/commit/8f0048a74f3d89f5ace47fa68e160fd880799d33))
+
 ## [0.22.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.22.0...v0.22.1) (2026-04-07)
 
 
