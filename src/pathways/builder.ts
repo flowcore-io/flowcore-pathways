@@ -389,7 +389,7 @@ export class PathwaysBuilder<
     this.advertisedUrl = advertisedUrl
     this.resetSecret = resetSecret
     this.resetPath = resetPath ?? "/reset"
-    this.pulseUrl = pulseUrl ?? "https://data-pathways.api.flowcore.io/api/v1/pump-pulse"
+    this.pulseUrl = pulseUrl ?? "https://data-pathways.api.flowcore.io"
     this.pulseIntervalMs = pulseIntervalMs ?? 30_000
 
     if (enableSessionUserResolvers) {
@@ -1285,7 +1285,7 @@ export class PathwaysBuilder<
     // Step 4: Register virtual pathway with CP (when pathwayName is set)
     if (this.pathwayName) {
       const flowTypes = [...new Set(registrations.map((r) => r.flowType))]
-      const cpBaseUrl = this.pulseUrl.replace(/\/api\/v1\/pump-pulse$/, "")
+      const cpBaseUrl = this.pulseUrl
 
       const response = await fetch(
         `${cpBaseUrl}/api/v1/pathways/by-name/${encodeURIComponent(this.pathwayName)}`,
