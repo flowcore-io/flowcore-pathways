@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.23.0...v0.23.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* pulseUrl default should be base URL not full endpoint path ([#65](https://github.com/flowcore-io/flowcore-pathways/issues/65)) ([a003536](https://github.com/flowcore-io/flowcore-pathways/commit/a00353689bdbd25e359195bb786f45e9137772d6))
+
 ## [0.23.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.22.1...v0.23.0) (2026-04-07)
 
 
