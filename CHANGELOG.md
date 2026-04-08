@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.23.1...v0.24.0) (2026-04-08)
+
+
+### Features
+
+* configurable log levels for pulse and provision events ([#67](https://github.com/flowcore-io/flowcore-pathways/issues/67)) ([214752f](https://github.com/flowcore-io/flowcore-pathways/commit/214752fcddd4d84ab9305208fc043adc91e3bef5))
+
 ## [0.23.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.23.0...v0.23.1) (2026-04-07)
 
 
