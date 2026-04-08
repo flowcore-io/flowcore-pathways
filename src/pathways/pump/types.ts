@@ -18,6 +18,10 @@ export interface PathwayPumpOptions {
     intervalMs?: number
     /** Pathway ID for this pump */
     pathwayId?: string
+    /** Log level for successful pulses. Defaults to 'debug'. */
+    successLogLevel?: "debug" | "info" | "warn" | "error"
+    /** Log level for pulse failures. Defaults to 'warn'. */
+    failureLogLevel?: "debug" | "info" | "warn" | "error"
   }
 }
 

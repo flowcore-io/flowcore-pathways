@@ -38,7 +38,13 @@ export class PathwayPump {
   private readonly bufferSize: number
   private readonly maxRedeliveryCount: number
   private readonly logger: Logger
-  private readonly pulseConfig?: { url: string; intervalMs?: number; pathwayId?: string }
+  private readonly pulseConfig?: {
+    url: string
+    intervalMs?: number
+    pathwayId?: string
+    successLogLevel?: "debug" | "info" | "warn" | "error"
+    failureLogLevel?: "debug" | "info" | "warn" | "error"
+  }
 
   private pumps: Map<string, DataPumpInstance> = new Map()
   private stateManagers: Map<string, PumpStateManager> = new Map()
@@ -164,6 +170,8 @@ export class PathwayPump {
         url: this.pulseConfig.url,
         intervalMs: this.pulseConfig.intervalMs,
         pathwayId: this.pulseConfig.pathwayId ?? "unknown",
+        successLogLevel: this.pulseConfig.successLogLevel,
+        failureLogLevel: this.pulseConfig.failureLogLevel,
       }
     }
 
