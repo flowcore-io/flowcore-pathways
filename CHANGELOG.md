@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.24.0...v1.0.0) (2026-04-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* poll-based command queue for virtual pathway resets ([#69](https://github.com/flowcore-io/flowcore-pathways/issues/69))
+
+### Features
+
+* poll-based command queue for virtual pathway resets ([#69](https://github.com/flowcore-io/flowcore-pathways/issues/69)) ([133b047](https://github.com/flowcore-io/flowcore-pathways/commit/133b0471c38a28011ad89e2ec7c86ba50be74839))
+
 ## [0.24.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.23.1...v0.24.0) (2026-04-08)
 
 
