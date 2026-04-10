@@ -1,4 +1,4 @@
-import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts"
+import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts"
 import { PathwaysBuilder } from "../src/pathways/builder.ts"
 
 const baseOpts = {
@@ -17,40 +17,33 @@ Deno.test({
       const builder = new PathwaysBuilder({
         ...baseOpts,
         pathwayName: "my-service",
-        advertisedUrl: "https://my-service.example.com",
-        resetSecret: "my-reset-secret",
-        resetPath: "/admin/reset",
-        pulseUrl: "https://custom-cp.example.com/api/v1/pump-pulse",
+        pulseUrl: "https://custom-cp.example.com",
         pulseIntervalMs: 15000,
+        commandPollingIntervalMs: 3000,
       })
 
       assertEquals(typeof builder, "object")
     })
 
-    await t.step("should throw when pathwayName set but advertisedUrl missing", () => {
-      assertThrows(
-        () =>
-          new PathwaysBuilder({
-            ...baseOpts,
-            pathwayName: "my-service",
-            resetSecret: "my-reset-secret",
-          }),
-        Error,
-        "advertisedUrl is required when pathwayName is set",
-      )
+    await t.step("should accept deprecated fields without error (backward compat)", () => {
+      const builder = new PathwaysBuilder({
+        ...baseOpts,
+        pathwayName: "my-service",
+        advertisedUrl: "https://my-service.example.com",
+        resetSecret: "my-reset-secret",
+        resetPath: "/admin/reset",
+      })
+
+      assertEquals(typeof builder, "object")
     })
 
-    await t.step("should throw when pathwayName set but resetSecret missing", () => {
-      assertThrows(
-        () =>
-          new PathwaysBuilder({
-            ...baseOpts,
-            pathwayName: "my-service",
-            advertisedUrl: "https://my-service.example.com",
-          }),
-        Error,
-        "resetSecret is required when pathwayName is set",
-      )
+    await t.step("should accept pathwayName without advertisedUrl or resetSecret", () => {
+      const builder = new PathwaysBuilder({
+        ...baseOpts,
+        pathwayName: "my-service",
+      })
+
+      assertEquals(typeof builder, "object")
     })
 
     await t.step("should work without pathwayName (backward compat)", () => {

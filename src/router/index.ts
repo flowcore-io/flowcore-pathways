@@ -187,44 +187,21 @@ export class PathwayRouter {
   }
 
   /**
-   * Process an incoming virtual reset callback from the Data Pathways CP.
-   * Validates the secret, resolves which pumps to reset, and calls resetPump().
-   *
-   * @param body The reset callback body from the CP
-   * @param providedSecret The secret from the x-pump-reset-secret header
-   * @returns Result with success status and list of flow types that were reset
+   * @deprecated Use the poll-based command queue instead. Virtual pathway commands
+   * are now polled from the CP via GET /api/v1/pathways/:id/commands/pending.
+   * The PathwaysBuilder auto-starts a CommandPoller when pathwayName is configured.
    */
-  async processReset(
-    body: ResetCallbackBody,
-    providedSecret: string | null,
-  ): Promise<{ success: boolean; flowTypesReset: string[] }> {
-    // Validate secret key (same pattern as processEvent)
-    if (!providedSecret || providedSecret !== this.secretKey) {
-      const errorMsg = "Invalid secret key"
-      this.logger.error(errorMsg, new Error(errorMsg))
-      throw new Error(errorMsg)
-    }
-
-    this.logger.debug("Processing reset request", {
-      pathwayId: body.pathwayId,
-      mode: body.mode,
-      flowTypes: body.flowTypes,
-    })
-
-    const position = body.position
-      ? { timeBucket: body.position.timeBucket ?? "", eventId: body.position.eventId }
-      : undefined
-
-    const flowTypesReset = await this.pathways.resetPump(position, body.flowTypes)
-
-    this.logger.info("Reset completed", { flowTypesReset })
-
-    return { success: true, flowTypesReset }
+  processReset(
+    _body: ResetCallbackBody,
+    _providedSecret: string | null,
+  ): { success: boolean; flowTypesReset: string[] } {
+    this.logger.warn("processReset is deprecated — virtual pathway commands are now poll-based. This method is a no-op.")
+    return { success: false, flowTypesReset: [] }
   }
 }
 
 /**
- * Body shape for virtual reset callbacks from the Data Pathways CP.
+ * @deprecated No longer used — virtual pathway commands are now poll-based.
  */
 export interface ResetCallbackBody {
   pathwayId: string
