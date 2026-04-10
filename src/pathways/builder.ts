@@ -7,6 +7,7 @@ import type { FlowcoreEvent } from "../contracts/event.ts"
 import { InternalPathwayState } from "./internal-pathway.state.ts"
 import type { Logger } from "./logger.ts"
 import { NoopLogger } from "./logger.ts"
+import { CommandPoller } from "./command-poller.ts"
 import type {
   EventMetadata,
   PathwayContract,
@@ -298,16 +299,15 @@ export class PathwaysBuilder<
   // Virtual pathway auto-provisioning
   private readonly pathwayName?: string
   private readonly pathwayLabels: Record<string, string>
-  private readonly advertisedUrl?: string
-  private readonly resetSecret?: string
-  private readonly resetPath: string
   private readonly pulseUrl: string
   private readonly pulseIntervalMs: number
+  private readonly commandPollingIntervalMs: number
   private pathwayId?: string
 
-  // Cluster + pump
+  // Cluster + pump + command poller
   private clusterManager: ClusterManager | null = null
   private pathwayPump: PathwayPump | null = null
+  private commandPoller: CommandPoller | null = null
   private clusterBypassProcess = false
 
   /**
@@ -339,11 +339,12 @@ export class PathwaysBuilder<
     dataCoreDeleteProtection,
     pathwayName,
     pathwayLabels,
-    advertisedUrl,
-    resetSecret,
-    resetPath,
+    advertisedUrl: _advertisedUrl,
+    resetSecret: _resetSecret,
+    resetPath: _resetPath,
     pulseUrl,
     pulseIntervalMs,
+    commandPollingIntervalMs,
   }: {
     baseUrl: string
     tenant: string
@@ -359,11 +360,15 @@ export class PathwaysBuilder<
     dataCoreDeleteProtection?: boolean
     pathwayName?: string
     pathwayLabels?: Record<string, string>
+    /** @deprecated No longer used — virtual pathway commands are now poll-based */
     advertisedUrl?: string
+    /** @deprecated No longer used — virtual pathway commands are now poll-based */
     resetSecret?: string
+    /** @deprecated No longer used — virtual pathway commands are now poll-based */
     resetPath?: string
     pulseUrl?: string
     pulseIntervalMs?: number
+    commandPollingIntervalMs?: number
   }) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger()
@@ -389,21 +394,11 @@ export class PathwaysBuilder<
     this.dataCoreDeleteProtection = dataCoreDeleteProtection ?? false
 
     // Store virtual pathway auto-provisioning config
-    if (pathwayName) {
-      if (!advertisedUrl) {
-        throw new Error("advertisedUrl is required when pathwayName is set")
-      }
-      if (!resetSecret) {
-        throw new Error("resetSecret is required when pathwayName is set")
-      }
-    }
     this.pathwayName = pathwayName
     this.pathwayLabels = pathwayLabels ?? {}
-    this.advertisedUrl = advertisedUrl
-    this.resetSecret = resetSecret
-    this.resetPath = resetPath ?? "/reset"
     this.pulseUrl = pulseUrl ?? "https://data-pathways.api.flowcore.io"
     this.pulseIntervalMs = pulseIntervalMs ?? 30_000
+    this.commandPollingIntervalMs = commandPollingIntervalMs ?? 5_000
 
     if (enableSessionUserResolvers) {
       this.sessionUserResolvers = overrideSessionUserResolvers ?? new SessionUser()
@@ -1316,8 +1311,6 @@ export class PathwaysBuilder<
             dataCore: this.dataCore,
             labels: this.pathwayLabels,
             virtualConfig: {
-              resetUrl: `${this.advertisedUrl}${this.resetPath}`,
-              authHeaders: { "x-pump-reset-secret": this.resetSecret },
               flowTypes,
             },
           }),
@@ -1438,6 +1431,34 @@ export class PathwaysBuilder<
       pathways: registrations.length,
     })
 
+    // Auto-start command poller for virtual pathways (poll CP for restart commands)
+    if (this.pathwayId && !this.commandPoller) {
+      this.commandPoller = new CommandPoller({
+        cpBaseUrl: this.pulseUrl,
+        pathwayId: this.pathwayId,
+        apiKey: this.apiKey,
+        intervalMs: this.commandPollingIntervalMs,
+        logger: this.logger,
+        onCommand: async (cmd) => {
+          if (cmd.type === "datapumpRestart") {
+            const position = cmd.position
+              ? { timeBucket: (cmd.position as Record<string, string>).timeBucket ?? "", eventId: (cmd.position as Record<string, string>).eventId }
+              : undefined
+            const flowTypes = cmd.sourceFlowTypes ?? undefined
+            await this.pathwayPump!.reset(position, flowTypes)
+          } else {
+            this.logger.warn("Unknown command type received", { type: cmd.type, commandId: cmd.id })
+          }
+        },
+        logLevel: {
+          pollSuccess: this.logLevel.pulseSuccess,
+          pollFailure: this.logLevel.pulseFailure,
+        },
+      })
+      this.commandPoller.start()
+      this.logger.info("Command poller started", { pathwayId: this.pathwayId, intervalMs: this.commandPollingIntervalMs })
+    }
+
     return this.pathwayPump
   }
 
@@ -1445,6 +1466,10 @@ export class PathwaysBuilder<
    * Stop the data pump
    */
   async stopPump(): Promise<void> {
+    if (this.commandPoller) {
+      this.commandPoller.stop()
+      this.commandPoller = null
+    }
     if (!this.pathwayPump) return
     await this.pathwayPump.stop()
     this.pathwayPump = null
