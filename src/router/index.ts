@@ -191,10 +191,10 @@ export class PathwayRouter {
    * are now polled from the CP via GET /api/v1/pathways/:id/commands/pending.
    * The PathwaysBuilder auto-starts a CommandPoller when pathwayName is configured.
    */
-  async processReset(
+  processReset(
     _body: ResetCallbackBody,
     _providedSecret: string | null,
-  ): Promise<{ success: boolean; flowTypesReset: string[] }> {
+  ): { success: boolean; flowTypesReset: string[] } {
     this.logger.warn("processReset is deprecated — virtual pathway commands are now poll-based. This method is a no-op.")
     return { success: false, flowTypesReset: [] }
   }
