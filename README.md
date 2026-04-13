@@ -19,6 +19,7 @@ Pathways helps you build event-driven applications with type-safe pathways for p
   - [HTTP Server Integration](#http-server-integration)
   - [Persistence Options](#persistence-options)
 - [Advanced Usage](#advanced-usage)
+  - [Runtime Defaults and Auto-Provisioning](#runtime-defaults-and-auto-provisioning)
   - [Auditing](#auditing)
   - [Custom Loggers](#custom-loggers)
   - [Retry Mechanisms](#retry-mechanisms)
@@ -127,6 +128,52 @@ const pathways = new PathwaysBuilder({
   logger: customLogger, // Optional, defaults to NoopLogger
 })
 ```
+
+### Runtime Defaults and Auto-Provisioning
+
+`PathwaysBuilder` can now drive different startup behavior for development and production:
+
+- `development`: starts the local in-process pump and only provisions shared Flowcore resources such as the data core,
+  flow types, and event types
+- `production + virtual`: requires cluster mode and auto-provisions a virtual pathway by name
+- `production + managed`: auto-provisions a managed pathway by name and does not start a local pump
+
+```typescript
+const pathways = new PathwaysBuilder({
+  baseUrl: "https://api.flowcore.io",
+  tenant: "your-tenant",
+  dataCore: "your-data-core",
+  apiKey: process.env.FLOWCORE_API_KEY!,
+  runtimeEnv: process.env.NODE_ENV === "production" ? "production" : "development",
+  pathwayName: "orders-service",
+  pathwayMode: "virtual", // default
+  defaultAutoProvision: true, // default
+})
+```
+
+For managed production delivery, provide a transform endpoint and leave event fetching to the control plane:
+
+```typescript
+const pathways = new PathwaysBuilder({
+  baseUrl: "https://api.flowcore.io",
+  tenant: "your-tenant",
+  dataCore: "your-data-core",
+  apiKey: process.env.FLOWCORE_API_KEY!,
+  runtimeEnv: "production",
+  pathwayName: "orders-service",
+  pathwayMode: "managed",
+  managedConfig: {
+    endpointUrl: "https://app.example.com/api/flowcore",
+    authHeaders: {
+      authorization: `Bearer ${process.env.TRANSFORM_TOKEN!}`,
+    },
+    sizeClass: "medium",
+  },
+})
+```
+
+To disable all remote provisioning and keep startup fully manual, set `defaultAutoProvision: false` or pass
+`autoProvision: false` to `startPump()`.
 
 ### Registering Pathways
 
