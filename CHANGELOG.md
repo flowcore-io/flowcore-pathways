@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/flowcore-io/flowcore-pathways/compare/v2.0.0...v2.0.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* avoid virtual auto-provision startup deadlock ([#73](https://github.com/flowcore-io/flowcore-pathways/issues/73)) ([d6d866c](https://github.com/flowcore-io/flowcore-pathways/commit/d6d866cf814ab963ef1f9f42b0d35d12c8a486d9))
+
 ## [2.0.0](https://github.com/flowcore-io/flowcore-pathways/compare/v1.0.0...v2.0.0) (2026-04-13)
 
 
