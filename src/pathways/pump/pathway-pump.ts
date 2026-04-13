@@ -38,7 +38,7 @@ export class PathwayPump {
   private readonly bufferSize: number
   private readonly maxRedeliveryCount: number
   private readonly logger: Logger
-  private readonly pulseConfig?: {
+  private pulseConfig?: {
     url: string
     intervalMs?: number
     pathwayId?: string
@@ -276,6 +276,38 @@ export class PathwayPump {
     }
 
     return resetFlowTypes
+  }
+
+  async setPulseConfig(pulseConfig: NonNullable<PathwayPumpOptions["pulse"]>): Promise<void> {
+    this.pulseConfig = pulseConfig
+
+    if (!this.running) {
+      return
+    }
+
+    const flowTypeGroups = [...this.flowTypeEventTypes.entries()]
+    const existingPumps = [...this.pumps.entries()]
+
+    for (const [flowType, pump] of existingPumps) {
+      try {
+        await pump.stop()
+        this.logger.info("Data pump stopped for pulse reconfiguration", { flowType })
+      } catch (err) {
+        this.logger.error(
+          `Error stopping pump for ${flowType} during pulse reconfiguration`,
+          err instanceof Error ? err : new Error(String(err)),
+        )
+        throw err
+      }
+    }
+
+    this.pumps.clear()
+    this.stateManagers.clear()
+    this.restartAttempts.clear()
+
+    for (const [flowType, eventTypes] of flowTypeGroups) {
+      await this.startPumpForFlowType(flowType, eventTypes)
+    }
   }
 
   get isRunning(): boolean {
