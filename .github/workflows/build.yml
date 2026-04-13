@@ -18,10 +18,9 @@ jobs:
           token: ${{ secrets.FLOWCORE_MACHINE_GITHUB_TOKEN }}
           submodules: true
       - name: Extract version from deno.json
-        uses: sergeysova/jq-action@v2
         id: version
-        with:
-          cmd: "jq .version deno.json -r"
+        run: |
+          echo "value=$(python3 -c 'import json; print(json.load(open("deno.json"))["version"])')" >> "$GITHUB_OUTPUT"
       - name: Show my version
         run: 'echo "version ${{ steps.version.outputs.value }}"'
 

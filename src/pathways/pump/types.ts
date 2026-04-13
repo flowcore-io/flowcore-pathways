@@ -8,7 +8,7 @@ export interface PathwayPumpOptions {
   notifier?: PumpNotifierConfig
   bufferSize?: number
   maxRedeliveryCount?: number
-  /** If true, calls provision() before starting the pump */
+  /** If true, applies the builder's environment-aware provisioning rules before startup */
   autoProvision?: boolean
   /** Optional pulse reporting to control plane */
   pulse?: {

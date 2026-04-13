@@ -23,7 +23,7 @@ import type { PathwayClusterOptions } from "./cluster/types.ts"
 import { ClusterManager } from "./cluster/cluster-manager.ts"
 import type { PathwayPumpOptions, PumpState } from "./pump/types.ts"
 import { PathwayPump } from "./pump/pathway-pump.ts"
-import { PathwayProvisioner } from "./provisioner.ts"
+import { PathwayProvisioner, type ProvisionerRegistration } from "./provisioner.ts"
 import {
   AUDIT_ENTITY_ID,
   AUDIT_ENTITY_TYPE,
@@ -57,6 +57,17 @@ const DEFAULT_RETRY_DELAY_MS = 500
  * Default TTL for session-specific user resolvers in milliseconds (10seconds)
  */
 const DEFAULT_SESSION_USER_RESOLVER_TTL_MS = 10 * 1000
+
+function normalizeRuntimeEnv(runtimeEnv?: string): PathwayRuntimeEnv {
+  switch (runtimeEnv) {
+    case "development":
+    case "production":
+    case "test":
+      return runtimeEnv
+    default:
+      return "development"
+  }
+}
 
 /**
  * Defines the mode for auditing pathway operations
@@ -128,6 +139,46 @@ export type LogLevelConfig = {
  * Internal log level configuration that ensures all properties are defined
  */
 type InternalLogLevelConfig = Required<LogLevelConfig>
+
+export type PathwayRuntimeEnv = "development" | "production" | "test"
+
+export type PathwayMode = "virtual" | "managed"
+
+export interface ManagedPathwayConfig {
+  endpointUrl: string
+  authHeaders?: Record<string, string>
+  sizeClass?: "small" | "medium" | "high"
+}
+
+export interface PathwaysBuilderConfig {
+  baseUrl: string
+  tenant: string
+  dataCore: string
+  apiKey: string
+  pathwayTimeoutMs?: number
+  logger?: Logger
+  enableSessionUserResolvers?: boolean
+  overrideSessionUserResolvers?: SessionUserResolver
+  logLevel?: LogLevelConfig
+  dataCoreDescription?: string
+  dataCoreAccessControl?: string
+  dataCoreDeleteProtection?: boolean
+  pathwayName?: string
+  pathwayLabels?: Record<string, string>
+  /** @deprecated No longer used — virtual pathway commands are now poll-based */
+  advertisedUrl?: string
+  /** @deprecated No longer used — virtual pathway commands are now poll-based */
+  resetSecret?: string
+  /** @deprecated No longer used — virtual pathway commands are now poll-based */
+  resetPath?: string
+  pulseUrl?: string
+  pulseIntervalMs?: number
+  commandPollingIntervalMs?: number
+  runtimeEnv?: PathwayRuntimeEnv
+  pathwayMode?: PathwayMode
+  defaultAutoProvision?: boolean
+  managedConfig?: ManagedPathwayConfig
+}
 
 /**
  * SessionUserResolver is a key-value store for storing and retrieving UserIdResolver functions
@@ -302,6 +353,10 @@ export class PathwaysBuilder<
   private readonly pulseUrl: string
   private readonly pulseIntervalMs: number
   private readonly commandPollingIntervalMs: number
+  private readonly runtimeEnv: PathwayRuntimeEnv
+  private readonly pathwayMode: PathwayMode
+  private readonly defaultAutoProvision: boolean
+  private readonly managedConfig?: ManagedPathwayConfig
   private pathwayId?: string
 
   // Cluster + pump + command poller
@@ -345,31 +400,11 @@ export class PathwaysBuilder<
     pulseUrl,
     pulseIntervalMs,
     commandPollingIntervalMs,
-  }: {
-    baseUrl: string
-    tenant: string
-    dataCore: string
-    apiKey: string
-    pathwayTimeoutMs?: number
-    logger?: Logger
-    enableSessionUserResolvers?: boolean
-    overrideSessionUserResolvers?: SessionUserResolver
-    logLevel?: LogLevelConfig
-    dataCoreDescription?: string
-    dataCoreAccessControl?: string
-    dataCoreDeleteProtection?: boolean
-    pathwayName?: string
-    pathwayLabels?: Record<string, string>
-    /** @deprecated No longer used — virtual pathway commands are now poll-based */
-    advertisedUrl?: string
-    /** @deprecated No longer used — virtual pathway commands are now poll-based */
-    resetSecret?: string
-    /** @deprecated No longer used — virtual pathway commands are now poll-based */
-    resetPath?: string
-    pulseUrl?: string
-    pulseIntervalMs?: number
-    commandPollingIntervalMs?: number
-  }) {
+    runtimeEnv,
+    pathwayMode,
+    defaultAutoProvision,
+    managedConfig,
+  }: PathwaysBuilderConfig) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger()
 
@@ -399,6 +434,10 @@ export class PathwaysBuilder<
     this.pulseUrl = pulseUrl ?? "https://data-pathways.api.flowcore.io"
     this.pulseIntervalMs = pulseIntervalMs ?? 30_000
     this.commandPollingIntervalMs = commandPollingIntervalMs ?? 5_000
+    this.runtimeEnv = normalizeRuntimeEnv(runtimeEnv ?? process.env.NODE_ENV)
+    this.pathwayMode = pathwayMode ?? "virtual"
+    this.defaultAutoProvision = defaultAutoProvision ?? true
+    this.managedConfig = managedConfig
 
     if (enableSessionUserResolvers) {
       this.sessionUserResolvers = overrideSessionUserResolvers ?? new SessionUser()
@@ -409,6 +448,9 @@ export class PathwaysBuilder<
       tenant,
       dataCore,
       pathwayTimeoutMs,
+      runtimeEnv: this.runtimeEnv,
+      pathwayMode: this.pathwayMode,
+      defaultAutoProvision: this.defaultAutoProvision,
     })
 
     this.webhookBuilderFactory = new WebhookBuilder({
@@ -1260,14 +1302,8 @@ export class PathwaysBuilder<
     return this.clusterManager !== null && this.clusterManager.isRunning
   }
 
-  /**
-   * Provision Flowcore infrastructure (data core, flow types, event types).
-   * Creates missing resources when descriptions are provided, updates descriptions
-   * when they differ. Fails if a resource is missing and no description is provided.
-   * Additive only — never deletes.
-   */
-  async provision(): Promise<void> {
-    const registrations = Object.keys(this.pathways).map((key) => {
+  private buildRegistrations(): ProvisionerRegistration[] {
+    return Object.keys(this.pathways).map((key) => {
       const [flowType, eventType] = key.split("/")
       return {
         flowType,
@@ -1276,6 +1312,10 @@ export class PathwaysBuilder<
         eventTypeDescription: this.eventTypeDescriptions.get(key),
       }
     })
+  }
+
+  private async provisionSharedResources(): Promise<ProvisionerRegistration[]> {
+    const registrations = this.buildRegistrations()
 
     const provisioner = new PathwayProvisioner({
       tenant: this.tenant,
@@ -1289,66 +1329,163 @@ export class PathwaysBuilder<
     })
 
     await provisioner.provision()
+    return registrations
+  }
 
-    // Step 4: Register virtual pathway with CP (when pathwayName is set)
-    if (this.pathwayName) {
-      const flowTypes = [...new Set(registrations.map((r) => r.flowType))]
-      const cpBaseUrl = this.pulseUrl
-      const url = `${cpBaseUrl}/api/v1/pathways/by-name/${encodeURIComponent(this.pathwayName)}`
+  private getPathwayProvisionAuthHeader(): string {
+    const apiKey = this.apiKey.startsWith("fc_") ? `${this.apiKey.split("_")[1]}:${this.apiKey}` : this.apiKey
 
-      let response: Response
-      try {
-        response = await fetch(url, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `ApiKey ${
-              this.apiKey.startsWith("fc_") ? `${this.apiKey.split("_")[1]}:${this.apiKey}` : this.apiKey
-            }`,
-          },
-          body: JSON.stringify({
-            tenant: this.tenant,
-            dataCore: this.dataCore,
-            labels: this.pathwayLabels,
-            virtualConfig: {
-              flowTypes,
-            },
-          }),
-        })
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        this.logger[this.logLevel.provisionFailure]("Virtual pathway registration failed", {
-          pathwayName: this.pathwayName,
-          url,
-          error: msg,
-          phase: "network",
-        })
-        throw new Error(`Failed to register virtual pathway "${this.pathwayName}": ${msg}`)
-      }
+    return `ApiKey ${apiKey}`
+  }
 
-      if (!response.ok) {
-        const text = await response.text().catch(() => "")
-        this.logger[this.logLevel.provisionFailure]("Virtual pathway registration failed", {
-          pathwayName: this.pathwayName,
-          url,
-          status: response.status,
-          body: text,
-          phase: "response",
-        })
-        throw new Error(
-          `Failed to register virtual pathway "${this.pathwayName}": ${response.status} ${text}`,
-        )
-      }
-
-      const result = await response.json() as { pathwayId: string; status: string }
-      this.pathwayId = result.pathwayId
-      this.logger[this.logLevel.provisionSuccess]("Virtual pathway registered", {
-        pathwayName: this.pathwayName,
-        pathwayId: this.pathwayId,
-        status: result.status,
-        flowTypes,
-      })
+  private ensurePathwayName(reason: string): string {
+    if (!this.pathwayName) {
+      throw new Error(reason)
     }
+    return this.pathwayName
+  }
+
+  private buildManagedPathwayConfig(registrations: ProvisionerRegistration[]): {
+    sizeClass: "small" | "medium" | "high"
+    config: {
+      sources: Array<{
+        flowType: string
+        eventTypes: string[]
+        endpoints: Array<{
+          url: string
+          authHeaders: Record<string, string>
+        }>
+      }>
+    }
+  } {
+    if (!this.managedConfig?.endpointUrl) {
+      throw new Error(
+        "managedConfig.endpointUrl is required when provisioning a managed pathway",
+      )
+    }
+
+    const grouped = new Map<string, Set<string>>()
+    for (const registration of registrations) {
+      const eventTypes = grouped.get(registration.flowType) ?? new Set<string>()
+      eventTypes.add(registration.eventType)
+      grouped.set(registration.flowType, eventTypes)
+    }
+
+    return {
+      sizeClass: this.managedConfig.sizeClass ?? "small",
+      config: {
+        sources: [...grouped.entries()].map(([flowType, eventTypes]) => ({
+          flowType,
+          eventTypes: [...eventTypes],
+          endpoints: [{
+            url: this.managedConfig!.endpointUrl,
+            authHeaders: this.managedConfig!.authHeaders ?? {},
+          }],
+        })),
+      },
+    }
+  }
+
+  private async upsertPathwayByName(
+    type: PathwayMode,
+    body: Record<string, unknown>,
+    logMeta: Record<string, unknown>,
+  ): Promise<void> {
+    const pathwayName = this.ensurePathwayName(
+      `pathwayName is required when provisioning a ${type} pathway`,
+    )
+    const url = `${this.pulseUrl}/api/v1/pathways/by-name/${encodeURIComponent(pathwayName)}`
+
+    let response: Response
+    try {
+      response = await fetch(url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: this.getPathwayProvisionAuthHeader(),
+        },
+        body: JSON.stringify(body),
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      this.logger[this.logLevel.provisionFailure](`${type} pathway registration failed`, {
+        pathwayName,
+        url,
+        error: msg,
+        phase: "network",
+      })
+      throw new Error(`Failed to register ${type} pathway "${pathwayName}": ${msg}`)
+    }
+
+    if (!response.ok) {
+      const text = await response.text().catch(() => "")
+      this.logger[this.logLevel.provisionFailure](`${type} pathway registration failed`, {
+        pathwayName,
+        url,
+        status: response.status,
+        body: text,
+        phase: "response",
+      })
+      throw new Error(
+        `Failed to register ${type} pathway "${pathwayName}": ${response.status} ${text}`,
+      )
+    }
+
+    const result = await response.json() as { pathwayId: string; status: string }
+    this.pathwayId = result.pathwayId
+    this.logger[this.logLevel.provisionSuccess](`${type} pathway registered`, {
+      pathwayName,
+      pathwayId: this.pathwayId,
+      status: result.status,
+      ...logMeta,
+    })
+  }
+
+  private async registerPathwayInstance(registrations: ProvisionerRegistration[]): Promise<void> {
+    if (this.pathwayMode === "managed") {
+      const { sizeClass, config } = this.buildManagedPathwayConfig(registrations)
+      await this.upsertPathwayByName("managed", {
+        tenant: this.tenant,
+        dataCore: this.dataCore,
+        labels: this.pathwayLabels,
+        sizeClass,
+        enabled: true,
+        type: "managed",
+        config,
+      }, {
+        sizeClass,
+        sourceCount: config.sources.length,
+      })
+      return
+    }
+
+    if (!this.pathwayName) {
+      return
+    }
+
+    const flowTypes = [...new Set(registrations.map((registration) => registration.flowType))]
+    await this.upsertPathwayByName("virtual", {
+      tenant: this.tenant,
+      dataCore: this.dataCore,
+      labels: this.pathwayLabels,
+      type: "virtual",
+      virtualConfig: {
+        flowTypes,
+      },
+    }, {
+      flowTypes,
+    })
+  }
+
+  /**
+   * Provision Flowcore infrastructure (data core, flow types, event types).
+   * Creates missing resources when descriptions are provided, updates descriptions
+   * when they differ. Fails if a resource is missing and no description is provided.
+   * Additive only — never deletes.
+   */
+  async provision(): Promise<void> {
+    const registrations = await this.provisionSharedResources()
+    await this.registerPathwayInstance(registrations)
   }
 
   /**
@@ -1360,14 +1497,28 @@ export class PathwaysBuilder<
       throw new Error("Pump already started")
     }
 
-    // Auto-provision infrastructure if requested
-    if (options.autoProvision) {
-      this.logger.info("Auto-provisioning Flowcore infrastructure before starting pump")
-      await this.provision()
+    const autoProvision = options.autoProvision ?? this.defaultAutoProvision
+
+    if (autoProvision) {
+      if (this.runtimeEnv === "production") {
+        if (this.pathwayMode === "virtual" && !this.isClusterActive) {
+          throw new Error("Cluster mode must be started before production virtual pump startup")
+        }
+
+        this.logger.info("Auto-provisioning Flowcore resources for production startup", {
+          pathwayMode: this.pathwayMode,
+        })
+        await this.provision()
+      } else if (this.runtimeEnv === "development") {
+        this.logger.info("Auto-provisioning shared Flowcore resources for development startup")
+        await this.provisionSharedResources()
+      } else {
+        this.logger.info("Skipping remote auto-provisioning in test runtime")
+      }
     }
 
     // Auto-configure pulse when pathwayName was provisioned and no explicit pulse config
-    if (this.pathwayId && !options.pulse) {
+    if (this.pathwayMode === "virtual" && this.pathwayId && !options.pulse) {
       options = {
         ...options,
         pulse: {
@@ -1419,6 +1570,11 @@ export class PathwaysBuilder<
       },
     })
 
+    if (this.runtimeEnv === "production" && this.pathwayMode === "managed") {
+      this.logger.info("Not starting local pump — production managed pathways rely on control-plane delivery")
+      return this.pathwayPump
+    }
+
     // Collect registered pathways
     const registrations = Object.keys(this.pathways).map((key) => {
       const [flowType, eventType] = key.split("/")
@@ -1432,7 +1588,7 @@ export class PathwaysBuilder<
     })
 
     // Auto-start command poller for virtual pathways (poll CP for restart commands)
-    if (this.pathwayId && !this.commandPoller) {
+    if (this.pathwayMode === "virtual" && this.pathwayId && !this.commandPoller) {
       this.commandPoller = new CommandPoller({
         cpBaseUrl: this.pulseUrl,
         pathwayId: this.pathwayId,
@@ -1442,7 +1598,10 @@ export class PathwaysBuilder<
         onCommand: async (cmd) => {
           if (cmd.type === "datapumpRestart") {
             const position = cmd.position
-              ? { timeBucket: (cmd.position as Record<string, string>).timeBucket ?? "", eventId: (cmd.position as Record<string, string>).eventId }
+              ? {
+                timeBucket: (cmd.position as Record<string, string>).timeBucket ?? "",
+                eventId: (cmd.position as Record<string, string>).eventId,
+              }
               : undefined
             const flowTypes = cmd.sourceFlowTypes ?? undefined
             await this.pathwayPump!.reset(position, flowTypes)
@@ -1456,7 +1615,10 @@ export class PathwaysBuilder<
         },
       })
       this.commandPoller.start()
-      this.logger.info("Command poller started", { pathwayId: this.pathwayId, intervalMs: this.commandPollingIntervalMs })
+      this.logger.info("Command poller started", {
+        pathwayId: this.pathwayId,
+        intervalMs: this.commandPollingIntervalMs,
+      })
     }
 
     return this.pathwayPump

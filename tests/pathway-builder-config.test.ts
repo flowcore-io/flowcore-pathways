@@ -20,6 +20,16 @@ Deno.test({
         pulseUrl: "https://custom-cp.example.com",
         pulseIntervalMs: 15000,
         commandPollingIntervalMs: 3000,
+        runtimeEnv: "production",
+        pathwayMode: "managed",
+        defaultAutoProvision: false,
+        managedConfig: {
+          endpointUrl: "https://app.example.com/flowcore",
+          authHeaders: {
+            "x-service-token": "secret",
+          },
+          sizeClass: "medium",
+        },
       })
 
       assertEquals(typeof builder, "object")
