@@ -130,5 +130,76 @@ Deno.test({
       assertEquals(groups.get("order"), ["placed", "shipped"])
       assertEquals(groups.get("payment"), ["received"])
     })
+
+    await t.step("setPulseConfig recreates running pumps with the new pulse configuration", async () => {
+      const factory = createInMemoryStateFactory()
+      const pump = new PathwayPump({
+        stateManagerFactory: factory,
+        notifier: { type: "poller", pollerIntervalMs: 1000 },
+      })
+
+      pump.configure({
+        tenant: "test-tenant",
+        dataCore: "test-dc",
+        apiKey: "test-key",
+        baseUrl: "https://api.flowcore.io",
+        processEvent: async (_pathway: string, _event: FlowcoreEvent) => {},
+      })
+
+      const stoppedFlowTypes: string[] = []
+      const createdFlowTypes: string[] = []
+      const createdPulsePathwayIds: string[] = []
+      ;(pump as unknown as {
+        running: boolean
+        pumps: Map<string, { stop(): Promise<void> }>
+        flowTypeEventTypes: Map<string, string[]>
+        dataPumpConstructor: {
+          create(options: Record<string, unknown>): Promise<{ start(cb?: unknown): Promise<void> }>
+        }
+      }).running = true
+      ;(pump as unknown as { pumps: Map<string, { stop(): Promise<void> }> }).pumps = new Map([
+        ["user", {
+          stop: async () => {
+            stoppedFlowTypes.push("user")
+          },
+        }],
+        ["order", {
+          stop: async () => {
+            stoppedFlowTypes.push("order")
+          },
+        }],
+      ])
+      ;(pump as unknown as { flowTypeEventTypes: Map<string, string[]> }).flowTypeEventTypes = new Map([
+        ["user", ["created", "updated"]],
+        ["order", ["placed"]],
+      ])
+      ;(pump as unknown as {
+        dataPumpConstructor: {
+          create(options: Record<string, unknown>): Promise<{ start(cb?: unknown): Promise<void> }>
+        }
+      }).dataPumpConstructor = {
+        create: async (options: Record<string, unknown>) => {
+          const dataSource = options.dataSource as { flowType: string }
+          const pulse = options.pulse as { pathwayId: string }
+          createdFlowTypes.push(dataSource.flowType)
+          createdPulsePathwayIds.push(pulse.pathwayId)
+
+          return {
+            start: async () => {},
+          }
+        },
+      }
+
+      await pump.setPulseConfig({
+        url: "http://localhost:3000",
+        pathwayId: "pathway-123",
+      })
+
+      assertEquals(stoppedFlowTypes.sort(), ["order", "user"])
+      assertEquals(createdFlowTypes.sort(), ["order", "user"])
+      assertEquals(createdPulsePathwayIds, ["pathway-123", "pathway-123"])
+      assertEquals(pump.isRunning, true)
+      assertEquals(pump.registeredFlowTypes.sort(), ["order", "user"])
+    })
   },
 })

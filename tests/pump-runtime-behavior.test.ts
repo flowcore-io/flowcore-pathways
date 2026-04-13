@@ -2,7 +2,7 @@ import { assertEquals, assertRejects } from "https://deno.land/std@0.224.0/asser
 import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts"
 import { z } from "zod"
 import { CommandPoller } from "../src/pathways/command-poller.ts"
-import { type PathwaysBuilderConfig, PathwaysBuilder } from "../src/pathways/builder.ts"
+import { PathwaysBuilder, type PathwaysBuilderConfig } from "../src/pathways/builder.ts"
 import { PathwayPump } from "../src/pathways/pump/pathway-pump.ts"
 import { PathwayProvisioner } from "../src/pathways/provisioner.ts"
 
@@ -142,23 +142,34 @@ Deno.test({
     })
 
     await t.step(
-      "production virtual mode provisions pathway resources and starts the local pump on the leader",
+      "production virtual mode starts the local pump before registering the virtual pathway on the leader",
       async () => {
         let provisionCalls = 0
         let startCalls = 0
+        let setPulseCalls = 0
         let commandPollerStarts = 0
+        const lifecycle: string[] = []
         const fetchBodies: Array<Record<string, unknown>> = []
 
         const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {
           provisionCalls++
+          lifecycle.push("provision")
         })
-        const startStub = stub(PathwayPump.prototype, "start", async () => {
+        const startStub = stub(PathwayPump.prototype, "start", async function (this: PathwayPump) {
           startCalls++
+          ;(this as unknown as { running: boolean }).running = true
+          lifecycle.push("start")
+        })
+        const setPulseStub = stub(PathwayPump.prototype, "setPulseConfig", async () => {
+          setPulseCalls++
+          lifecycle.push("setPulse")
         })
         const pollerStub = stub(CommandPoller.prototype, "start", () => {
           commandPollerStarts++
+          lifecycle.push("pollerStart")
         })
         const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
+          lifecycle.push("fetch")
           fetchBodies.push(JSON.parse(String(init?.body ?? "{}")))
           return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
             status: 200,
@@ -181,13 +192,175 @@ Deno.test({
 
           assertEquals(provisionCalls, 1)
           assertEquals(startCalls, 1)
+          assertEquals(setPulseCalls, 1)
           assertEquals(commandPollerStarts, 1)
           assertEquals(fetchBodies.length, 1)
           assertEquals(fetchBodies[0].type, "virtual")
+          assertEquals(lifecycle, ["provision", "start", "fetch", "setPulse", "pollerStart"])
         } finally {
           provisionStub.restore()
           startStub.restore()
+          setPulseStub.restore()
           pollerStub.restore()
+          fetchStub.restore()
+        }
+      },
+    )
+
+    await t.step(
+      "production virtual mode skips by-name registration on non-leaders and defers it until leadership gain",
+      async () => {
+        let provisionCalls = 0
+        let startCalls = 0
+        let stopCalls = 0
+        let setPulseCalls = 0
+        let commandPollerStarts = 0
+        let commandPollerStops = 0
+        const lifecycle: string[] = []
+        const fetchBodies: Array<Record<string, unknown>> = []
+
+        const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {
+          provisionCalls++
+          lifecycle.push("provision")
+        })
+        const startStub = stub(PathwayPump.prototype, "start", async function (this: PathwayPump) {
+          startCalls++
+          ;(this as unknown as { running: boolean }).running = true
+          lifecycle.push("start")
+        })
+        const stopStub = stub(PathwayPump.prototype, "stop", async function (this: PathwayPump) {
+          stopCalls++
+          ;(this as unknown as { running: boolean }).running = false
+          lifecycle.push("stop")
+        })
+        const setPulseStub = stub(PathwayPump.prototype, "setPulseConfig", async () => {
+          setPulseCalls++
+          lifecycle.push("setPulse")
+        })
+        const pollerStartStub = stub(CommandPoller.prototype, "start", () => {
+          commandPollerStarts++
+          lifecycle.push("pollerStart")
+        })
+        const pollerStopStub = stub(CommandPoller.prototype, "stop", () => {
+          commandPollerStops++
+          lifecycle.push("pollerStop")
+        })
+        const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
+          lifecycle.push("fetch")
+          fetchBodies.push(JSON.parse(String(init?.body ?? "{}")))
+          return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        })
+
+        try {
+          const builder = createBuilder({
+            runtimeEnv: "production",
+            pathwayName: "virtual-service",
+            pathwayMode: "virtual",
+          })
+          const clusterManager = { isRunning: true, isLeader: false }
+          ;(builder as unknown as { clusterManager: typeof clusterManager }).clusterManager = clusterManager
+
+          await builder.startPump(createPumpOptions())
+
+          assertEquals(provisionCalls, 1)
+          assertEquals(startCalls, 0)
+          assertEquals(fetchBodies.length, 0)
+          assertEquals(setPulseCalls, 0)
+          assertEquals(commandPollerStarts, 0)
+
+          clusterManager.isLeader = true
+          await (builder as unknown as { handleLeadershipChange(isLeader: boolean): Promise<void> })
+            .handleLeadershipChange(true)
+
+          assertEquals(startCalls, 1)
+          assertEquals(fetchBodies.length, 1)
+          assertEquals(setPulseCalls, 1)
+          assertEquals(commandPollerStarts, 1)
+
+          await (builder as unknown as { handleLeadershipChange(isLeader: boolean): Promise<void> })
+            .handleLeadershipChange(false)
+
+          assertEquals(commandPollerStops, 1)
+          assertEquals(stopCalls, 1)
+          assertEquals(lifecycle, [
+            "provision",
+            "start",
+            "fetch",
+            "setPulse",
+            "pollerStart",
+            "pollerStop",
+            "stop",
+          ])
+        } finally {
+          provisionStub.restore()
+          startStub.restore()
+          stopStub.restore()
+          setPulseStub.restore()
+          pollerStartStub.restore()
+          pollerStopStub.restore()
+          fetchStub.restore()
+        }
+      },
+    )
+
+    await t.step(
+      "production virtual mode stops the local pump when registration fails after startup",
+      async () => {
+        let startCalls = 0
+        let stopCalls = 0
+
+        const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {})
+        const startStub = stub(PathwayPump.prototype, "start", async function (this: PathwayPump) {
+          startCalls++
+          ;(this as unknown as { running: boolean }).running = true
+        })
+        const stopStub = stub(PathwayPump.prototype, "stop", async function (this: PathwayPump) {
+          if (!(this as unknown as { running: boolean }).running) {
+            return
+          }
+          stopCalls++
+          ;(this as unknown as { running: boolean }).running = false
+        })
+        const fetchStub = stub(globalThis, "fetch", async () => {
+          return new Response(
+            JSON.stringify({
+              status: 500,
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Internal server error",
+            }),
+            {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            },
+          )
+        })
+
+        try {
+          const builder = createBuilder({
+            runtimeEnv: "production",
+            pathwayName: "virtual-service",
+            pathwayMode: "virtual",
+          })
+          ;(builder as unknown as { clusterManager: { isRunning: boolean; isLeader: boolean } }).clusterManager = {
+            isRunning: true,
+            isLeader: true,
+          }
+
+          await assertRejects(
+            () => builder.startPump(createPumpOptions()),
+            Error,
+            'Failed to register virtual pathway "virtual-service"',
+          )
+
+          assertEquals(startCalls, 1)
+          assertEquals(stopCalls, 1)
+        } finally {
+          provisionStub.restore()
+          startStub.restore()
+          stopStub.restore()
           fetchStub.restore()
         }
       },
