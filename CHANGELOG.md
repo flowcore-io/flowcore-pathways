@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/flowcore-io/flowcore-pathways/compare/v1.0.0...v2.0.0) (2026-04-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* make auto-provision runtime-aware ([#71](https://github.com/flowcore-io/flowcore-pathways/issues/71))
+
+### Features
+
+* make auto-provision runtime-aware ([#71](https://github.com/flowcore-io/flowcore-pathways/issues/71)) ([1e82da2](https://github.com/flowcore-io/flowcore-pathways/commit/1e82da2979c8c414cdf2f1b82750a0ced6994129))
+
 ## [1.0.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.24.0...v1.0.0) (2026-04-10)
 
 
