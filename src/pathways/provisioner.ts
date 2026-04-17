@@ -39,6 +39,20 @@ export interface PathwayProvisionerOptions {
   logger?: Logger
   /** Override FlowcoreClient for testing */
   clientFactory?: (apiKey: string) => FlowcoreClient
+  /**
+   * Skip data core create/update — still resolves the data core id via fetch so
+   * downstream stages can run. Fails loudly if the data core doesn't exist and
+   * no description was configured (same error as the non-skip path).
+   */
+  skipDataCore?: boolean
+  /**
+   * Skip flow type create/update. When event types are still provisioned, flow
+   * type ids are resolved via `FlowTypeListCommand` (read-only). When event
+   * types are skipped too, the flow type list fetch is skipped entirely.
+   */
+  skipFlowTypes?: boolean
+  /** Skip the event type loop entirely (no list/fetch/create/update). */
+  skipEventTypes?: boolean
 }
 
 /**
@@ -57,6 +71,9 @@ export class PathwayProvisioner {
   private readonly registrations: ProvisionerRegistration[]
   private readonly logger: Logger
   private readonly clientFactory: (apiKey: string) => FlowcoreClient
+  private readonly skipDataCore: boolean
+  private readonly skipFlowTypes: boolean
+  private readonly skipEventTypes: boolean
 
   constructor(options: PathwayProvisionerOptions) {
     this.tenant = options.tenant
@@ -68,33 +85,54 @@ export class PathwayProvisioner {
     this.registrations = options.registrations
     this.logger = options.logger ?? new NoopLogger()
     this.clientFactory = options.clientFactory ?? ((apiKey: string) => new FlowcoreClient({ apiKey }))
+    this.skipDataCore = options.skipDataCore ?? false
+    this.skipFlowTypes = options.skipFlowTypes ?? false
+    this.skipEventTypes = options.skipEventTypes ?? false
   }
 
   /**
    * Run the provisioning flow:
    * 1. Fetch tenant → tenantId
-   * 2. Fetch or create data core
-   * 3. For each unique flow type: fetch or create
-   * 4. For each event type: fetch or create
-   * 5. Update descriptions where they differ
+   * 2. Fetch or create data core (read-only when `skipDataCore` is set)
+   * 3. For each unique flow type: fetch or create (read-only when `skipFlowTypes`)
+   * 4. For each event type: fetch or create (entirely skipped when `skipEventTypes`)
+   * 5. Update descriptions where they differ (unless skipped)
    */
   async provision(): Promise<void> {
     const client = this.clientFactory(this.apiKey)
 
-    this.logger.info("Starting provisioning", { tenant: this.tenant, dataCore: this.dataCore })
+    this.logger.info("Starting provisioning", {
+      tenant: this.tenant,
+      dataCore: this.dataCore,
+      skipDataCore: this.skipDataCore,
+      skipFlowTypes: this.skipFlowTypes,
+      skipEventTypes: this.skipEventTypes,
+    })
 
     // Step 1: Fetch tenant
     const tenant = await client.execute(new TenantTranslateNameToIdCommand({ tenant: this.tenant }))
     const tenantId = tenant.id
     this.logger.info("Tenant resolved", { tenantId })
 
-    // Step 2: Provision data core
+    // Step 2: Provision (or resolve) data core
     const dataCoreId = await this.provisionDataCore(client, tenantId)
     this.logger.info("Data core resolved", { dataCoreId })
 
-    // Step 3: Provision flow types
+    // Short-circuit when both flow-type and event-type stages are skipped —
+    // no need to list flow types in that case.
+    if (this.skipFlowTypes && this.skipEventTypes) {
+      this.logger.info("Provisioning complete (flow types + event types skipped)")
+      return
+    }
+
+    // Step 3: Provision (or resolve) flow types
     const flowTypeIds = await this.provisionFlowTypes(client, dataCoreId)
     this.logger.info("Flow types resolved", { count: flowTypeIds.size })
+
+    if (this.skipEventTypes) {
+      this.logger.info("Provisioning complete (event types skipped)")
+      return
+    }
 
     // Step 4: Provision event types
     await this.provisionEventTypes(client, flowTypeIds)
@@ -115,8 +153,12 @@ export class PathwayProvisioner {
     }
 
     if (dataCore) {
-      // Data core exists — update description if provided and changed
-      if (this.dataCoreDescription !== undefined && dataCore.description !== this.dataCoreDescription) {
+      // Data core exists — update description if provided and changed (unless skipping).
+      if (
+        !this.skipDataCore &&
+        this.dataCoreDescription !== undefined &&
+        dataCore.description !== this.dataCoreDescription
+      ) {
         this.logger.info("Updating data core description", {
           dataCoreId: dataCore.id,
           from: dataCore.description,
@@ -134,6 +176,14 @@ export class PathwayProvisioner {
       throw new Error(
         `Data core "${this.dataCore}" not found on tenant "${this.tenant}". ` +
           `Provide dataCoreDescription in the PathwaysBuilder constructor to auto-create it.`,
+      )
+    }
+
+    if (this.skipDataCore) {
+      // Data core missing but create/update was skipped — can't resolve an id.
+      throw new Error(
+        `Data core "${this.dataCore}" not found and skipDataCore is set. ` +
+          `Pre-provision the data core or enable data core provisioning.`,
       )
     }
 
@@ -177,8 +227,8 @@ export class PathwayProvisioner {
       if (existingFt) {
         flowTypeIds.set(name, existingFt.id)
 
-        // Update description if provided and changed
-        if (description !== undefined && existingFt.description !== description) {
+        // Update description if provided and changed (unless skipping).
+        if (!this.skipFlowTypes && description !== undefined && existingFt.description !== description) {
           this.logger.info("Updating flow type description", {
             flowType: name,
             from: existingFt.description,
@@ -186,13 +236,19 @@ export class PathwayProvisioner {
           })
           await client.execute(new FlowTypeUpdateCommand({ flowTypeId: existingFt.id, description }))
         }
-      } else if (description !== undefined) {
+      } else if (!this.skipFlowTypes && description !== undefined) {
         // Create flow type
         this.logger.info("Creating flow type", { name, description })
         const created = await client.execute(
           new FlowTypeCreateCommand({ dataCoreId, name, description }),
         )
         flowTypeIds.set(name, created.id)
+      } else if (this.skipFlowTypes) {
+        // Flow type missing, create/update skipped — downstream event type stage cannot proceed.
+        throw new Error(
+          `Flow type "${name}" not found in data core and skipFlowTypes is set. ` +
+            `Pre-provision the flow type or enable flow type provisioning.`,
+        )
       } else {
         throw new Error(
           `Flow type "${name}" not found in data core. ` +

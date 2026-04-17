@@ -1,6 +1,40 @@
 import type { PostgresConfig } from "../postgres/index.ts"
 
 /**
+ * Granular toggles for each provisioning stage.
+ *
+ * Omitted fields fall back to defaults: resources on, pathway instance off.
+ *
+ * @property dataCore   Create/update the data core when `dataCoreDescription` is set. Default: true.
+ * @property flowType   Create/update registered flow types. Default: true.
+ * @property eventType  Create/update registered event types. Default: true.
+ * @property pathway    Upsert the by-name pathway instance (virtual or managed). Default: false.
+ */
+export interface AutoProvisionConfig {
+  /** Create/update the data core when `dataCoreDescription` is set. Default: true. */
+  dataCore?: boolean
+  /** Create/update registered flow types. Default: true. */
+  flowType?: boolean
+  /** Create/update registered event types. Default: true. */
+  eventType?: boolean
+  /** Upsert the by-name pathway instance (virtual or managed). Default: false. */
+  pathway?: boolean
+}
+
+/**
+ * Concurrency settings for event processing per pump.
+ *
+ * @property default    Default concurrency applied to every flow type. Default: 1.
+ * @property byFlowType Per-flow-type overrides keyed by `flowType` name.
+ */
+export interface PumpConcurrencyConfig {
+  /** Default concurrency applied to every flow type. Default: 1. */
+  default?: number
+  /** Per-flow-type overrides keyed by `flowType` name. */
+  byFlowType?: Record<string, number>
+}
+
+/**
  * Options for configuring the data pump
  */
 export interface PathwayPumpOptions {
@@ -8,8 +42,19 @@ export interface PathwayPumpOptions {
   notifier?: PumpNotifierConfig
   bufferSize?: number
   maxRedeliveryCount?: number
-  /** If true, applies the builder's environment-aware provisioning rules before startup */
-  autoProvision?: boolean
+  /**
+   * Controls whether startup runs the builder's provisioning rules.
+   *
+   * Accepts a boolean (legacy) or an `AutoProvisionConfig` object for per-stage control.
+   * When omitted, the builder's constructor-level `autoProvision` / `defaultAutoProvision`
+   * settings are used.
+   */
+  autoProvision?: boolean | AutoProvisionConfig
+  /**
+   * Concurrency for event processing: pass a number for a shared default, or an object
+   * for per-flow-type overrides. Missing flow types fall back to `default` (or 1).
+   */
+  concurrency?: number | PumpConcurrencyConfig
   /** Optional pulse reporting to control plane */
   pulse?: {
     /** Control plane API URL for pulse endpoint */

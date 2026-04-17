@@ -92,7 +92,8 @@ export class ClusterManager {
   private eventHandler: ((pathway: string, event: FlowcoreEvent) => Promise<void>) | null = null
   private leadershipChangeHandler: ((isLeader: boolean) => void) | null = null
   private resetHandler: ((position?: PumpState) => Promise<void>) | null = null
-  private pendingResets: Map<string, { resolve: () => void; reject: (error: Error) => void; sentAt: number }> = new Map()
+  private pendingResets: Map<string, { resolve: () => void; reject: (error: Error) => void; sentAt: number }> =
+    new Map()
 
   constructor(options: PathwayClusterOptions, logger?: Logger) {
     this.coordinator = options.coordinator

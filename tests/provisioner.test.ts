@@ -448,6 +448,254 @@ Deno.test({
       assertEquals(commands.includes("DataCoreUpdateCommand"), false)
     })
 
+    await t.step("skipDataCore: resolves id but does not update description", async () => {
+      const commands: string[] = []
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          commands.push("DataCoreFetchCommand")
+          return baseDataCore({ description: "Old desc" })
+        },
+        DataCoreUpdateCommand: () => {
+          commands.push("DataCoreUpdateCommand")
+          return baseDataCore({ description: "New desc" })
+        },
+        FlowTypeListCommand: () => [baseFlowType("user", "ft-001", "User events")],
+        EventTypeListCommand: () => [baseEventType("created", "et-001", "ft-001", "User created")],
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "New desc",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        skipDataCore: true,
+        registrations: [
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "User events",
+            eventTypeDescription: "User created",
+          },
+        ],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+
+      assertEquals(commands.includes("DataCoreFetchCommand"), true)
+      assertEquals(commands.includes("DataCoreUpdateCommand"), false)
+    })
+
+    await t.step("skipDataCore: fails loudly when data core missing and no description", async () => {
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          throw new NotFoundException("DataCore", {})
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        skipDataCore: true,
+        registrations: [],
+        clientFactory: () => client,
+      })
+
+      await assertRejects(
+        () => provisioner.provision(),
+        Error,
+        'Data core "my-core" not found',
+      )
+    })
+
+    await t.step("skipDataCore: fails when data core missing even with description", async () => {
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          throw new NotFoundException("DataCore", {})
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "desc",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        skipDataCore: true,
+        registrations: [],
+        clientFactory: () => client,
+      })
+
+      await assertRejects(
+        () => provisioner.provision(),
+        Error,
+        "skipDataCore is set",
+      )
+    })
+
+    await t.step("skipFlowTypes: resolves ids via list but does not create/update", async () => {
+      const commands: string[] = []
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore(),
+        FlowTypeListCommand: () => {
+          commands.push("FlowTypeListCommand")
+          return [baseFlowType("user", "ft-001", "Old flow desc")]
+        },
+        FlowTypeUpdateCommand: () => {
+          commands.push("FlowTypeUpdateCommand")
+          return baseFlowType("user", "ft-001", "New flow desc")
+        },
+        EventTypeListCommand: () => [baseEventType("created", "et-001", "ft-001", "User created")],
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        skipFlowTypes: true,
+        registrations: [
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "New flow desc",
+            eventTypeDescription: "User created",
+          },
+        ],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+
+      assertEquals(commands.includes("FlowTypeListCommand"), true)
+      assertEquals(commands.includes("FlowTypeUpdateCommand"), false)
+    })
+
+    await t.step("skipFlowTypes: fails when flow type missing", async () => {
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore(),
+        FlowTypeListCommand: () => [],
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        skipFlowTypes: true,
+        registrations: [
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "User events",
+          },
+        ],
+        clientFactory: () => client,
+      })
+
+      await assertRejects(
+        () => provisioner.provision(),
+        Error,
+        "skipFlowTypes is set",
+      )
+    })
+
+    await t.step("skipEventTypes: skips the event type loop entirely", async () => {
+      const commands: string[] = []
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore(),
+        FlowTypeListCommand: () => [baseFlowType("user", "ft-001", "User events")],
+        EventTypeListCommand: () => {
+          commands.push("EventTypeListCommand")
+          return []
+        },
+        EventTypeCreateCommand: () => {
+          commands.push("EventTypeCreateCommand")
+          return baseEventType("created", "et-new", "ft-001", "User created")
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        skipEventTypes: true,
+        registrations: [
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "User events",
+            eventTypeDescription: "User created",
+          },
+        ],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+
+      assertEquals(commands.includes("EventTypeListCommand"), false)
+      assertEquals(commands.includes("EventTypeCreateCommand"), false)
+    })
+
+    await t.step("skipFlowTypes + skipEventTypes: short-circuits after data core", async () => {
+      const commands: string[] = []
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          commands.push("DataCoreFetchCommand")
+          return baseDataCore()
+        },
+        FlowTypeListCommand: () => {
+          commands.push("FlowTypeListCommand")
+          return []
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        skipFlowTypes: true,
+        skipEventTypes: true,
+        registrations: [
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "User events",
+            eventTypeDescription: "User created",
+          },
+        ],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+
+      assertEquals(commands.includes("DataCoreFetchCommand"), true)
+      assertEquals(commands.includes("FlowTypeListCommand"), false)
+    })
+
     await t.step("creates multiple flow types and event types", async () => {
       const createdFlowTypes: string[] = []
       const createdEventTypes: string[] = []

@@ -2,161 +2,176 @@
 
 ## [2.0.1](https://github.com/flowcore-io/flowcore-pathways/compare/v2.0.0...v2.0.1) (2026-04-13)
 
-
 ### Bug Fixes
 
-* avoid virtual auto-provision startup deadlock ([#73](https://github.com/flowcore-io/flowcore-pathways/issues/73)) ([d6d866c](https://github.com/flowcore-io/flowcore-pathways/commit/d6d866cf814ab963ef1f9f42b0d35d12c8a486d9))
+- avoid virtual auto-provision startup deadlock ([#73](https://github.com/flowcore-io/flowcore-pathways/issues/73))
+  ([d6d866c](https://github.com/flowcore-io/flowcore-pathways/commit/d6d866cf814ab963ef1f9f42b0d35d12c8a486d9))
 
 ## [2.0.0](https://github.com/flowcore-io/flowcore-pathways/compare/v1.0.0...v2.0.0) (2026-04-13)
 
-
 ### ⚠ BREAKING CHANGES
 
-* make auto-provision runtime-aware ([#71](https://github.com/flowcore-io/flowcore-pathways/issues/71))
+- make auto-provision runtime-aware ([#71](https://github.com/flowcore-io/flowcore-pathways/issues/71))
 
 ### Features
 
-* make auto-provision runtime-aware ([#71](https://github.com/flowcore-io/flowcore-pathways/issues/71)) ([1e82da2](https://github.com/flowcore-io/flowcore-pathways/commit/1e82da2979c8c414cdf2f1b82750a0ced6994129))
+- make auto-provision runtime-aware ([#71](https://github.com/flowcore-io/flowcore-pathways/issues/71))
+  ([1e82da2](https://github.com/flowcore-io/flowcore-pathways/commit/1e82da2979c8c414cdf2f1b82750a0ced6994129))
 
 ## [1.0.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.24.0...v1.0.0) (2026-04-10)
 
-
 ### ⚠ BREAKING CHANGES
 
-* poll-based command queue for virtual pathway resets ([#69](https://github.com/flowcore-io/flowcore-pathways/issues/69))
+- poll-based command queue for virtual pathway resets
+  ([#69](https://github.com/flowcore-io/flowcore-pathways/issues/69))
 
 ### Features
 
-* poll-based command queue for virtual pathway resets ([#69](https://github.com/flowcore-io/flowcore-pathways/issues/69)) ([133b047](https://github.com/flowcore-io/flowcore-pathways/commit/133b0471c38a28011ad89e2ec7c86ba50be74839))
+- poll-based command queue for virtual pathway resets
+  ([#69](https://github.com/flowcore-io/flowcore-pathways/issues/69))
+  ([133b047](https://github.com/flowcore-io/flowcore-pathways/commit/133b0471c38a28011ad89e2ec7c86ba50be74839))
 
 ## [0.24.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.23.1...v0.24.0) (2026-04-08)
 
-
 ### Features
 
-* configurable log levels for pulse and provision events ([#67](https://github.com/flowcore-io/flowcore-pathways/issues/67)) ([214752f](https://github.com/flowcore-io/flowcore-pathways/commit/214752fcddd4d84ab9305208fc043adc91e3bef5))
+- configurable log levels for pulse and provision events
+  ([#67](https://github.com/flowcore-io/flowcore-pathways/issues/67))
+  ([214752f](https://github.com/flowcore-io/flowcore-pathways/commit/214752fcddd4d84ab9305208fc043adc91e3bef5))
 
 ## [0.23.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.23.0...v0.23.1) (2026-04-07)
 
-
 ### Bug Fixes
 
-* pulseUrl default should be base URL not full endpoint path ([#65](https://github.com/flowcore-io/flowcore-pathways/issues/65)) ([a003536](https://github.com/flowcore-io/flowcore-pathways/commit/a00353689bdbd25e359195bb786f45e9137772d6))
+- pulseUrl default should be base URL not full endpoint path
+  ([#65](https://github.com/flowcore-io/flowcore-pathways/issues/65))
+  ([a003536](https://github.com/flowcore-io/flowcore-pathways/commit/a00353689bdbd25e359195bb786f45e9137772d6))
 
 ## [0.23.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.22.1...v0.23.0) (2026-04-07)
 
-
 ### Features
 
-* add pathwayLabels for virtual pathway metadata ([#63](https://github.com/flowcore-io/flowcore-pathways/issues/63)) ([8f0048a](https://github.com/flowcore-io/flowcore-pathways/commit/8f0048a74f3d89f5ace47fa68e160fd880799d33))
+- add pathwayLabels for virtual pathway metadata ([#63](https://github.com/flowcore-io/flowcore-pathways/issues/63))
+  ([8f0048a](https://github.com/flowcore-io/flowcore-pathways/commit/8f0048a74f3d89f5ace47fa68e160fd880799d33))
 
 ## [0.22.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.22.0...v0.22.1) (2026-04-07)
 
-
 ### Bug Fixes
 
-* format ApiKey header as keyId:fullKey for CP auth ([#61](https://github.com/flowcore-io/flowcore-pathways/issues/61)) ([e49c17a](https://github.com/flowcore-io/flowcore-pathways/commit/e49c17a8ca6cd8e38150222a8ceaa6e77fca1f69))
+- format ApiKey header as keyId:fullKey for CP auth ([#61](https://github.com/flowcore-io/flowcore-pathways/issues/61))
+  ([e49c17a](https://github.com/flowcore-io/flowcore-pathways/commit/e49c17a8ca6cd8e38150222a8ceaa6e77fca1f69))
 
 ## [0.22.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.21.1...v0.22.0) (2026-04-02)
 
-
 ### Features
 
-* auto-provisioned virtual pathways with pulse + reset ([#59](https://github.com/flowcore-io/flowcore-pathways/issues/59)) ([82ff956](https://github.com/flowcore-io/flowcore-pathways/commit/82ff9563abd7a82bc4ec28943794c6528fe7a009))
+- auto-provisioned virtual pathways with pulse + reset
+  ([#59](https://github.com/flowcore-io/flowcore-pathways/issues/59))
+  ([82ff956](https://github.com/flowcore-io/flowcore-pathways/commit/82ff9563abd7a82bc4ec28943794c6528fe7a009))
 
 ## [0.21.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.21.0...v0.21.1) (2026-03-31)
 
-
 ### Bug Fixes
 
-* restart individual flow type pumps on error with exponential backoff ([#57](https://github.com/flowcore-io/flowcore-pathways/issues/57)) ([2644e71](https://github.com/flowcore-io/flowcore-pathways/commit/2644e711713fe1694522a95708e37de3872008f0))
+- restart individual flow type pumps on error with exponential backoff
+  ([#57](https://github.com/flowcore-io/flowcore-pathways/issues/57))
+  ([2644e71](https://github.com/flowcore-io/flowcore-pathways/commit/2644e711713fe1694522a95708e37de3872008f0))
 
 ## [0.21.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.20.1...v0.21.0) (2026-03-30)
 
-
 ### Features
 
-* bump SDK + data-pump for fc_ key websocket support ([#55](https://github.com/flowcore-io/flowcore-pathways/issues/55)) ([7e0676f](https://github.com/flowcore-io/flowcore-pathways/commit/7e0676f8e2685c8049ae4305bb1c6932834b5abc))
+- bump SDK + data-pump for fc_ key websocket support ([#55](https://github.com/flowcore-io/flowcore-pathways/issues/55))
+  ([7e0676f](https://github.com/flowcore-io/flowcore-pathways/commit/7e0676f8e2685c8049ae4305bb1c6932834b5abc))
 
 ## [0.20.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.20.0...v0.20.1) (2026-03-27)
 
-
 ### Bug Fixes
 
-* use explicit pulse URL instead of baseUrl for pulse reporting ([4605c34](https://github.com/flowcore-io/flowcore-pathways/commit/4605c34426804c5fb6081bbe0463dee50cea13d1))
+- use explicit pulse URL instead of baseUrl for pulse reporting
+  ([4605c34](https://github.com/flowcore-io/flowcore-pathways/commit/4605c34426804c5fb6081bbe0463dee50cea13d1))
 
 ## [0.20.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.19.0...v0.20.0) (2026-03-26)
 
-
 ### Features
 
-* wire pulse config through PathwayPump to FlowcoreDataPump ([c0aa851](https://github.com/flowcore-io/flowcore-pathways/commit/c0aa8512a9c78e562d3cd78fe3bb7be6c5566a0c))
+- wire pulse config through PathwayPump to FlowcoreDataPump
+  ([c0aa851](https://github.com/flowcore-io/flowcore-pathways/commit/c0aa8512a9c78e562d3cd78fe3bb7be6c5566a0c))
 
 ## [0.19.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.18.0...v0.19.0) (2026-03-24)
 
-
 ### Features
 
-* add cluster-aware pump reset functionality ([#51](https://github.com/flowcore-io/flowcore-pathways/issues/51)) ([03f110b](https://github.com/flowcore-io/flowcore-pathways/commit/03f110b2a3e63f1ce12b05993e3da042cb2a7199))
+- add cluster-aware pump reset functionality ([#51](https://github.com/flowcore-io/flowcore-pathways/issues/51))
+  ([03f110b](https://github.com/flowcore-io/flowcore-pathways/commit/03f110b2a3e63f1ce12b05993e3da042cb2a7199))
 
 ## [0.18.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.5...v0.18.0) (2026-03-23)
 
-
 ### Features
 
-* add Node.js/Bun cluster transport with runtime auto-detection ([#49](https://github.com/flowcore-io/flowcore-pathways/issues/49)) ([31ebc99](https://github.com/flowcore-io/flowcore-pathways/commit/31ebc9992ad41f9447258dc6af550881b0da34be))
+- add Node.js/Bun cluster transport with runtime auto-detection
+  ([#49](https://github.com/flowcore-io/flowcore-pathways/issues/49))
+  ([31ebc99](https://github.com/flowcore-io/flowcore-pathways/commit/31ebc9992ad41f9447258dc6af550881b0da34be))
 
 ## [0.17.5](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.4...v0.17.5) (2026-03-21)
 
-
 ### Bug Fixes
 
-* auto-start pump when instance becomes cluster leader ([#47](https://github.com/flowcore-io/flowcore-pathways/issues/47)) ([fe74d59](https://github.com/flowcore-io/flowcore-pathways/commit/fe74d592ddd97dcacae79a3e017575a0e980c269))
+- auto-start pump when instance becomes cluster leader
+  ([#47](https://github.com/flowcore-io/flowcore-pathways/issues/47))
+  ([fe74d59](https://github.com/flowcore-io/flowcore-pathways/commit/fe74d592ddd97dcacae79a3e017575a0e980c269))
 
 ## [0.17.4](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.3...v0.17.4) (2026-03-21)
 
-
 ### Bug Fixes
 
-* register cluster instances with full ws:// URL including port ([#45](https://github.com/flowcore-io/flowcore-pathways/issues/45)) ([0cb1493](https://github.com/flowcore-io/flowcore-pathways/commit/0cb1493618bb4ed5c049336c23e9bf28c3b2079d))
+- register cluster instances with full ws:// URL including port
+  ([#45](https://github.com/flowcore-io/flowcore-pathways/issues/45))
+  ([0cb1493](https://github.com/flowcore-io/flowcore-pathways/commit/0cb1493618bb4ed5c049336c23e9bf28c3b2079d))
 
 ## [0.17.3](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.2...v0.17.3) (2026-03-20)
 
-
 ### Bug Fixes
 
-* suppress PostgreSQL NOTICE messages from CREATE TABLE IF NOT EXISTS ([#43](https://github.com/flowcore-io/flowcore-pathways/issues/43)) ([3def1d9](https://github.com/flowcore-io/flowcore-pathways/commit/3def1d9c6e9711f529010d77eaedd0b17f2799f0))
+- suppress PostgreSQL NOTICE messages from CREATE TABLE IF NOT EXISTS
+  ([#43](https://github.com/flowcore-io/flowcore-pathways/issues/43))
+  ([3def1d9](https://github.com/flowcore-io/flowcore-pathways/commit/3def1d9c6e9711f529010d77eaedd0b17f2799f0))
 
 ## [0.17.2](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.1...v0.17.2) (2026-03-20)
 
-
 ### Bug Fixes
 
-* use lightweight TenantTranslateNameToIdCommand instead of TenantFetchCommand ([466b040](https://github.com/flowcore-io/flowcore-pathways/commit/466b0400290644e9fb5c870c2fef04ec177f9719))
+- use lightweight TenantTranslateNameToIdCommand instead of TenantFetchCommand
+  ([466b040](https://github.com/flowcore-io/flowcore-pathways/commit/466b0400290644e9fb5c870c2fef04ec177f9719))
 
 ## [0.17.1](https://github.com/flowcore-io/flowcore-pathways/compare/v0.17.0...v0.17.1) (2026-03-19)
 
-
 ### Bug Fixes
 
-* migrate npm publish to blacksmith trusted auth (no classic tokens) ([04764d7](https://github.com/flowcore-io/flowcore-pathways/commit/04764d7a6f6e216324ce65edd2ba0cc6a097f22f))
+- migrate npm publish to blacksmith trusted auth (no classic tokens)
+  ([04764d7](https://github.com/flowcore-io/flowcore-pathways/commit/04764d7a6f6e216324ce65edd2ba0cc6a097f22f))
 
 ## [0.17.0](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.4...v0.17.0) (2026-03-19)
 
-
 ### Features
 
-* add cluster mode and data pump integration ([231384a](https://github.com/flowcore-io/flowcore-pathways/commit/231384a8685993040c1d2b637822499f9f756000))
-* add cluster mode and data pump integration ([9ca0fcb](https://github.com/flowcore-io/flowcore-pathways/commit/9ca0fcb10a9e7c8a6f266dc2c568e30a0b4e9672))
-* add declarative registration and auto-provisioning ([ee7f36a](https://github.com/flowcore-io/flowcore-pathways/commit/ee7f36ae87fb3fd901b9a9f918ffc82b19008939))
-
+- add cluster mode and data pump integration
+  ([231384a](https://github.com/flowcore-io/flowcore-pathways/commit/231384a8685993040c1d2b637822499f9f756000))
+- add cluster mode and data pump integration
+  ([9ca0fcb](https://github.com/flowcore-io/flowcore-pathways/commit/9ca0fcb10a9e7c8a6f266dc2c568e30a0b4e9672))
+- add declarative registration and auto-provisioning
+  ([ee7f36a](https://github.com/flowcore-io/flowcore-pathways/commit/ee7f36ae87fb3fd901b9a9f918ffc82b19008939))
 
 ### Bug Fixes
 
-* replace inline npm: specifiers with import map references ([470732f](https://github.com/flowcore-io/flowcore-pathways/commit/470732fac377ed5d3f54d3ef852d792dbb58cef6))
-* resolve lint errors in cluster manager ([a809b6a](https://github.com/flowcore-io/flowcore-pathways/commit/a809b6a1daee16b276ffdb9c88a9f31233592275))
-* resolve pre-existing Buffer/BlobPart type error in file pathway write ([ba08aa3](https://github.com/flowcore-io/flowcore-pathways/commit/ba08aa334eb51c86894c6a39ee2010c22fc16dc5))
-* use runtime transport abstraction for cross-platform npm build ([9e4f7b9](https://github.com/flowcore-io/flowcore-pathways/commit/9e4f7b90ce45f1f8bfae913aeeb970971fad5dea))
+- replace inline npm: specifiers with import map references
+  ([470732f](https://github.com/flowcore-io/flowcore-pathways/commit/470732fac377ed5d3f54d3ef852d792dbb58cef6))
+- resolve lint errors in cluster manager
+  ([a809b6a](https://github.com/flowcore-io/flowcore-pathways/commit/a809b6a1daee16b276ffdb9c88a9f31233592275))
+- resolve pre-existing Buffer/BlobPart type error in file pathway write
+  ([ba08aa3](https://github.com/flowcore-io/flowcore-pathways/commit/ba08aa334eb51c86894c6a39ee2010c22fc16dc5))
+- use runtime transport abstraction for cross-platform npm build
+  ([9e4f7b9](https://github.com/flowcore-io/flowcore-pathways/commit/9e4f7b90ce45f1f8bfae913aeeb970971fad5dea))
 
 ## [0.16.4](https://github.com/flowcore-io/flowcore-pathways/compare/v0.16.3...v0.16.4) (2025-07-25)
 

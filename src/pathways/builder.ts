@@ -21,9 +21,53 @@ import type {
 } from "./types.ts"
 import type { PathwayClusterOptions } from "./cluster/types.ts"
 import { ClusterManager } from "./cluster/cluster-manager.ts"
-import type { PathwayPumpOptions, PumpState } from "./pump/types.ts"
+import type { AutoProvisionConfig, PathwayPumpOptions, PumpState } from "./pump/types.ts"
 import { PathwayPump } from "./pump/pathway-pump.ts"
 import { PathwayProvisioner, type ProvisionerRegistration } from "./provisioner.ts"
+
+export type { AutoProvisionConfig } from "./pump/types.ts"
+
+/**
+ * Defaults for each auto-provisioning stage — resources on, pathway registration off.
+ *
+ * These defaults deliberately skip the by-name pathway upsert so most deployments don't
+ * accidentally hit the control plane at startup; opt in via `autoProvision.pathway: true`.
+ */
+const DEFAULT_AUTO_PROVISION: Required<AutoProvisionConfig> = {
+  dataCore: true,
+  flowType: true,
+  eventType: true,
+  pathway: false,
+}
+
+/**
+ * Resolve a user-supplied `autoProvision` / `defaultAutoProvision` value into a fully
+ * populated `Required<AutoProvisionConfig>`.
+ *
+ * Resolution rules (first match wins):
+ *  1. `autoProvision` object   → merge with `DEFAULT_AUTO_PROVISION`
+ *  2. `autoProvision` boolean  → `true` → defaults; `false` → all-false
+ *  3. `defaultAutoProvision === false` → all-false
+ *  4. otherwise → `DEFAULT_AUTO_PROVISION`
+ */
+function resolveAutoProvision(
+  autoProvision: boolean | AutoProvisionConfig | undefined,
+  defaultAutoProvision?: boolean,
+): Required<AutoProvisionConfig> {
+  if (typeof autoProvision === "object" && autoProvision !== null) {
+    return { ...DEFAULT_AUTO_PROVISION, ...autoProvision }
+  }
+  if (autoProvision === true) {
+    return { ...DEFAULT_AUTO_PROVISION }
+  }
+  if (autoProvision === false) {
+    return { dataCore: false, flowType: false, eventType: false, pathway: false }
+  }
+  if (defaultAutoProvision === false) {
+    return { dataCore: false, flowType: false, eventType: false, pathway: false }
+  }
+  return { ...DEFAULT_AUTO_PROVISION }
+}
 import {
   AUDIT_ENTITY_ID,
   AUDIT_ENTITY_TYPE,
@@ -176,6 +220,16 @@ export interface PathwaysBuilderConfig {
   commandPollingIntervalMs?: number
   runtimeEnv?: PathwayRuntimeEnv
   pathwayMode?: PathwayMode
+  /**
+   * Granular auto-provisioning toggles. Omitted fields fall back to resources-on,
+   * pathway-off defaults — see `AutoProvisionConfig`.
+   */
+  autoProvision?: AutoProvisionConfig
+  /**
+   * @deprecated Prefer `autoProvision`. Mapping:
+   *  - `true`  → `{ dataCore: true,  flowType: true,  eventType: true,  pathway: false }`
+   *  - `false` → `{ dataCore: false, flowType: false, eventType: false, pathway: false }`
+   */
   defaultAutoProvision?: boolean
   managedConfig?: ManagedPathwayConfig
 }
@@ -355,7 +409,7 @@ export class PathwaysBuilder<
   private readonly commandPollingIntervalMs: number
   private readonly runtimeEnv: PathwayRuntimeEnv
   private readonly pathwayMode: PathwayMode
-  private readonly defaultAutoProvision: boolean
+  private readonly autoProvision: Required<AutoProvisionConfig>
   private readonly managedConfig?: ManagedPathwayConfig
   private pathwayId?: string
 
@@ -364,7 +418,7 @@ export class PathwaysBuilder<
   private pathwayPump: PathwayPump | null = null
   private commandPoller: CommandPoller | null = null
   private clusterBypassProcess = false
-  private currentPumpAutoProvision = false
+  private currentPumpProvisionsPathway = false
   private currentPumpUsesExplicitPulse = false
   private currentPumpUsesAutoPulse = false
 
@@ -405,6 +459,7 @@ export class PathwaysBuilder<
     commandPollingIntervalMs,
     runtimeEnv,
     pathwayMode,
+    autoProvision,
     defaultAutoProvision,
     managedConfig,
   }: PathwaysBuilderConfig) {
@@ -438,8 +493,10 @@ export class PathwaysBuilder<
     this.pulseIntervalMs = pulseIntervalMs ?? 30_000
     this.commandPollingIntervalMs = commandPollingIntervalMs ?? 5_000
     this.runtimeEnv = normalizeRuntimeEnv(runtimeEnv ?? process.env.NODE_ENV)
-    this.pathwayMode = pathwayMode ?? "virtual"
-    this.defaultAutoProvision = defaultAutoProvision ?? true
+    // Env-aware default: production → "managed" (control-plane delivery, serverless-safe),
+    // development/test → "virtual" (single-instance local pump).
+    this.pathwayMode = pathwayMode ?? (this.runtimeEnv === "production" ? "managed" : "virtual")
+    this.autoProvision = resolveAutoProvision(autoProvision, defaultAutoProvision)
     this.managedConfig = managedConfig
 
     if (enableSessionUserResolvers) {
@@ -453,7 +510,7 @@ export class PathwaysBuilder<
       pathwayTimeoutMs,
       runtimeEnv: this.runtimeEnv,
       pathwayMode: this.pathwayMode,
-      defaultAutoProvision: this.defaultAutoProvision,
+      autoProvision: this.autoProvision,
     })
 
     this.webhookBuilderFactory = new WebhookBuilder({
@@ -1407,7 +1464,7 @@ export class PathwaysBuilder<
       return
     }
 
-    if (this.currentPumpAutoProvision && !this.pathwayId) {
+    if (this.currentPumpProvisionsPathway && !this.pathwayId) {
       try {
         await this.registerPathwayInstance(this.buildRegistrations())
         await this.applyAutoPulseConfig()
@@ -1447,7 +1504,9 @@ export class PathwaysBuilder<
     })
   }
 
-  private async provisionSharedResources(): Promise<ProvisionerRegistration[]> {
+  private async provisionSharedResources(
+    skipFlags: { skipDataCore?: boolean; skipFlowTypes?: boolean; skipEventTypes?: boolean } = {},
+  ): Promise<ProvisionerRegistration[]> {
     const registrations = this.buildRegistrations()
 
     const provisioner = new PathwayProvisioner({
@@ -1459,6 +1518,9 @@ export class PathwaysBuilder<
       dataCoreDeleteProtection: this.dataCoreDeleteProtection,
       registrations,
       logger: this.logger,
+      skipDataCore: skipFlags.skipDataCore,
+      skipFlowTypes: skipFlags.skipFlowTypes,
+      skipEventTypes: skipFlags.skipEventTypes,
     })
 
     await provisioner.provision()
@@ -1630,30 +1692,46 @@ export class PathwaysBuilder<
       throw new Error("Pump already started")
     }
 
-    const autoProvision = options.autoProvision ?? this.defaultAutoProvision
-    this.currentPumpAutoProvision = autoProvision
+    // Resolve effective auto-provision config: per-call override wins over builder-level setting.
+    const ap = options.autoProvision != null ? resolveAutoProvision(options.autoProvision) : this.autoProvision
+    // Track pathway-registration intent separately so bootstrapLeaderPump can pick it up on leadership gain.
+    this.currentPumpProvisionsPathway = ap.pathway
     this.currentPumpUsesExplicitPulse = Boolean(options.pulse)
     this.currentPumpUsesAutoPulse = false
 
-    if (autoProvision) {
-      if (this.runtimeEnv === "production") {
-        if (this.pathwayMode === "virtual" && !this.isClusterActive) {
-          throw new Error("Cluster mode must be started before production virtual pump startup")
-        }
+    if (this.runtimeEnv === "test") {
+      this.logger.info("Skipping remote auto-provisioning in test runtime")
+    } else {
+      if (this.runtimeEnv === "production" && this.pathwayMode === "virtual" && !this.isClusterActive) {
+        throw new Error("Cluster mode must be started before production virtual pump startup")
+      }
 
-        this.logger.info("Auto-provisioning Flowcore resources for production startup", {
+      const shouldProvisionResources = ap.dataCore || ap.flowType || ap.eventType
+      let registrations: ProvisionerRegistration[] | null = null
+      if (shouldProvisionResources) {
+        this.logger.info("Auto-provisioning Flowcore resources", {
+          runtimeEnv: this.runtimeEnv,
           pathwayMode: this.pathwayMode,
+          autoProvision: ap,
         })
-        if (this.pathwayMode === "virtual") {
-          await this.provisionSharedResources()
-        } else {
-          await this.provision()
+        registrations = await this.provisionSharedResources({
+          skipDataCore: !ap.dataCore,
+          skipFlowTypes: !ap.flowType,
+          skipEventTypes: !ap.eventType,
+        })
+      }
+
+      if (ap.pathway) {
+        // In production+virtual, pathway registration must be deferred until the leader is ready
+        // (bootstrapLeaderPump performs it after pump start). Everywhere else it happens upfront.
+        const deferToLeaderBootstrap = this.runtimeEnv === "production" && this.pathwayMode === "virtual"
+        if (!deferToLeaderBootstrap) {
+          this.logger.info("Registering pathway instance", {
+            runtimeEnv: this.runtimeEnv,
+            pathwayMode: this.pathwayMode,
+          })
+          await this.registerPathwayInstance(registrations ?? this.buildRegistrations())
         }
-      } else if (this.runtimeEnv === "development") {
-        this.logger.info("Auto-provisioning shared Flowcore resources for development startup")
-        await this.provisionSharedResources()
-      } else {
-        this.logger.info("Skipping remote auto-provisioning in test runtime")
       }
     }
 
@@ -1727,14 +1805,14 @@ export class PathwaysBuilder<
   async stopPump(): Promise<void> {
     this.stopCommandPoller()
     if (!this.pathwayPump) {
-      this.currentPumpAutoProvision = false
+      this.currentPumpProvisionsPathway = false
       this.currentPumpUsesExplicitPulse = false
       this.currentPumpUsesAutoPulse = false
       return
     }
     await this.pathwayPump.stop()
     this.pathwayPump = null
-    this.currentPumpAutoProvision = false
+    this.currentPumpProvisionsPathway = false
     this.currentPumpUsesExplicitPulse = false
     this.currentPumpUsesAutoPulse = false
     this.logger.info("Pump stopped")

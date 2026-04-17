@@ -3,6 +3,7 @@ import type { Logger } from "../logger.ts"
 import { NoopLogger } from "../logger.ts"
 import type {
   PathwayPumpOptions,
+  PumpConcurrencyConfig,
   PumpNotifierConfig,
   PumpState,
   PumpStateManager,
@@ -27,6 +28,29 @@ const RESTART_BASE_MS = 1_000
 const RESTART_MAX_MS = 30_000
 
 /**
+ * Normalize the user-facing `concurrency` option into a `Required<PumpConcurrencyConfig>`.
+ *
+ * Accepts:
+ *  - `undefined` → `{ default: 1, byFlowType: {} }`
+ *  - `number`    → `{ default: n, byFlowType: {} }`
+ *  - object      → shallow copy, `default` falls back to `1`, `byFlowType` to `{}`
+ */
+function normalizeConcurrency(
+  concurrency: PathwayPumpOptions["concurrency"],
+): Required<PumpConcurrencyConfig> {
+  if (typeof concurrency === "number") {
+    return { default: concurrency, byFlowType: {} }
+  }
+  if (concurrency && typeof concurrency === "object") {
+    return {
+      default: concurrency.default ?? 1,
+      byFlowType: { ...(concurrency.byFlowType ?? {}) },
+    }
+  }
+  return { default: 1, byFlowType: {} }
+}
+
+/**
  * PathwayPump orchestrates data pump instances for auto-fetching events from Flowcore.
  *
  * Groups registered pathways by flowType and creates one FlowcoreDataPump per flowType group.
@@ -37,6 +61,7 @@ export class PathwayPump {
   private readonly notifier: PumpNotifierConfig
   private readonly bufferSize: number
   private readonly maxRedeliveryCount: number
+  private readonly concurrency: Required<PumpConcurrencyConfig>
   private readonly logger: Logger
   private pulseConfig?: {
     url: string
@@ -67,6 +92,7 @@ export class PathwayPump {
     this.notifier = options.notifier ?? { type: "websocket" }
     this.bufferSize = options.bufferSize ?? 1000
     this.maxRedeliveryCount = options.maxRedeliveryCount ?? 3
+    this.concurrency = normalizeConcurrency(options.concurrency)
     this.logger = logger ?? new NoopLogger()
     this.pulseConfig = options.pulse
   }
@@ -142,7 +168,7 @@ export class PathwayPump {
       },
       stateManager,
       processor: {
-        concurrency: 1,
+        concurrency: this.concurrency.byFlowType[flowType] ?? this.concurrency.default,
         handler: async (events: FlowcoreEvent[]) => {
           for (const event of events) {
             const pathway = `${event.flowType}/${event.eventType}`

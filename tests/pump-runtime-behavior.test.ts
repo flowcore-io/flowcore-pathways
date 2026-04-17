@@ -126,6 +126,8 @@ Deno.test({
       try {
         const builder = createBuilder({
           runtimeEnv: "production",
+          // Explicit virtual — overrides the prod-default "managed" so the cluster check fires.
+          pathwayMode: "virtual",
           pathwayName: "virtual-service",
         })
 
@@ -182,6 +184,8 @@ Deno.test({
             runtimeEnv: "production",
             pathwayName: "virtual-service",
             pathwayMode: "virtual",
+            // Opt in to pathway registration — default is resources-only.
+            autoProvision: { pathway: true },
           })
           ;(builder as unknown as { clusterManager: { isRunning: boolean; isLeader: boolean } }).clusterManager = {
             isRunning: true,
@@ -259,6 +263,7 @@ Deno.test({
             runtimeEnv: "production",
             pathwayName: "virtual-service",
             pathwayMode: "virtual",
+            autoProvision: { pathway: true },
           })
           const clusterManager = { isRunning: true, isLeader: false }
           ;(builder as unknown as { clusterManager: typeof clusterManager }).clusterManager = clusterManager
@@ -343,6 +348,7 @@ Deno.test({
             runtimeEnv: "production",
             pathwayName: "virtual-service",
             pathwayMode: "virtual",
+            autoProvision: { pathway: true },
           })
           ;(builder as unknown as { clusterManager: { isRunning: boolean; isLeader: boolean } }).clusterManager = {
             isRunning: true,
@@ -390,6 +396,7 @@ Deno.test({
           runtimeEnv: "production",
           pathwayMode: "managed",
           pathwayName: "managed-service",
+          autoProvision: { pathway: true },
           managedConfig: {
             endpointUrl: "https://app.example.com/flowcore",
             authHeaders: { authorization: "Bearer secret" },
@@ -404,6 +411,200 @@ Deno.test({
         assertEquals(fetchBodies.length, 1)
         assertEquals(fetchBodies[0].type, "managed")
         assertEquals((fetchBodies[0].config as { sources: unknown[] }).sources.length, 1)
+      } finally {
+        provisionStub.restore()
+        startStub.restore()
+        fetchStub.restore()
+      }
+    })
+
+    await t.step(
+      "production default (no explicit mode) uses managed mode, provisions resources only, skips local pump",
+      async () => {
+        let provisionCalls = 0
+        let startCalls = 0
+        const fetchBodies: Array<Record<string, unknown>> = []
+
+        const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {
+          provisionCalls++
+        })
+        const startStub = stub(PathwayPump.prototype, "start", async () => {
+          startCalls++
+        })
+        const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
+          fetchBodies.push(JSON.parse(String(init?.body ?? "{}")))
+          return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        })
+
+        try {
+          // No explicit pathwayMode; prod defaults to "managed" now.
+          const builder = createBuilder({
+            runtimeEnv: "production",
+            pathwayName: "managed-service",
+            managedConfig: {
+              endpointUrl: "https://app.example.com/flowcore",
+            },
+          })
+
+          await builder.startPump(createPumpOptions())
+
+          // Resources on, pathway registration off by default.
+          assertEquals(provisionCalls, 1)
+          assertEquals(startCalls, 0)
+          assertEquals(fetchBodies.length, 0)
+        } finally {
+          provisionStub.restore()
+          startStub.restore()
+          fetchStub.restore()
+        }
+      },
+    )
+
+    await t.step(
+      "development default provisions resources, does NOT register pathway, starts local pump",
+      async () => {
+        let provisionCalls = 0
+        let startCalls = 0
+        let fetchCalls = 0
+
+        const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {
+          provisionCalls++
+        })
+        const startStub = stub(PathwayPump.prototype, "start", async () => {
+          startCalls++
+        })
+        const fetchStub = stub(globalThis, "fetch", async () => {
+          fetchCalls++
+          return new Response("{}", { status: 200 })
+        })
+
+        try {
+          const builder = createBuilder({
+            runtimeEnv: "development",
+            pathwayName: "dev-service",
+          })
+
+          await builder.startPump(createPumpOptions())
+
+          assertEquals(provisionCalls, 1)
+          assertEquals(fetchCalls, 0)
+          assertEquals(startCalls, 1)
+        } finally {
+          provisionStub.restore()
+          startStub.restore()
+          fetchStub.restore()
+        }
+      },
+    )
+
+    await t.step("autoProvision.pathway=true triggers registerPathwayInstance", async () => {
+      let provisionCalls = 0
+      let startCalls = 0
+      const fetchBodies: Array<Record<string, unknown>> = []
+
+      const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {
+        provisionCalls++
+      })
+      const startStub = stub(PathwayPump.prototype, "start", async () => {
+        startCalls++
+      })
+      const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
+        fetchBodies.push(JSON.parse(String(init?.body ?? "{}")))
+        return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      })
+
+      try {
+        const builder = createBuilder({
+          runtimeEnv: "development",
+          pathwayName: "dev-service",
+          autoProvision: { pathway: true },
+        })
+
+        await builder.startPump(createPumpOptions())
+
+        assertEquals(provisionCalls, 1)
+        assertEquals(startCalls, 1)
+        assertEquals(fetchBodies.length, 1)
+        assertEquals(fetchBodies[0].type, "virtual")
+      } finally {
+        provisionStub.restore()
+        startStub.restore()
+        fetchStub.restore()
+      }
+    })
+
+    await t.step("per-startPump autoProvision override wins over builder-level config", async () => {
+      let provisionCalls = 0
+      let startCalls = 0
+      const fetchBodies: Array<Record<string, unknown>> = []
+
+      const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {
+        provisionCalls++
+      })
+      const startStub = stub(PathwayPump.prototype, "start", async () => {
+        startCalls++
+      })
+      const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
+        fetchBodies.push(JSON.parse(String(init?.body ?? "{}")))
+        return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      })
+
+      try {
+        // Builder-level: resources on, pathway off (default). Override via startPump.
+        const builder = createBuilder({
+          runtimeEnv: "development",
+          pathwayName: "dev-service",
+        })
+
+        await builder.startPump({
+          ...createPumpOptions(),
+          autoProvision: { pathway: true },
+        })
+
+        assertEquals(provisionCalls, 1)
+        assertEquals(startCalls, 1)
+        assertEquals(fetchBodies.length, 1)
+      } finally {
+        provisionStub.restore()
+        startStub.restore()
+        fetchStub.restore()
+      }
+    })
+
+    await t.step("defaultAutoProvision=true maps to resources-on, pathway-off (new default semantics)", async () => {
+      let provisionCalls = 0
+      let fetchCalls = 0
+
+      const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {
+        provisionCalls++
+      })
+      const startStub = stub(PathwayPump.prototype, "start", async () => {})
+      const fetchStub = stub(globalThis, "fetch", async () => {
+        fetchCalls++
+        return new Response("{}", { status: 200 })
+      })
+
+      try {
+        const builder = createBuilder({
+          runtimeEnv: "development",
+          pathwayName: "dev-service",
+          defaultAutoProvision: true,
+        })
+
+        await builder.startPump(createPumpOptions())
+
+        // Legacy `true` → resources only, no pathway registration.
+        assertEquals(provisionCalls, 1)
+        assertEquals(fetchCalls, 0)
       } finally {
         provisionStub.restore()
         startStub.restore()

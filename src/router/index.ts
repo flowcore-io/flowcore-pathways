@@ -195,7 +195,9 @@ export class PathwayRouter {
     _body: ResetCallbackBody,
     _providedSecret: string | null,
   ): { success: boolean; flowTypesReset: string[] } {
-    this.logger.warn("processReset is deprecated — virtual pathway commands are now poll-based. This method is a no-op.")
+    this.logger.warn(
+      "processReset is deprecated — virtual pathway commands are now poll-based. This method is a no-op.",
+    )
     return { success: false, flowTypesReset: [] }
   }
 }
