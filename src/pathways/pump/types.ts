@@ -1,6 +1,19 @@
 import type { PostgresConfig } from "../postgres/index.ts"
 
 /**
+ * Concurrency settings for event processing per pump.
+ *
+ * @property default    Default concurrency applied to every flow type. Default: 1.
+ * @property byFlowType Per-flow-type overrides keyed by `flowType` name.
+ */
+export interface PumpConcurrencyConfig {
+  /** Default concurrency applied to every flow type. Default: 1. */
+  default?: number
+  /** Per-flow-type overrides keyed by `flowType` name. */
+  byFlowType?: Record<string, number>
+}
+
+/**
  * Options for configuring the data pump
  */
 export interface PathwayPumpOptions {
@@ -10,6 +23,11 @@ export interface PathwayPumpOptions {
   maxRedeliveryCount?: number
   /** If true, applies the builder's environment-aware provisioning rules before startup */
   autoProvision?: boolean
+  /**
+   * Concurrency for event processing: pass a number for a shared default, or an object
+   * for per-flow-type overrides. Missing flow types fall back to `default` (or 1).
+   */
+  concurrency?: number | PumpConcurrencyConfig
   /** Optional pulse reporting to control plane */
   pulse?: {
     /** Control plane API URL for pulse endpoint */
