@@ -10,6 +10,8 @@ Pathways helps you build event-driven applications with type-safe pathways for p
 - [Core Concepts](#core-concepts)
 - [Usage](#usage)
   - [Creating a Pathways Builder](#creating-a-pathways-builder)
+  - [Runtime Defaults and Auto-Provisioning](#runtime-defaults-and-auto-provisioning)
+  - [Pump Concurrency](#pump-concurrency)
   - [Registering Pathways](#registering-pathways)
   - [Handling Events](#handling-events)
   - [Writing Events](#writing-events)
@@ -19,7 +21,6 @@ Pathways helps you build event-driven applications with type-safe pathways for p
   - [HTTP Server Integration](#http-server-integration)
   - [Persistence Options](#persistence-options)
 - [Advanced Usage](#advanced-usage)
-  - [Runtime Defaults and Auto-Provisioning](#runtime-defaults-and-auto-provisioning)
   - [Auditing](#auditing)
   - [Custom Loggers](#custom-loggers)
   - [Retry Mechanisms](#retry-mechanisms)
@@ -131,27 +132,55 @@ const pathways = new PathwaysBuilder({
 
 ### Runtime Defaults and Auto-Provisioning
 
-`PathwaysBuilder` can now drive different startup behavior for development and production:
+`PathwaysBuilder` drives different startup behavior based on `runtimeEnv` (auto-detected from `NODE_ENV` when omitted):
 
-- `development`: starts the local in-process pump and only provisions shared Flowcore resources such as the data core,
-  flow types, and event types
-- `production + virtual`: requires cluster mode and auto-provisions a virtual pathway by name
-- `production + managed`: auto-provisions a managed pathway by name and does not start a local pump
+| `runtimeEnv`  | `pathwayMode` default | Shared resources | Pathway registration                   | Local pump                           |
+| ------------- | --------------------- | ---------------- | -------------------------------------- | ------------------------------------ |
+| `production`  | `managed`             | provisioned      | opt-in (`autoProvision.pathway: true`) | not started (control plane delivers) |
+| `development` | `virtual`             | provisioned      | opt-in                                 | started (single instance)            |
+| `test`        | `virtual`             | skipped          | skipped                                | started                              |
+
+> **Why `managed` in production?** Virtual cluster mode requires long-lived processes with stable networking, which
+> breaks serverless runtimes such as Next.js on Vercel (port collisions, instrumentation hook behavior, non-leader pod
+> timeouts). `managed` routes event delivery through the Flowcore control plane and is safe in every runtime.
+
+#### Granular `autoProvision`
+
+Pass an `AutoProvisionConfig` to turn individual provisioning stages on or off:
 
 ```typescript
+import { PathwaysBuilder } from "@flowcore/pathways"
+
 const pathways = new PathwaysBuilder({
   baseUrl: "https://api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: process.env.FLOWCORE_API_KEY!,
-  runtimeEnv: process.env.NODE_ENV === "production" ? "production" : "development",
+  runtimeEnv: "production",
   pathwayName: "orders-service",
-  pathwayMode: "virtual", // default
-  defaultAutoProvision: true, // default
+  // pathwayMode defaults to "managed" in production
+  autoProvision: {
+    dataCore: true, // create/update the data core (default: true)
+    flowType: true, // create/update registered flow types (default: true)
+    eventType: true, // create/update registered event types (default: true)
+    pathway: true, // upsert the by-name pathway instance (default: false)
+  },
 })
 ```
 
-For managed production delivery, provide a transform endpoint and leave event fetching to the control plane:
+Omitted fields fall back to resources-on / pathway-off, so most deployments only need to set `pathway: true` when they
+want the by-name pathway registration.
+
+To disable everything (for CI or when resources are managed elsewhere):
+
+```typescript
+const pathways = new PathwaysBuilder({
+  /* ... */
+  autoProvision: false, // or per-stage: { dataCore: false, flowType: false, eventType: false, pathway: false }
+})
+```
+
+#### Managed production example
 
 ```typescript
 const pathways = new PathwaysBuilder({
@@ -161,19 +190,45 @@ const pathways = new PathwaysBuilder({
   apiKey: process.env.FLOWCORE_API_KEY!,
   runtimeEnv: "production",
   pathwayName: "orders-service",
-  pathwayMode: "managed",
+  autoProvision: { pathway: true }, // register the managed pathway instance
   managedConfig: {
     endpointUrl: "https://app.example.com/api/flowcore",
-    authHeaders: {
-      authorization: `Bearer ${process.env.TRANSFORM_TOKEN!}`,
-    },
+    authHeaders: { authorization: `Bearer ${process.env.TRANSFORM_TOKEN!}` },
     sizeClass: "medium",
   },
 })
 ```
 
-To disable all remote provisioning and keep startup fully manual, set `defaultAutoProvision: false` or pass
-`autoProvision: false` to `startPump()`.
+#### Deprecated: `defaultAutoProvision`
+
+`defaultAutoProvision: boolean` still works but is deprecated — prefer `autoProvision`. Mapping:
+
+- `true` → `{ dataCore: true, flowType: true, eventType: true, pathway: false }`
+- `false` → `{ dataCore: false, flowType: false, eventType: false, pathway: false }`
+
+### Pump Concurrency
+
+Control how many events each pump processes in parallel via `startPump({ concurrency })`. Accepts a number (shared
+default) or a `PumpConcurrencyConfig` with per-flow-type overrides:
+
+```typescript
+// Shared default across every flow type
+await pathways.startPump({ concurrency: 4 })
+
+// Per-flow-type overrides — unlisted flow types fall back to `default` (or 1)
+await pathways.startPump({
+  concurrency: {
+    default: 2,
+    byFlowType: {
+      orders: 8,
+      audit: 1,
+    },
+  },
+})
+```
+
+Omit `concurrency` to keep the default of 1 per flow type. `startPump()` also accepts a per-call `autoProvision`
+override (same shape as the builder-level option) for overriding provisioning behavior at a specific call site.
 
 ### Registering Pathways
 
