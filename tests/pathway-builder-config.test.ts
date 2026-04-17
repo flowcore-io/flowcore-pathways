@@ -8,6 +8,16 @@ const baseOpts = {
   apiKey: "fc_testid_testsecret",
 }
 
+type InternalBuilderShape = {
+  pathwayMode: "virtual" | "managed"
+  autoProvision: { dataCore: boolean; flowType: boolean; eventType: boolean; pathway: boolean }
+}
+
+// deno-lint-ignore no-explicit-any
+function inspect(builder: PathwaysBuilder<any>): InternalBuilderShape {
+  return builder as unknown as InternalBuilderShape
+}
+
 Deno.test({
   name: "PathwaysBuilder config — virtual pathway fields",
   sanitizeResources: false,
@@ -68,6 +78,154 @@ Deno.test({
         pulseIntervalMs: 60000,
       })
       assertEquals(typeof builder, "object")
+    })
+
+    await t.step("autoProvision object merges with resources-on/pathway-off defaults", () => {
+      const builder = inspect(
+        new PathwaysBuilder({
+          ...baseOpts,
+          runtimeEnv: "development",
+          autoProvision: { pathway: true },
+          // deno-lint-ignore no-explicit-any
+        }) as unknown as PathwaysBuilder<any>,
+      )
+      assertEquals(builder.autoProvision, {
+        dataCore: true,
+        flowType: true,
+        eventType: true,
+        pathway: true,
+      })
+    })
+
+    await t.step("autoProvision individual field overrides produce expected merge", () => {
+      const builder = inspect(
+        new PathwaysBuilder({
+          ...baseOpts,
+          runtimeEnv: "development",
+          autoProvision: { dataCore: false, pathway: true },
+          // deno-lint-ignore no-explicit-any
+        }) as unknown as PathwaysBuilder<any>,
+      )
+      assertEquals(builder.autoProvision, {
+        dataCore: false,
+        flowType: true,
+        eventType: true,
+        pathway: true,
+      })
+    })
+
+    await t.step("defaultAutoProvision=false maps to all-false", () => {
+      const builder = inspect(
+        new PathwaysBuilder({
+          ...baseOpts,
+          runtimeEnv: "development",
+          defaultAutoProvision: false,
+          // deno-lint-ignore no-explicit-any
+        }) as unknown as PathwaysBuilder<any>,
+      )
+      assertEquals(builder.autoProvision, {
+        dataCore: false,
+        flowType: false,
+        eventType: false,
+        pathway: false,
+      })
+    })
+
+    await t.step("defaultAutoProvision=true maps to resources-on, pathway-off", () => {
+      const builder = inspect(
+        new PathwaysBuilder({
+          ...baseOpts,
+          runtimeEnv: "development",
+          defaultAutoProvision: true,
+          // deno-lint-ignore no-explicit-any
+        }) as unknown as PathwaysBuilder<any>,
+      )
+      assertEquals(builder.autoProvision, {
+        dataCore: true,
+        flowType: true,
+        eventType: true,
+        pathway: false,
+      })
+    })
+
+    await t.step("both unset defaults to resources-on, pathway-off", () => {
+      const builder = inspect(
+        new PathwaysBuilder({
+          ...baseOpts,
+          runtimeEnv: "development",
+          // deno-lint-ignore no-explicit-any
+        }) as unknown as PathwaysBuilder<any>,
+      )
+      assertEquals(builder.autoProvision, {
+        dataCore: true,
+        flowType: true,
+        eventType: true,
+        pathway: false,
+      })
+    })
+
+    await t.step("autoProvision overrides defaultAutoProvision when both are set", () => {
+      const builder = inspect(
+        new PathwaysBuilder({
+          ...baseOpts,
+          runtimeEnv: "development",
+          defaultAutoProvision: false,
+          autoProvision: { pathway: true },
+          // deno-lint-ignore no-explicit-any
+        }) as unknown as PathwaysBuilder<any>,
+      )
+      // autoProvision object wins — resources back on, pathway explicitly on.
+      assertEquals(builder.autoProvision, {
+        dataCore: true,
+        flowType: true,
+        eventType: true,
+        pathway: true,
+      })
+    })
+
+    await t.step("pathwayMode default is 'managed' in production", () => {
+      const builder = inspect(
+        new PathwaysBuilder({
+          ...baseOpts,
+          runtimeEnv: "production",
+          // deno-lint-ignore no-explicit-any
+        }) as unknown as PathwaysBuilder<any>,
+      )
+      assertEquals(builder.pathwayMode, "managed")
+    })
+
+    await t.step("pathwayMode default is 'virtual' in development", () => {
+      const builder = inspect(
+        new PathwaysBuilder({
+          ...baseOpts,
+          runtimeEnv: "development",
+          // deno-lint-ignore no-explicit-any
+        }) as unknown as PathwaysBuilder<any>,
+      )
+      assertEquals(builder.pathwayMode, "virtual")
+    })
+
+    await t.step("pathwayMode default is 'virtual' in test", () => {
+      const builder = inspect(
+        new PathwaysBuilder({
+          ...baseOpts,
+          runtimeEnv: "test",
+          // deno-lint-ignore no-explicit-any
+        }) as unknown as PathwaysBuilder<any>,
+      )
+      assertEquals(builder.pathwayMode, "virtual")
+    })
+
+    await t.step("explicit pathwayMode still wins over env-aware default", () => {
+      const builder = inspect(
+        new PathwaysBuilder({
+          ...baseOpts,
+          runtimeEnv: "production",
+          pathwayMode: "virtual",
+          // deno-lint-ignore no-explicit-any
+        }) as unknown as PathwaysBuilder<any>,
+      )
+      assertEquals(builder.pathwayMode, "virtual")
     })
   },
 })
