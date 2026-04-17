@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.0.1...v2.1.0) (2026-04-17)
+
+
+### Features
+
+* per-flow-type concurrency + granular autoProvision + env-aware pathwayMode ([#75](https://github.com/flowcore-io/flowcore-pathways/issues/75)) ([7602908](https://github.com/flowcore-io/flowcore-pathways/commit/76029083a16c0a349afe85533fe70e5ae1d6020e))
+
 ## [2.0.1](https://github.com/flowcore-io/flowcore-pathways/compare/v2.0.0...v2.0.1) (2026-04-13)
 
 ### Bug Fixes
