@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.1.0...v2.2.0) (2026-04-30)
+
+
+### Features
+
+* add pathway provisioning failure modes ([993d133](https://github.com/flowcore-io/flowcore-pathways/commit/993d1339f326182520eab984965ecfe51d6e8440))
+
 ## [2.1.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.0.1...v2.1.0) (2026-04-17)
 
 
