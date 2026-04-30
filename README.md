@@ -171,6 +171,25 @@ const pathways = new PathwaysBuilder({
 Omitted fields fall back to resources-on / pathway-off, so most deployments only need to set `pathway: true` when they
 want the by-name pathway registration.
 
+Unexpected lookup/list failures during shared-resource provisioning are treated as possible Flowcore outages by default:
+they are logged and startup continues. Real not-found responses still follow the provisioning path. If create/update
+then fails, the default is to throw.
+
+Override this with `provisionFailure`:
+
+```typescript
+const pathways = new PathwaysBuilder({
+  /* ... */
+  provisionFailure: {
+    check: "continue", // lookup/list outage behavior: "continue" (default) or "throw"
+    apply: "throw", // missing resource/create/update behavior: "throw" (default) or "continue"
+  },
+})
+```
+
+Passing `provisionFailure: "throw"` or `"continue"` applies the mode to both categories. The `apply` setting also
+controls by-name virtual/managed pathway registration failures.
+
 To disable everything (for CI or when resources are managed elsewhere):
 
 ```typescript

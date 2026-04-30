@@ -372,6 +372,64 @@ Deno.test({
       },
     )
 
+    await t.step(
+      "production virtual mode can continue when registration fails after startup",
+      async () => {
+        let startCalls = 0
+        let stopCalls = 0
+
+        const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {})
+        const startStub = stub(PathwayPump.prototype, "start", async function (this: PathwayPump) {
+          startCalls++
+          ;(this as unknown as { running: boolean }).running = true
+        })
+        const stopStub = stub(PathwayPump.prototype, "stop", async function (this: PathwayPump) {
+          if (!(this as unknown as { running: boolean }).running) {
+            return
+          }
+          stopCalls++
+          ;(this as unknown as { running: boolean }).running = false
+        })
+        const fetchStub = stub(globalThis, "fetch", async () => {
+          return new Response(
+            JSON.stringify({
+              status: 500,
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Internal server error",
+            }),
+            {
+              status: 500,
+              headers: { "Content-Type": "application/json" },
+            },
+          )
+        })
+
+        try {
+          const builder = createBuilder({
+            runtimeEnv: "production",
+            pathwayName: "virtual-service",
+            pathwayMode: "virtual",
+            autoProvision: { pathway: true },
+            provisionFailure: { apply: "continue" },
+          })
+          ;(builder as unknown as { clusterManager: { isRunning: boolean; isLeader: boolean } }).clusterManager = {
+            isRunning: true,
+            isLeader: true,
+          }
+
+          await builder.startPump(createPumpOptions())
+
+          assertEquals(startCalls, 1)
+          assertEquals(stopCalls, 0)
+        } finally {
+          provisionStub.restore()
+          startStub.restore()
+          stopStub.restore()
+          fetchStub.restore()
+        }
+      },
+    )
+
     await t.step("production managed mode provisions a managed pathway and does not start a local pump", async () => {
       let provisionCalls = 0
       let startCalls = 0

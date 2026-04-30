@@ -23,7 +23,12 @@ import type { PathwayClusterOptions } from "./cluster/types.ts"
 import { ClusterManager } from "./cluster/cluster-manager.ts"
 import type { AutoProvisionConfig, PathwayPumpOptions, PumpState } from "./pump/types.ts"
 import { PathwayPump } from "./pump/pathway-pump.ts"
-import { PathwayProvisioner, type ProvisionerRegistration } from "./provisioner.ts"
+import {
+  PathwayProvisioner,
+  type ProvisionerRegistration,
+  type ProvisionFailureConfig,
+  type ProvisionFailureMode,
+} from "./provisioner.ts"
 
 export type { AutoProvisionConfig } from "./pump/types.ts"
 
@@ -231,6 +236,16 @@ export interface PathwaysBuilderConfig {
    *  - `false` → `{ dataCore: false, flowType: false, eventType: false, pathway: false }`
    */
   defaultAutoProvision?: boolean
+  /**
+   * Controls whether provisioning failures throw or are only logged.
+   *
+   * Defaults:
+   * - check failures: log and continue, treated as possible Flowcore outages
+   * - apply failures: throw, so real provisioning failures fail loud
+   *
+   * Passing `"throw"` or `"continue"` applies that mode to both categories.
+   */
+  provisionFailure?: ProvisionFailureMode | ProvisionFailureConfig
   managedConfig?: ManagedPathwayConfig
 }
 
@@ -400,6 +415,7 @@ export class PathwaysBuilder<
   private readonly dataCoreDescription?: string
   private readonly dataCoreAccessControl: string
   private readonly dataCoreDeleteProtection: boolean
+  private readonly provisionFailure?: ProvisionFailureMode | ProvisionFailureConfig
 
   // Virtual pathway auto-provisioning
   private readonly pathwayName?: string
@@ -461,6 +477,7 @@ export class PathwaysBuilder<
     pathwayMode,
     autoProvision,
     defaultAutoProvision,
+    provisionFailure,
     managedConfig,
   }: PathwaysBuilderConfig) {
     // Initialize logger (use NoopLogger if none provided)
@@ -485,6 +502,7 @@ export class PathwaysBuilder<
     this.dataCoreDescription = dataCoreDescription
     this.dataCoreAccessControl = dataCoreAccessControl ?? "private"
     this.dataCoreDeleteProtection = dataCoreDeleteProtection ?? false
+    this.provisionFailure = provisionFailure
 
     // Store virtual pathway auto-provisioning config
     this.pathwayName = pathwayName
@@ -1521,6 +1539,7 @@ export class PathwaysBuilder<
       skipDataCore: skipFlags.skipDataCore,
       skipFlowTypes: skipFlags.skipFlowTypes,
       skipEventTypes: skipFlags.skipEventTypes,
+      provisionFailure: this.provisionFailure,
     })
 
     await provisioner.provision()
@@ -1538,6 +1557,11 @@ export class PathwaysBuilder<
       throw new Error(reason)
     }
     return this.pathwayName
+  }
+
+  private shouldContinueProvisionApplyFailure(): boolean {
+    return this.provisionFailure === "continue" ||
+      (typeof this.provisionFailure === "object" && this.provisionFailure.apply === "continue")
   }
 
   private buildManagedPathwayConfig(registrations: ProvisionerRegistration[]): {
@@ -1609,7 +1633,11 @@ export class PathwaysBuilder<
         error: msg,
         phase: "network",
       })
-      throw new Error(`Failed to register ${type} pathway "${pathwayName}": ${msg}`)
+      const error = new Error(`Failed to register ${type} pathway "${pathwayName}": ${msg}`)
+      if (this.shouldContinueProvisionApplyFailure()) {
+        return
+      }
+      throw error
     }
 
     if (!response.ok) {
@@ -1621,9 +1649,11 @@ export class PathwaysBuilder<
         body: text,
         phase: "response",
       })
-      throw new Error(
-        `Failed to register ${type} pathway "${pathwayName}": ${response.status} ${text}`,
-      )
+      const error = new Error(`Failed to register ${type} pathway "${pathwayName}": ${response.status} ${text}`)
+      if (this.shouldContinueProvisionApplyFailure()) {
+        return
+      }
+      throw error
     }
 
     const result = await response.json() as { pathwayId: string; status: string }

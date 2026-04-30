@@ -2,6 +2,7 @@ import { assertEquals, assertRejects } from "https://deno.land/std@0.224.0/asser
 import { PathwayProvisioner } from "../src/pathways/provisioner.ts"
 import type { FlowcoreClient } from "@flowcore/sdk"
 import { NotFoundException } from "@flowcore/sdk"
+import type { Logger } from "../src/pathways/logger.ts"
 
 // --- Mock FlowcoreClient ---
 
@@ -23,6 +24,19 @@ function createMockClient(handlers: Record<string, CommandHandler>): FlowcoreCli
       return Promise.resolve(handler(cmd))
     },
   } as unknown as FlowcoreClient
+}
+
+function createTestLogger(errors: Array<{ message: string; stage?: unknown }>): Logger {
+  return {
+    debug() {},
+    info() {},
+    warn() {},
+    error(messageOrError, errorOrContext, context) {
+      const message = messageOrError instanceof Error ? messageOrError.message : messageOrError
+      const meta = context ?? (errorOrContext instanceof Error ? undefined : errorOrContext)
+      errors.push({ message, stage: meta?.stage })
+    },
+  }
 }
 
 // --- Helpers ---
@@ -159,6 +173,153 @@ Deno.test({
       )
     })
 
+    await t.step("continues when data core check fails unexpectedly", async () => {
+      const commands: string[] = []
+      const errors: Array<{ message: string; stage?: unknown }> = []
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          commands.push("DataCoreFetchCommand")
+          throw new Error("service unavailable")
+        },
+        DataCoreCreateCommand: () => {
+          commands.push("DataCoreCreateCommand")
+          return baseDataCore()
+        },
+        FlowTypeListCommand: () => {
+          commands.push("FlowTypeListCommand")
+          return []
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "desc",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        registrations: [
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "User events",
+            eventTypeDescription: "User created",
+          },
+        ],
+        logger: createTestLogger(errors),
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+
+      assertEquals(commands, ["DataCoreFetchCommand"])
+      assertEquals(errors, [
+        {
+          message: "Provisioning check failed; treating as possible Flowcore outage",
+          stage: "dataCore",
+        },
+      ])
+    })
+
+    await t.step("can throw when data core check fails unexpectedly", async () => {
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          throw new Error("service unavailable")
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "desc",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        registrations: [],
+        provisionFailure: { check: "throw" },
+        clientFactory: () => client,
+      })
+
+      await assertRejects(
+        () => provisioner.provision(),
+        Error,
+        "service unavailable",
+      )
+    })
+
+    await t.step("not found data core still attempts create and create failure throws by default", async () => {
+      const commands: string[] = []
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          commands.push("DataCoreFetchCommand")
+          throw new NotFoundException("DataCore", {})
+        },
+        DataCoreCreateCommand: () => {
+          commands.push("DataCoreCreateCommand")
+          throw new Error("create failed")
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "desc",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        registrations: [],
+        clientFactory: () => client,
+      })
+
+      await assertRejects(
+        () => provisioner.provision(),
+        Error,
+        "create failed",
+      )
+      assertEquals(commands, ["DataCoreFetchCommand", "DataCoreCreateCommand"])
+    })
+
+    await t.step("can log and continue when create fails after not found", async () => {
+      const errors: Array<{ message: string; stage?: unknown }> = []
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          throw new NotFoundException("DataCore", {})
+        },
+        DataCoreCreateCommand: () => {
+          throw new Error("create failed")
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "desc",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        registrations: [],
+        provisionFailure: { apply: "continue" },
+        logger: createTestLogger(errors),
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+
+      assertEquals(errors, [
+        {
+          message: "Provisioning failed",
+          stage: "dataCore.create",
+        },
+      ])
+    })
+
     await t.step("fails when flow type missing and no flowTypeDescription", async () => {
       const client = createMockClient({
         TenantTranslateNameToIdCommand: () => baseTenant(),
@@ -184,6 +345,93 @@ Deno.test({
         Error,
         'Flow type "user" not found',
       )
+    })
+
+    await t.step("continues when flow type list check fails unexpectedly", async () => {
+      const commands: string[] = []
+      const errors: Array<{ message: string; stage?: unknown }> = []
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore({ description: "desc" }),
+        FlowTypeListCommand: () => {
+          commands.push("FlowTypeListCommand")
+          throw new Error("service unavailable")
+        },
+        EventTypeListCommand: () => {
+          commands.push("EventTypeListCommand")
+          return []
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "desc",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        registrations: [
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "User events",
+            eventTypeDescription: "User created",
+          },
+        ],
+        logger: createTestLogger(errors),
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+
+      assertEquals(commands, ["FlowTypeListCommand"])
+      assertEquals(errors, [
+        {
+          message: "Provisioning check failed; treating as possible Flowcore outage",
+          stage: "flowType.list",
+        },
+      ])
+    })
+
+    await t.step("treats flow type list 404 as empty and provisions missing flow types", async () => {
+      const commands: string[] = []
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore({ description: "desc" }),
+        FlowTypeListCommand: () => {
+          commands.push("FlowTypeListCommand")
+          throw { status: 404, message: "not found" }
+        },
+        FlowTypeCreateCommand: (cmd) => {
+          commands.push("FlowTypeCreateCommand")
+          return baseFlowType(cmd.input.name as string, "ft-new", cmd.input.description as string)
+        },
+        EventTypeListCommand: () => [baseEventType("created", "et-001", "ft-new", "User created")],
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "desc",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        registrations: [
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "User events",
+            eventTypeDescription: "User created",
+          },
+        ],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+
+      assertEquals(commands, ["FlowTypeListCommand", "FlowTypeCreateCommand"])
     })
 
     await t.step("fails when event type missing and no description", async () => {
@@ -212,6 +460,50 @@ Deno.test({
         Error,
         'Event type "created" not found in flow type "user"',
       )
+    })
+
+    await t.step("treats event type list 404 as empty and provisions missing event types", async () => {
+      const commands: string[] = []
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore({ description: "desc" }),
+        FlowTypeListCommand: () => [baseFlowType("user", "ft-001")],
+        EventTypeListCommand: () => {
+          commands.push("EventTypeListCommand")
+          throw { status: 404, message: "not found" }
+        },
+        EventTypeCreateCommand: (cmd) => {
+          commands.push("EventTypeCreateCommand")
+          return baseEventType(
+            cmd.input.name as string,
+            "et-new",
+            cmd.input.flowTypeId as string,
+            cmd.input.description as string,
+          )
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "desc",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        registrations: [
+          {
+            flowType: "user",
+            eventType: "created",
+            eventTypeDescription: "User created",
+          },
+        ],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+
+      assertEquals(commands, ["EventTypeListCommand", "EventTypeCreateCommand"])
     })
 
     await t.step("updates data core description when changed", async () => {

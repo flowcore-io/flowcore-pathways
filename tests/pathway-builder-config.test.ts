@@ -11,6 +11,7 @@ const baseOpts = {
 type InternalBuilderShape = {
   pathwayMode: "virtual" | "managed"
   autoProvision: { dataCore: boolean; flowType: boolean; eventType: boolean; pathway: boolean }
+  provisionFailure?: "throw" | "continue" | { check?: "throw" | "continue"; apply?: "throw" | "continue" }
 }
 
 // deno-lint-ignore no-explicit-any
@@ -33,6 +34,7 @@ Deno.test({
         runtimeEnv: "production",
         pathwayMode: "managed",
         defaultAutoProvision: false,
+        provisionFailure: { apply: "continue" },
         managedConfig: {
           endpointUrl: "https://app.example.com/flowcore",
           authHeaders: {
@@ -226,6 +228,17 @@ Deno.test({
         }) as unknown as PathwaysBuilder<any>,
       )
       assertEquals(builder.pathwayMode, "virtual")
+    })
+
+    await t.step("provisionFailure config is stored", () => {
+      const builder = inspect(
+        new PathwaysBuilder({
+          ...baseOpts,
+          provisionFailure: { check: "continue", apply: "throw" },
+          // deno-lint-ignore no-explicit-any
+        }) as unknown as PathwaysBuilder<any>,
+      )
+      assertEquals(builder.provisionFailure, { check: "continue", apply: "throw" })
     })
   },
 })
