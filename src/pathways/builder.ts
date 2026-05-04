@@ -385,6 +385,7 @@ export class PathwaysBuilder<
   private readonly inputSchemas: Record<keyof TPathway, AnyZodObject> = {} as Record<keyof TPathway, AnyZodObject>
   private readonly writable: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
   private readonly subscribed: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
+  private readonly pumpGroups: Record<keyof TPathway, string> = {} as Record<keyof TPathway, string>
   private readonly timeouts: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
   private readonly maxRetries: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
   private readonly retryDelays: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
@@ -829,6 +830,18 @@ export class PathwaysBuilder<
        * exists, avoiding back-pressure on the shared pump queue.
        */
       subscribe?: boolean
+      /**
+       * Optional pump group. Event types sharing a `(flowType, pumpGroup)` pair
+       * land on the same data pump; different `pumpGroup` values within one
+       * `flowType` run on independent pumps with isolated state cursors and
+       * processor concurrency. Omit (or pass `"default"`) for the legacy
+       * single-pump-per-flowType behavior.
+       *
+       * NOTE: the WebSocket notifier is `flowType`-scoped, so two groups on the
+       * same `flowType` receive identical notifications and each pulls; isolation
+       * is at processor + state, not bandwidth.
+       */
+      pumpGroup?: string
       maxRetries?: number
       retryDelayMs?: number
       isFilePathway?: FP
@@ -844,6 +857,12 @@ export class PathwaysBuilder<
     const path = `${contract.flowType}/${contract.eventType}` as PathwayKey<F, E>
     const writable = contract.writable ?? true
     const subscribe = contract.subscribe ?? true
+    if (contract.pumpGroup !== undefined && contract.pumpGroup.trim() === "") {
+      throw new Error(
+        `Pathway ${path} has an empty pumpGroup — pumpGroup must be a non-empty string when set`,
+      )
+    }
+    const pumpGroup = contract.pumpGroup?.trim() ?? "default"
 
     this.logger.debug(`Registering pathway`, {
       pathway: path,
@@ -851,6 +870,7 @@ export class PathwaysBuilder<
       eventType: contract.eventType,
       writable,
       subscribe,
+      pumpGroup,
       isFilePathway: contract.isFilePathway,
       timeoutMs: contract.timeoutMs,
       maxRetries: contract.maxRetries,
@@ -900,6 +920,7 @@ export class PathwaysBuilder<
     }
     this.writable[path] = writable
     this.subscribed[path] = subscribe
+    this.pumpGroups[path] = pumpGroup
 
     // Store provisioning descriptions
     if (contract.description !== undefined) {
@@ -915,6 +936,7 @@ export class PathwaysBuilder<
       eventType: contract.eventType,
       writable,
       subscribe,
+      pumpGroup,
       isFilePathway: contract.isFilePathway,
     })
 
@@ -1464,12 +1486,30 @@ export class PathwaysBuilder<
       return
     }
 
-    const registrations = this.buildSubscribedRegistrations()
+    const registrations = this.buildPumpRegistrations()
     await this.pathwayPump.start(registrations)
 
     this.logger.info("Pump started", {
       pathways: registrations.length,
     })
+  }
+
+  /**
+   * Returns the subset of registrations the in-process pump should subscribe to,
+   * enriched with the resolved `pumpGroup` for each pathway. Only used by the
+   * pump — provisioning still uses {@link buildRegistrations} (no pumpGroup).
+   */
+  private buildPumpRegistrations(): Array<{ flowType: string; eventType: string; pumpGroup: string }> {
+    return Object.keys(this.pathways)
+      .filter((key) => this.subscribed[key as keyof TPathway] !== false)
+      .map((key) => {
+        const [flowType, eventType] = key.split("/")
+        return {
+          flowType,
+          eventType,
+          pumpGroup: this.pumpGroups[key as keyof TPathway] ?? "default",
+        }
+      })
   }
 
   private async stopLeaderRuntime(): Promise<void> {
@@ -1890,21 +1930,35 @@ export class PathwaysBuilder<
    * @param position - Target position { timeBucket, eventId? }. If omitted, clears persisted state
    *                   and restarts from the live position. To replay from the very beginning,
    *                   pass the first time bucket explicitly.
+   * @param filter   - Optional filter narrowing which pumps to reset. Accepts:
+   *                   - `string[]` (legacy): treated as `flowTypes`.
+   *                   - `{ flowTypes?, pumpGroups? }`: matches pumps that satisfy every supplied
+   *                     criterion (intersection).
+   *                   Cluster mode does not yet propagate the filter — it is logged and
+   *                   the leader resets all pumps.
    */
-  async resetPump(position?: PumpState, flowTypes?: string[]): Promise<string[]> {
+  async resetPump(
+    position?: PumpState,
+    filter?: string[] | { flowTypes?: string[]; pumpGroups?: string[] },
+  ): Promise<string[]> {
     if (!this.pathwayPump) {
       throw new Error("Pump not started — call startPump() first")
     }
 
+    const normalized = Array.isArray(filter) ? { flowTypes: filter } : filter
+
     if (this.clusterManager) {
-      if (flowTypes?.length) {
-        this.logger.warn("flowTypes filter is not supported in cluster mode reset — resetting all flow types")
+      if (normalized?.flowTypes?.length || normalized?.pumpGroups?.length) {
+        this.logger.warn(
+          "Reset filter is not supported in cluster mode — resetting all pumps",
+          { filter: normalized },
+        )
       }
       await this.clusterManager.requestReset(position)
       return [...this.pathwayPump.registeredFlowTypes]
     }
 
-    return await this.pathwayPump.reset(position, flowTypes)
+    return await this.pathwayPump.reset(position, normalized)
   }
 
   /**
