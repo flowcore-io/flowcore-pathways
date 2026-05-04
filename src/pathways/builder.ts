@@ -384,6 +384,7 @@ export class PathwaysBuilder<
   private readonly schemas: Record<keyof TPathway, AnyZodObject> = {} as Record<keyof TPathway, AnyZodObject>
   private readonly inputSchemas: Record<keyof TPathway, AnyZodObject> = {} as Record<keyof TPathway, AnyZodObject>
   private readonly writable: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
+  private readonly subscribed: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
   private readonly timeouts: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
   private readonly maxRetries: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
   private readonly retryDelays: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
@@ -819,6 +820,15 @@ export class PathwaysBuilder<
   >(
     contract: PathwayContract<F, E, S> & {
       writable?: W
+      /**
+       * Whether the in-process pump should subscribe to and consume events for
+       * this pathway. Defaults to `true`. Set to `false` for analytical /
+       * write-only pathways: `.write()` still works, but the pump does not pull
+       * events from flowcore and `.handle()` will never fire. Useful when
+       * events are written for history/analytics but no in-service consumer
+       * exists, avoiding back-pressure on the shared pump queue.
+       */
+      subscribe?: boolean
       maxRetries?: number
       retryDelayMs?: number
       isFilePathway?: FP
@@ -833,12 +843,14 @@ export class PathwaysBuilder<
   > {
     const path = `${contract.flowType}/${contract.eventType}` as PathwayKey<F, E>
     const writable = contract.writable ?? true
+    const subscribe = contract.subscribe ?? true
 
     this.logger.debug(`Registering pathway`, {
       pathway: path,
       flowType: contract.flowType,
       eventType: contract.eventType,
       writable,
+      subscribe,
       isFilePathway: contract.isFilePathway,
       timeoutMs: contract.timeoutMs,
       maxRetries: contract.maxRetries,
@@ -887,6 +899,7 @@ export class PathwaysBuilder<
       this.inputSchemas[path] = contract.schema ?? z.object({})
     }
     this.writable[path] = writable
+    this.subscribed[path] = subscribe
 
     // Store provisioning descriptions
     if (contract.description !== undefined) {
@@ -901,6 +914,7 @@ export class PathwaysBuilder<
       flowType: contract.flowType,
       eventType: contract.eventType,
       writable,
+      subscribe,
       isFilePathway: contract.isFilePathway,
     })
 
@@ -1450,7 +1464,7 @@ export class PathwaysBuilder<
       return
     }
 
-    const registrations = this.buildRegistrations()
+    const registrations = this.buildSubscribedRegistrations()
     await this.pathwayPump.start(registrations)
 
     this.logger.info("Pump started", {
@@ -1520,6 +1534,27 @@ export class PathwaysBuilder<
         eventTypeDescription: this.eventTypeDescriptions.get(key),
       }
     })
+  }
+
+  /**
+   * Returns the subset of registrations the in-process pump should subscribe to.
+   * Pathways registered with `subscribe: false` are excluded — they are
+   * write-only / analytical-only and the pump must not pull their events.
+   * Provisioning still uses {@link buildRegistrations} so the flow type and
+   * event type are created in flowcore for every registered pathway.
+   */
+  private buildSubscribedRegistrations(): ProvisionerRegistration[] {
+    return Object.keys(this.pathways)
+      .filter((key) => this.subscribed[key as keyof TPathway] !== false)
+      .map((key) => {
+        const [flowType, eventType] = key.split("/")
+        return {
+          flowType,
+          eventType,
+          flowTypeDescription: this.flowTypeDescriptions.get(flowType),
+          eventTypeDescription: this.eventTypeDescriptions.get(key),
+        }
+      })
   }
 
   private async provisionSharedResources(
