@@ -96,6 +96,21 @@ export interface PathwayContract<F extends string, E extends string, T extends A
    * this flow type on the platform. When undefined, the flow type must pre-exist.
    */
   flowTypeDescription?: string
+
+  /**
+   * Optional pump group. Same `(flowType, pumpGroup)` lands on the same data pump;
+   * different `pumpGroup` values within one `flowType` run on independent pumps.
+   * Omit (or pass `"default"`) to keep the legacy single-pump-per-flowType behavior.
+   *
+   * Use to isolate hot event types from cold ones on the same `flowType` so they
+   * have independent state cursors, processor concurrency, and restart backoff.
+   *
+   * NOTE: the WebSocket notifier subscribes at `flowType` scope, so two pump groups
+   * on the same `flowType` receive identical notifications and each pulls. Isolation
+   * is at processor + state level, not bandwidth. If you need bandwidth isolation,
+   * use distinct `flowType`s instead.
+   */
+  pumpGroup?: string
 }
 
 /**

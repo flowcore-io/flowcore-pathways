@@ -228,10 +228,10 @@ const pathways = new PathwaysBuilder({
 ### Pump Concurrency
 
 Control how many events each pump processes in parallel via `startPump({ concurrency })`. Accepts a number (shared
-default) or a `PumpConcurrencyConfig` with per-flow-type overrides:
+default) or a `PumpConcurrencyConfig` with per-flow-type and per-pump-group overrides:
 
 ```typescript
-// Shared default across every flow type
+// Shared default across every pump
 await pathways.startPump({ concurrency: 4 })
 
 // Per-flow-type overrides — unlisted flow types fall back to `default` (or 1)
@@ -242,12 +242,72 @@ await pathways.startPump({
       orders: 8,
       audit: 1,
     },
+    // Optional: per-(flowType, pumpGroup) override. Wins over byFlowType.
+    // Key format: `${flowType}::${pumpGroup}`.
+    byPumpGroup: {
+      "orders::hot": 16,
+    },
   },
 })
 ```
 
-Omit `concurrency` to keep the default of 1 per flow type. `startPump()` also accepts a per-call `autoProvision`
-override (same shape as the builder-level option) for overriding provisioning behavior at a specific call site.
+Omit `concurrency` to keep the default of 1 per pump. `startPump()` also accepts a per-call `autoProvision` override
+(same shape as the builder-level option) for overriding provisioning behavior at a specific call site.
+
+> **Note**: this resolves to `processor.concurrency` on the underlying data pump, which is the in-flight batch width —
+> not parallel handler invocations. Resolution order per pump: `byPumpGroup["${flowType}::${pumpGroup}"]` →
+> `byFlowType[flowType]` → `default`.
+
+### Splitting a flow type across multiple pumps
+
+By default, every event type registered against the same `flowType` shares one pump. For high-throughput event types
+that would otherwise starve their cold neighbours, register them with a distinct `pumpGroup` so they run on an isolated
+pump with their own state cursor, processor concurrency, and restart backoff:
+
+```typescript
+// 8 cold event types share the default pump for orders.0
+for (const eventType of ["paid", "fulfilled", "cancelled", "refunded", "archived", "audited", "tagged", "noted"]) {
+  pathways.register({ flowType: "orders.0", eventType, schema })
+}
+
+// 2 hot event types run on a separate "hot" pump — same flow type, isolated pump
+pathways.register({ flowType: "orders.0", eventType: "placed.0", schema, pumpGroup: "hot" })
+pathways.register({ flowType: "orders.0", eventType: "shipped.0", schema, pumpGroup: "hot" })
+
+await pathways.startPump({
+  concurrency: { default: 2, byPumpGroup: { "orders.0::hot": 16 } },
+})
+```
+
+What this gives you per pump group:
+
+- **Isolated state cursor.** The Postgres `pathway_pump_state` table now has a composite primary key
+  `(flow_type, pump_group)`; existing rows are auto-migrated into `pump_group='default'` on first use.
+- **Independent processor concurrency** via `byPumpGroup`.
+- **Independent restart backoff.** A failure in the `hot` pump does not reset the cold pump's attempt counter, and the
+  restart loop keeps retrying with exponential backoff (capped at 30s) until the pump comes back — including when the
+  restart attempt itself throws synchronously.
+- **Per-group pulse identity.** When pulse reporting is configured, each pump emits pulses under
+  `${pathwayId}::${flowType}::${pumpGroup}` so the control plane can distinguish the health of each group.
+
+**Caveats (v2.4):**
+
+- The WebSocket notifier subscribes at `flowType` scope, so two pump groups on the same flow type receive identical
+  notifications and each pulls. Isolation is at processor + state, not bandwidth — checks are cheap, so this is usually
+  fine. If you need bandwidth isolation, use distinct flow types instead.
+- Cluster mode keeps a single global leader; per-pump-group leadership is not yet supported.
+- Downstream consumers that mirror `pathway_pump_state` in their own Drizzle schema MUST add a
+  `pump_group TEXT NOT NULL DEFAULT 'default'` column and update the primary key to `(flow_type, pump_group)` before
+  running `drizzle-kit push`, otherwise drizzle will try to drop the new column.
+
+Custom `PumpStateManagerFactory` implementations should accept a second `pumpGroup` argument:
+
+```typescript
+const factory: PumpStateManagerFactory = (flowType, pumpGroup) => createMyStateManager(flowType, pumpGroup)
+```
+
+Legacy single-argument factories continue to work but share state across pump groups on the same flow type — a
+deprecation warning is logged once per pump.
 
 ### Registering Pathways
 
@@ -277,6 +337,10 @@ pathways.register({
   writable: true, // Optional, default is true
   maxRetries: 3, // Optional, default is 3
   retryDelayMs: 500, // Optional, default is 500
+  // Optional: isolate this event type onto a dedicated pump for the same flow type.
+  // Same (flowType, pumpGroup) pair shares one pump; different pumpGroup → different pumps.
+  // Omit (or pass "default") for the legacy single-pump-per-flowType behavior.
+  pumpGroup: "hot",
 })
 ```
 

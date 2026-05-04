@@ -20,12 +20,29 @@ class InMemoryPumpStateManager implements PumpStateManager {
 
 function createInMemoryStateFactory(): PumpStateManagerFactory {
   const managers = new Map<string, InMemoryPumpStateManager>()
-  return (flowType: string) => {
-    if (!managers.has(flowType)) {
-      managers.set(flowType, new InMemoryPumpStateManager())
+  return (flowType: string, pumpGroup: string) => {
+    const key = `${flowType}::${pumpGroup}`
+    if (!managers.has(key)) {
+      managers.set(key, new InMemoryPumpStateManager())
     }
-    return managers.get(flowType)!
+    return managers.get(key)!
   }
+}
+
+interface GroupMeta {
+  flowType: string
+  pumpGroup: string
+  eventTypes: string[]
+}
+
+interface InternalPump {
+  dataPumpConstructor: {
+    create(options: Record<string, unknown>): Promise<{ start(cb?: unknown): Promise<void> }>
+  }
+  startPumpForGroup(meta: GroupMeta): Promise<void>
+  running: boolean
+  pumps: Map<string, { stop(): Promise<void> }>
+  groupMeta: Map<string, GroupMeta>
 }
 
 Deno.test({
@@ -91,47 +108,23 @@ Deno.test({
       assertEquals(state!.eventId, "evt-1")
     })
 
-    await t.step("InMemoryStateFactory - creates separate managers per flowType", () => {
+    await t.step("InMemoryStateFactory - creates separate managers per (flowType, pumpGroup)", () => {
       const factory = createInMemoryStateFactory()
 
-      const mgr1 = factory("user")
-      const mgr2 = factory("order")
-      const mgr1Again = factory("user")
+      const userDefault = factory("user", "default")
+      const userHot = factory("user", "hot")
+      const userDefaultAgain = factory("user", "default")
 
-      // Same instance for same flowType
-      assertEquals(mgr1, mgr1Again)
+      // Same instance for same (flowType, pumpGroup)
+      assertEquals(userDefault, userDefaultAgain)
+      // Different instances for different pumpGroups on the same flowType
+      assertEquals(userDefault !== userHot, true)
 
-      // Different instances for different flowTypes
-      assertEquals(mgr1 !== mgr2, true)
-
-      mgr1.setState({ timeBucket: "20260319120000" })
-      assertEquals(mgr2.getState(), null)
+      userDefault.setState({ timeBucket: "20260319120000" })
+      assertEquals(userHot.getState(), null)
     })
 
-    await t.step("should group pathways by flowType", () => {
-      // Test the grouping logic conceptually
-      const pathways = [
-        { flowType: "user", eventType: "created" },
-        { flowType: "user", eventType: "updated" },
-        { flowType: "order", eventType: "placed" },
-        { flowType: "order", eventType: "shipped" },
-        { flowType: "payment", eventType: "received" },
-      ]
-
-      const groups = new Map<string, string[]>()
-      for (const pw of pathways) {
-        const eventTypes = groups.get(pw.flowType) ?? []
-        eventTypes.push(pw.eventType)
-        groups.set(pw.flowType, eventTypes)
-      }
-
-      assertEquals(groups.size, 3)
-      assertEquals(groups.get("user"), ["created", "updated"])
-      assertEquals(groups.get("order"), ["placed", "shipped"])
-      assertEquals(groups.get("payment"), ["received"])
-    })
-
-    await t.step("concurrency defaults to 1 per flow type when unset", async () => {
+    await t.step("concurrency defaults to 1 per pump when unset", async () => {
       const factory = createInMemoryStateFactory()
       const pump = new PathwayPump({
         stateManagerFactory: factory,
@@ -146,32 +139,25 @@ Deno.test({
         processEvent: async (_pathway: string, _event: FlowcoreEvent) => {},
       })
 
-      // Bypass the dynamic `@flowcore/data-pump` import by invoking the per-flowType
-      // bootstrap directly with a stubbed constructor — same pattern as the setPulseConfig test.
-      const createdConcurrencies: Record<string, number> = {}
-      const internal = pump as unknown as {
-        dataPumpConstructor: {
-          create(options: Record<string, unknown>): Promise<{ start(cb?: unknown): Promise<void> }>
-        }
-        startPumpForFlowType(flowType: string, eventTypes: string[]): Promise<void>
-      }
+      const created: Record<string, number> = {}
+      const internal = pump as unknown as InternalPump
       internal.dataPumpConstructor = {
         create: (options: Record<string, unknown>) => {
           const dataSource = options.dataSource as { flowType: string }
           const processor = options.processor as { concurrency: number }
-          createdConcurrencies[dataSource.flowType] = processor.concurrency
+          created[dataSource.flowType] = processor.concurrency
           return Promise.resolve({ start: async () => {} })
         },
       }
 
-      await internal.startPumpForFlowType("user", ["created"])
-      await internal.startPumpForFlowType("order", ["placed"])
+      await internal.startPumpForGroup({ flowType: "user", pumpGroup: "default", eventTypes: ["created"] })
+      await internal.startPumpForGroup({ flowType: "order", pumpGroup: "default", eventTypes: ["placed"] })
 
-      assertEquals(createdConcurrencies.user, 1)
-      assertEquals(createdConcurrencies.order, 1)
+      assertEquals(created.user, 1)
+      assertEquals(created.order, 1)
     })
 
-    await t.step("numeric concurrency sets a shared default for every flow type", async () => {
+    await t.step("numeric concurrency sets a shared default for every pump", async () => {
       const factory = createInMemoryStateFactory()
       const pump = new PathwayPump({
         stateManagerFactory: factory,
@@ -187,35 +173,34 @@ Deno.test({
         processEvent: async () => {},
       })
 
-      const createdConcurrencies: Record<string, number> = {}
-      const internal = pump as unknown as {
-        dataPumpConstructor: {
-          create(options: Record<string, unknown>): Promise<{ start(cb?: unknown): Promise<void> }>
-        }
-        startPumpForFlowType(flowType: string, eventTypes: string[]): Promise<void>
-      }
+      const created: Record<string, number> = {}
+      const internal = pump as unknown as InternalPump
       internal.dataPumpConstructor = {
         create: (options: Record<string, unknown>) => {
           const dataSource = options.dataSource as { flowType: string }
           const processor = options.processor as { concurrency: number }
-          createdConcurrencies[dataSource.flowType] = processor.concurrency
+          created[dataSource.flowType] = processor.concurrency
           return Promise.resolve({ start: async () => {} })
         },
       }
 
-      await internal.startPumpForFlowType("user", ["created"])
-      await internal.startPumpForFlowType("order", ["placed"])
+      await internal.startPumpForGroup({ flowType: "user", pumpGroup: "default", eventTypes: ["created"] })
+      await internal.startPumpForGroup({ flowType: "order", pumpGroup: "default", eventTypes: ["placed"] })
 
-      assertEquals(createdConcurrencies.user, 4)
-      assertEquals(createdConcurrencies.order, 4)
+      assertEquals(created.user, 4)
+      assertEquals(created.order, 4)
     })
 
-    await t.step("per-flow-type overrides win; missing ones fall back to default", async () => {
+    await t.step("byPumpGroup wins over byFlowType wins over default", async () => {
       const factory = createInMemoryStateFactory()
       const pump = new PathwayPump({
         stateManagerFactory: factory,
         notifier: { type: "poller", pollerIntervalMs: 1000 },
-        concurrency: { default: 2, byFlowType: { orders: 5 } },
+        concurrency: {
+          default: 2,
+          byFlowType: { orders: 5 },
+          byPumpGroup: { "orders::hot": 9 },
+        },
       })
 
       pump.configure({
@@ -226,27 +211,179 @@ Deno.test({
         processEvent: async () => {},
       })
 
-      const createdConcurrencies: Record<string, number> = {}
-      const internal = pump as unknown as {
-        dataPumpConstructor: {
-          create(options: Record<string, unknown>): Promise<{ start(cb?: unknown): Promise<void> }>
-        }
-        startPumpForFlowType(flowType: string, eventTypes: string[]): Promise<void>
-      }
+      const seenConcurrencies: number[] = []
+      const internal = pump as unknown as InternalPump
       internal.dataPumpConstructor = {
         create: (options: Record<string, unknown>) => {
-          const dataSource = options.dataSource as { flowType: string }
           const processor = options.processor as { concurrency: number }
-          createdConcurrencies[dataSource.flowType] = processor.concurrency
+          seenConcurrencies.push(processor.concurrency)
           return Promise.resolve({ start: async () => {} })
         },
       }
 
-      await internal.startPumpForFlowType("orders", ["placed"])
-      await internal.startPumpForFlowType("users", ["created"])
+      await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "hot", eventTypes: ["placed.fast"] })
+      await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] })
+      await internal.startPumpForGroup({ flowType: "users", pumpGroup: "default", eventTypes: ["created"] })
 
-      assertEquals(createdConcurrencies.orders, 5)
-      assertEquals(createdConcurrencies.users, 2)
+      assertEquals(
+        seenConcurrencies,
+        [9, 5, 2],
+        "byPumpGroup wins, then byFlowType, then default",
+      )
+    })
+
+    await t.step("pulse pathwayId is suffixed with ::flowType::pumpGroup", async () => {
+      const factory = createInMemoryStateFactory()
+      const pump = new PathwayPump({
+        stateManagerFactory: factory,
+        notifier: { type: "poller", pollerIntervalMs: 1000 },
+        pulse: { url: "http://cp.test", pathwayId: "p-123" },
+      })
+
+      pump.configure({
+        tenant: "t",
+        dataCore: "dc",
+        apiKey: "k",
+        baseUrl: "https://api.flowcore.io",
+        processEvent: async () => {},
+      })
+
+      const seen: string[] = []
+      const internal = pump as unknown as InternalPump
+      internal.dataPumpConstructor = {
+        create: (options: Record<string, unknown>) => {
+          const pulse = options.pulse as { pathwayId: string }
+          seen.push(pulse.pathwayId)
+          return Promise.resolve({ start: async () => {} })
+        },
+      }
+
+      await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "hot", eventTypes: ["placed.fast"] })
+      await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] })
+
+      assertEquals(seen, ["p-123::orders::hot", "p-123::orders::default"])
+    })
+
+    await t.step("notifier dataSource.eventTypes is restricted to the group's subset", async () => {
+      const factory = createInMemoryStateFactory()
+      const pump = new PathwayPump({
+        stateManagerFactory: factory,
+        notifier: { type: "poller", pollerIntervalMs: 1000 },
+      })
+
+      pump.configure({
+        tenant: "t",
+        dataCore: "dc",
+        apiKey: "k",
+        baseUrl: "https://api.flowcore.io",
+        processEvent: async () => {},
+      })
+
+      const seenNotifierEventTypes: string[][] = []
+      const internal = pump as unknown as InternalPump
+      internal.dataPumpConstructor = {
+        create: (options: Record<string, unknown>) => {
+          const notifier = options.notifier as { dataSource: { eventTypes: string[] } }
+          seenNotifierEventTypes.push([...notifier.dataSource.eventTypes])
+          return Promise.resolve({ start: async () => {} })
+        },
+      }
+
+      await internal.startPumpForGroup({
+        flowType: "orders",
+        pumpGroup: "hot",
+        eventTypes: ["placed.fast", "shipped.fast"],
+      })
+      await internal.startPumpForGroup({
+        flowType: "orders",
+        pumpGroup: "default",
+        eventTypes: ["placed", "shipped"],
+      })
+
+      assertEquals(seenNotifierEventTypes[0], ["placed.fast", "shipped.fast"])
+      assertEquals(seenNotifierEventTypes[1], ["placed", "shipped"])
+    })
+
+    await t.step("registeredPumpGroups exposes every (flowType, pumpGroup) pair", async () => {
+      const factory = createInMemoryStateFactory()
+      const pump = new PathwayPump({
+        stateManagerFactory: factory,
+        notifier: { type: "poller", pollerIntervalMs: 1000 },
+      })
+
+      pump.configure({
+        tenant: "t",
+        dataCore: "dc",
+        apiKey: "k",
+        baseUrl: "https://api.flowcore.io",
+        processEvent: async () => {},
+      })
+
+      const internal = pump as unknown as InternalPump & { groupMeta: Map<string, GroupMeta> }
+      internal.dataPumpConstructor = {
+        create: (_options: Record<string, unknown>) => Promise.resolve({ start: async () => {} }),
+      }
+
+      // Bypass start() to avoid the dynamic import of @flowcore/data-pump (which would
+      // overwrite our stubbed dataPumpConstructor and try to authenticate against a real CP).
+      const groupsToStart: GroupMeta[] = [
+        { flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] },
+        { flowType: "orders", pumpGroup: "hot", eventTypes: ["placed.fast"] },
+        { flowType: "users", pumpGroup: "default", eventTypes: ["created"] },
+      ]
+      for (const meta of groupsToStart) {
+        internal.groupMeta.set(`${meta.flowType}::${meta.pumpGroup}`, meta)
+        await internal.startPumpForGroup(meta)
+      }
+
+      const groups = pump.registeredPumpGroups.map((g) => `${g.flowType}::${g.pumpGroup}`).sort()
+      assertEquals(groups, ["orders::default", "orders::hot", "users::default"])
+      // Unique flow types preserved for back-compat.
+      assertEquals([...pump.registeredFlowTypes].sort(), ["orders", "users"])
+    })
+
+    await t.step("legacy single-arg state factory is accepted with a deprecation warning", async () => {
+      const created = new Map<string, InMemoryPumpStateManager>()
+      // Arity 1 — old factory signature.
+      const legacyFactory = (flowType: string): PumpStateManager => {
+        if (!created.has(flowType)) {
+          created.set(flowType, new InMemoryPumpStateManager())
+        }
+        return created.get(flowType)!
+      }
+
+      const warns: Array<{ msg: string; meta?: Record<string, unknown> }> = []
+      const pump = new PathwayPump({
+        stateManagerFactory: legacyFactory as unknown as PumpStateManagerFactory,
+        notifier: { type: "poller", pollerIntervalMs: 1000 },
+      }, {
+        debug: () => {},
+        info: () => {},
+        warn: (msg: string, meta?: Record<string, unknown>) => {
+          warns.push({ msg, meta })
+        },
+        error: () => {},
+      })
+
+      pump.configure({
+        tenant: "t",
+        dataCore: "dc",
+        apiKey: "k",
+        baseUrl: "https://api.flowcore.io",
+        processEvent: async () => {},
+      })
+
+      const internal = pump as unknown as InternalPump
+      internal.dataPumpConstructor = {
+        create: (_options: Record<string, unknown>) => Promise.resolve({ start: async () => {} }),
+      }
+
+      // Two pump groups on same flow type with a legacy factory → warning fires once.
+      await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "hot", eventTypes: ["placed.fast"] })
+      await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] })
+
+      const legacyWarns = warns.filter((w) => w.msg.includes("legacy single-arg signature"))
+      assertEquals(legacyWarns.length, 1, "deprecation warning should be emitted exactly once")
     })
 
     await t.step("setPulseConfig recreates running pumps with the new pulse configuration", async () => {
@@ -264,47 +401,26 @@ Deno.test({
         processEvent: async (_pathway: string, _event: FlowcoreEvent) => {},
       })
 
-      const stoppedFlowTypes: string[] = []
+      const internal = pump as unknown as InternalPump
+      internal.running = true
+      internal.pumps = new Map([
+        ["user::default", { stop: async () => {} }],
+        ["order::default", { stop: async () => {} }],
+      ])
+      internal.groupMeta = new Map([
+        ["user::default", { flowType: "user", pumpGroup: "default", eventTypes: ["created", "updated"] }],
+        ["order::default", { flowType: "order", pumpGroup: "default", eventTypes: ["placed"] }],
+      ])
+
       const createdFlowTypes: string[] = []
       const createdPulsePathwayIds: string[] = []
-      ;(pump as unknown as {
-        running: boolean
-        pumps: Map<string, { stop(): Promise<void> }>
-        flowTypeEventTypes: Map<string, string[]>
-        dataPumpConstructor: {
-          create(options: Record<string, unknown>): Promise<{ start(cb?: unknown): Promise<void> }>
-        }
-      }).running = true
-      ;(pump as unknown as { pumps: Map<string, { stop(): Promise<void> }> }).pumps = new Map([
-        ["user", {
-          stop: async () => {
-            stoppedFlowTypes.push("user")
-          },
-        }],
-        ["order", {
-          stop: async () => {
-            stoppedFlowTypes.push("order")
-          },
-        }],
-      ])
-      ;(pump as unknown as { flowTypeEventTypes: Map<string, string[]> }).flowTypeEventTypes = new Map([
-        ["user", ["created", "updated"]],
-        ["order", ["placed"]],
-      ])
-      ;(pump as unknown as {
-        dataPumpConstructor: {
-          create(options: Record<string, unknown>): Promise<{ start(cb?: unknown): Promise<void> }>
-        }
-      }).dataPumpConstructor = {
+      internal.dataPumpConstructor = {
         create: async (options: Record<string, unknown>) => {
           const dataSource = options.dataSource as { flowType: string }
           const pulse = options.pulse as { pathwayId: string }
           createdFlowTypes.push(dataSource.flowType)
           createdPulsePathwayIds.push(pulse.pathwayId)
-
-          return {
-            start: async () => {},
-          }
+          return { start: async () => {} }
         },
       }
 
@@ -313,9 +429,11 @@ Deno.test({
         pathwayId: "pathway-123",
       })
 
-      assertEquals(stoppedFlowTypes.sort(), ["order", "user"])
       assertEquals(createdFlowTypes.sort(), ["order", "user"])
-      assertEquals(createdPulsePathwayIds, ["pathway-123", "pathway-123"])
+      assertEquals(
+        createdPulsePathwayIds.sort(),
+        ["pathway-123::order::default", "pathway-123::user::default"],
+      )
       assertEquals(pump.isRunning, true)
       assertEquals(pump.registeredFlowTypes.sort(), ["order", "user"])
     })

@@ -1,4 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts"
+import { FakeTime } from "https://deno.land/std@0.224.0/testing/time.ts"
 import { PathwayPump } from "../src/pathways/pump/pathway-pump.ts"
 import type { PumpState, PumpStateManager, PumpStateManagerFactory } from "../src/pathways/pump/types.ts"
 
@@ -14,11 +15,12 @@ class InMemoryPumpStateManager implements PumpStateManager {
 
 function createInMemoryStateFactory(): PumpStateManagerFactory {
   const managers = new Map<string, InMemoryPumpStateManager>()
-  return (flowType: string) => {
-    if (!managers.has(flowType)) {
-      managers.set(flowType, new InMemoryPumpStateManager())
+  return (flowType: string, pumpGroup: string) => {
+    const key = `${flowType}::${pumpGroup}`
+    if (!managers.has(key)) {
+      managers.set(key, new InMemoryPumpStateManager())
     }
-    return managers.get(flowType)!
+    return managers.get(key)!
   }
 }
 
@@ -88,6 +90,68 @@ Deno.test({
       restartAttempts.clear()
 
       assertEquals(restartAttempts.size, 0)
+    })
+
+    await t.step("restart loop keeps retrying when startPumpForGroup itself throws", async () => {
+      const time = new FakeTime()
+      try {
+        const pump = new PathwayPump({
+          stateManagerFactory: createInMemoryStateFactory(),
+          notifier: { type: "poller", pollerIntervalMs: 60_000 },
+        }, {
+          debug: () => {},
+          info: () => {},
+          warn: () => {},
+          error: () => {},
+        })
+        pump.configure({
+          tenant: "t",
+          dataCore: "dc",
+          apiKey: "k",
+          baseUrl: "https://api.flowcore.io",
+          processEvent: async () => {},
+        })
+
+        const internal = pump as unknown as {
+          running: boolean
+          startPumpForGroup: (meta: unknown) => Promise<void>
+          scheduleRestart: (meta: unknown) => void
+          restartTimers: Map<string, unknown>
+          restartAttempts: Map<string, number>
+        }
+
+        let attempts = 0
+        internal.running = true
+        internal.startPumpForGroup = () => {
+          attempts++
+          // First three attempts blow up — emulating a sticky failure
+          // (e.g. CP unreachable, DB credentials wrong, transient network outage).
+          if (attempts <= 3) {
+            return Promise.reject(new Error("synthetic startup failure"))
+          }
+          return Promise.resolve()
+        }
+
+        const meta = { flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] }
+        internal.scheduleRestart(meta)
+
+        // Each failing attempt schedules the next with exponential backoff (1s, 2s, 4s...).
+        // Tick incrementally so each scheduled timer + its async callback gets a chance to run
+        // before the next tick — tickAsync only fires timers already in queue at call time.
+        for (let i = 0; i < 10 && attempts < 4; i++) {
+          await time.tickAsync(40_000)
+        }
+
+        assertEquals(
+          attempts >= 4,
+          true,
+          `restart loop must keep retrying after synchronous failures (got ${attempts} attempts)`,
+        )
+        // Once a restart succeeds, no more timers should be queued.
+        assertEquals(internal.restartTimers.size, 0)
+      } finally {
+        time.restore()
+      }
     })
   },
 })
