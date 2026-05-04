@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.3.0...v2.4.0) (2026-05-04)
+
+
+### Features
+
+* **pump:** add pumpGroup to register() for splitting event types across pumps ([#80](https://github.com/flowcore-io/flowcore-pathways/issues/80)) ([c382ee6](https://github.com/flowcore-io/flowcore-pathways/commit/c382ee6332071b7a10f3146a0c21090d614a7f6a))
+
 ## [2.3.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.2.0...v2.3.0) (2026-05-04)
 
 
