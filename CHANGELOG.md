@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.2.0...v2.3.0) (2026-05-04)
+
+
+### Features
+
+* **builder:** add subscribe flag to register() for write-only pathways ([#78](https://github.com/flowcore-io/flowcore-pathways/issues/78)) ([6db013e](https://github.com/flowcore-io/flowcore-pathways/commit/6db013e592148d6d49faff9324f4798717365be6))
+
 ## [2.2.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.1.0...v2.2.0) (2026-04-30)
 
 
