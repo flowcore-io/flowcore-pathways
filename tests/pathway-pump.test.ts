@@ -232,37 +232,44 @@ Deno.test({
       )
     })
 
-    await t.step("pulse pathwayId is suffixed with ::flowType::pumpGroup", async () => {
-      const factory = createInMemoryStateFactory()
-      const pump = new PathwayPump({
-        stateManagerFactory: factory,
-        notifier: { type: "poller", pollerIntervalMs: 1000 },
-        pulse: { url: "http://cp.test", pathwayId: "p-123" },
-      })
+    await t.step(
+      "pulse pathwayId is forwarded unmodified (CP requires UUID, no ::flowType::pumpGroup suffix)",
+      async () => {
+        const factory = createInMemoryStateFactory()
+        const pump = new PathwayPump({
+          stateManagerFactory: factory,
+          notifier: { type: "poller", pollerIntervalMs: 1000 },
+          pulse: { url: "http://cp.test", pathwayId: "p-123" },
+        })
 
-      pump.configure({
-        tenant: "t",
-        dataCore: "dc",
-        apiKey: "k",
-        baseUrl: "https://api.flowcore.io",
-        processEvent: async () => {},
-      })
+        pump.configure({
+          tenant: "t",
+          dataCore: "dc",
+          apiKey: "k",
+          baseUrl: "https://api.flowcore.io",
+          processEvent: async () => {},
+        })
 
-      const seen: string[] = []
-      const internal = pump as unknown as InternalPump
-      internal.dataPumpConstructor = {
-        create: (options: Record<string, unknown>) => {
-          const pulse = options.pulse as { pathwayId: string }
-          seen.push(pulse.pathwayId)
-          return Promise.resolve({ start: async () => {} })
-        },
-      }
+        const seen: string[] = []
+        const internal = pump as unknown as InternalPump
+        internal.dataPumpConstructor = {
+          create: (options: Record<string, unknown>) => {
+            const pulse = options.pulse as { pathwayId: string }
+            seen.push(pulse.pathwayId)
+            return Promise.resolve({ start: async () => {} })
+          },
+        }
 
-      await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "hot", eventTypes: ["placed.fast"] })
-      await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] })
+        await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "hot", eventTypes: ["placed.fast"] })
+        await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] })
 
-      assertEquals(seen, ["p-123::orders::hot", "p-123::orders::default"])
-    })
+        // Same pathwayId on every group — the data-pathways CP pulse route validates
+        // pathwayId as a UUID and rejects anything else with 400 BAD_REQUEST. Per-group
+        // health visibility will return as a proper additive `pumpGroup` field through
+        // SDK + CP, not by mangling the pathwayId here.
+        assertEquals(seen, ["p-123", "p-123"])
+      },
+    )
 
     await t.step("notifier dataSource.eventTypes is restricted to the group's subset", async () => {
       const factory = createInMemoryStateFactory()
@@ -432,7 +439,7 @@ Deno.test({
       assertEquals(createdFlowTypes.sort(), ["order", "user"])
       assertEquals(
         createdPulsePathwayIds.sort(),
-        ["pathway-123::order::default", "pathway-123::user::default"],
+        ["pathway-123", "pathway-123"],
       )
       assertEquals(pump.isRunning, true)
       assertEquals(pump.registeredFlowTypes.sort(), ["order", "user"])

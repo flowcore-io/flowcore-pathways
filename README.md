@@ -287,8 +287,10 @@ What this gives you per pump group:
 - **Independent restart backoff.** A failure in the `hot` pump does not reset the cold pump's attempt counter, and the
   restart loop keeps retrying with exponential backoff (capped at 30s) until the pump comes back — including when the
   restart attempt itself throws synchronously.
-- **Per-group pulse identity.** When pulse reporting is configured, each pump emits pulses under
-  `${pathwayId}::${flowType}::${pumpGroup}` so the control plane can distinguish the health of each group.
+- **Pulse health.** When pulse reporting is configured, every group emits pulses with the resolved pathway UUID. The
+  Data Pathways CP pulse route (`POST /api/v1/pump-pulse`) validates `pathwayId` as a strict UUID, so each pulse goes
+  through unchanged regardless of pump group. Per-group health visibility (distinguishing `hot` from `default` for the
+  same flowType in the CP) is not yet wired and will land as an additive `pumpGroup` field through the SDK + CP.
 
 **Caveats (v2.4):**
 

@@ -279,11 +279,17 @@ export class PathwayPump {
     }
 
     if (this.pulseConfig) {
-      const baseId = this.pulseConfig.pathwayId ?? "unknown"
+      // Send the resolved pathway UUID unmodified — the Data Pathways CP pulse
+      // route validates `pathwayId: z.string().uuid()` and rejects anything else
+      // with 400 BAD_REQUEST. Earlier versions of this file appended
+      // `::${flowType}::${pumpGroup}` to distinguish per-group health, but the
+      // CP was never updated to parse that suffix, so every 2.4.0 pulse was
+      // 400'd in production. Per-group health visibility will return as a
+      // proper additive `pumpGroup` field through SDK + CP — tracked separately.
       pumpOptions.pulse = {
         url: this.pulseConfig.url,
         intervalMs: this.pulseConfig.intervalMs,
-        pathwayId: `${baseId}::${flowType}::${pumpGroup}`,
+        pathwayId: this.pulseConfig.pathwayId,
         successLogLevel: this.pulseConfig.successLogLevel,
         failureLogLevel: this.pulseConfig.failureLogLevel,
       }
