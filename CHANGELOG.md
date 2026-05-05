@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.1](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.0...v2.4.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* **pump:** forward pulse pathwayId unmodified — strip ::flowType::pumpGroup suffix ([#82](https://github.com/flowcore-io/flowcore-pathways/issues/82)) ([4c9c380](https://github.com/flowcore-io/flowcore-pathways/commit/4c9c380ac2955206f5437e622b1e20d758b8e14c))
+
 ## [2.4.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.3.0...v2.4.0) (2026-05-04)
 
 
