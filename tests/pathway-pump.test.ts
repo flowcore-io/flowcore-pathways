@@ -349,6 +349,71 @@ Deno.test({
       assertEquals([...pump.registeredFlowTypes].sort(), ["orders", "users"])
     })
 
+    await t.step(
+      "arity-2 state factory receives both (flowType, pumpGroup) so each group gets its own manager",
+      async () => {
+        // Regression: a factory declared with a default value on `pumpGroup`
+        // (e.g. `(flowType, pumpGroup = "default") => …`) has `.length === 1`,
+        // is detected as legacy, and is called with `flowType` only — collapsing
+        // every group onto a shared state manager. The factory MUST declare
+        // arity 2 (no defaults) so per-(flowType, pumpGroup) isolation works.
+        const calls: Array<{ flowType: string; pumpGroup: string | undefined }> = []
+        const stateByKey = new Map<string, InMemoryPumpStateManager>()
+        // Explicit arity 2 — `.length === 2`.
+        const factory = (flowType: string, pumpGroup: string): PumpStateManager => {
+          calls.push({ flowType, pumpGroup })
+          const key = `${flowType}::${pumpGroup}`
+          if (!stateByKey.has(key)) {
+            stateByKey.set(key, new InMemoryPumpStateManager())
+          }
+          return stateByKey.get(key)!
+        }
+
+        assertEquals(factory.length, 2, "factory must declare arity 2 — sanity check")
+
+        const warns: string[] = []
+        const pump = new PathwayPump({
+          stateManagerFactory: factory,
+          notifier: { type: "poller", pollerIntervalMs: 1000 },
+        }, {
+          debug: () => {},
+          info: () => {},
+          warn: (msg: string) => warns.push(msg),
+          error: () => {},
+        })
+
+        pump.configure({
+          tenant: "t",
+          dataCore: "dc",
+          apiKey: "k",
+          baseUrl: "https://api.flowcore.io",
+          processEvent: async () => {},
+        })
+
+        const internal = pump as unknown as InternalPump
+        internal.dataPumpConstructor = {
+          create: (_options: Record<string, unknown>) => Promise.resolve({ start: async () => {} }),
+        }
+
+        await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "hot", eventTypes: ["placed.fast"] })
+        await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] })
+
+        // Both args forwarded — legacy fallback was NOT taken.
+        assertEquals(calls, [
+          { flowType: "orders", pumpGroup: "hot" },
+          { flowType: "orders", pumpGroup: "default" },
+        ])
+        // Two distinct state manager instances exist, one per (flowType, pumpGroup).
+        assertEquals(stateByKey.size, 2)
+        // No legacy-arity warning.
+        assertEquals(
+          warns.filter((m) => m.includes("legacy single-arg signature")).length,
+          0,
+          "arity-2 factory must not trigger the legacy deprecation warning",
+        )
+      },
+    )
+
     await t.step("legacy single-arg state factory is accepted with a deprecation warning", async () => {
       const created = new Map<string, InMemoryPumpStateManager>()
       // Arity 1 — old factory signature.

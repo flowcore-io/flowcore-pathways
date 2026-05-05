@@ -18,6 +18,31 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async (t) => {
+    await t.step(
+      "factory function declares arity 2 — PathwayPump treats arity<=1 as legacy and would call it with flowType only",
+      async () => {
+        const factory = await createPostgresPumpStateManagerFactory({ ...config, tableName: TABLE_NEW })
+        try {
+          // Function.prototype.length skips parameters with default values.
+          // PathwayPump (`stateManagerFactoryArity <= 1`) treats arity-1
+          // factories as legacy and collapses every pumpGroup onto a single
+          // shared state manager. The factory MUST declare both parameters
+          // without defaults to keep .length at 2 — runtime safety for
+          // `pumpGroup === undefined` is handled inside the factory body.
+          assertEquals(
+            factory.length,
+            2,
+            "createPostgresPumpStateManagerFactory must return a function with arity 2",
+          )
+        } finally {
+          const adapter = new PostgresJsAdapter(config)
+          await adapter.connect()
+          await adapter.execute(`DROP TABLE IF EXISTS ${TABLE_NEW}`)
+          await adapter.disconnect()
+        }
+      },
+    )
+
     await t.step("greenfield schema accepts composite (flow_type, pump_group)", async () => {
       const factory = await createPostgresPumpStateManagerFactory({ ...config, tableName: TABLE_NEW })
       const adapter = new PostgresJsAdapter(config)

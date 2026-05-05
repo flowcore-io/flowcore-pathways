@@ -112,7 +112,13 @@ export async function createPostgresPumpStateManagerFactory(
   const adapter = new PostgresJsAdapter(pgConfig)
   await adapter.connect()
 
-  return (flowType: string, pumpGroup: string = DEFAULT_PUMP_GROUP): PumpStateManager => {
-    return new PostgresPumpStateManager(adapter, flowType, pumpGroup, table)
+  // The returned function MUST declare `pumpGroup` without a default value so
+  // `Function.prototype.length === 2`. PathwayPump's arity check
+  // (`stateManagerFactoryArity <= 1`) treats single-arg factories as legacy and
+  // calls them with `flowType` only — collapsing every pumpGroup onto one
+  // shared state manager. The `?? DEFAULT_PUMP_GROUP` fallback inside the body
+  // preserves runtime safety for any external caller passing `undefined`.
+  return (flowType: string, pumpGroup: string): PumpStateManager => {
+    return new PostgresPumpStateManager(adapter, flowType, pumpGroup ?? DEFAULT_PUMP_GROUP, table)
   }
 }
