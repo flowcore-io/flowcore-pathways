@@ -33,6 +33,9 @@ await build({
       "bun-sqlite-key-value": undefined as unknown as string,
       "ws": "^8.18.0",
       "zod": undefined as unknown as string,
+      // date-fns 4.2.0 dropped the top-level `types` field; TS 5.x (via dnt 0.41.3) can't
+      // resolve type defs through its exports map, so pin to the last known-good version.
+      "date-fns": "4.1.0",
     },
     devDependencies: {
       "@types/ws": "^8.5.10",
