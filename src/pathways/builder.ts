@@ -1778,14 +1778,31 @@ export class PathwaysBuilder<
   }
 
   /**
-   * Provision Flowcore infrastructure (data core, flow types, event types).
-   * Creates missing resources when descriptions are provided, updates descriptions
-   * when they differ. Fails if a resource is missing and no description is provided.
+   * Provision Flowcore infrastructure honoring `autoProvision`.
+   *
+   * By default this only provisions shared resources (data core, flow types, event types)
+   * because `DEFAULT_AUTO_PROVISION.pathway` is `false`. To also upsert the pathway
+   * instance (managed or virtual by-name), opt in via builder-level
+   * `autoProvision: { pathway: true }` or pass an override here.
+   *
    * Additive only — never deletes.
    */
-  async provision(): Promise<void> {
-    const registrations = await this.provisionSharedResources()
-    await this.registerPathwayInstance(registrations)
+  async provision(autoProvisionOverride?: boolean | AutoProvisionConfig): Promise<void> {
+    const ap = autoProvisionOverride != null ? resolveAutoProvision(autoProvisionOverride) : this.autoProvision
+
+    const shouldProvisionResources = ap.dataCore || ap.flowType || ap.eventType
+    let registrations: ProvisionerRegistration[] | null = null
+    if (shouldProvisionResources) {
+      registrations = await this.provisionSharedResources({
+        skipDataCore: !ap.dataCore,
+        skipFlowTypes: !ap.flowType,
+        skipEventTypes: !ap.eventType,
+      })
+    }
+
+    if (ap.pathway) {
+      await this.registerPathwayInstance(registrations ?? this.buildRegistrations())
+    }
   }
 
   /**

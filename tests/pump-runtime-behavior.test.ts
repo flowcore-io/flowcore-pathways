@@ -172,7 +172,7 @@ Deno.test({
         })
         const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
           lifecycle.push("fetch")
-          fetchBodies.push(JSON.parse(String(init?.body ?? "{}")))
+          fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
           return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -251,7 +251,7 @@ Deno.test({
         })
         const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
           lifecycle.push("fetch")
-          fetchBodies.push(JSON.parse(String(init?.body ?? "{}")))
+          fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
           return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -442,7 +442,7 @@ Deno.test({
         startCalls++
       })
       const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
-        fetchBodies.push(JSON.parse(String(init?.body ?? "{}")))
+        fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
         return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -490,7 +490,7 @@ Deno.test({
           startCalls++
         })
         const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
-          fetchBodies.push(JSON.parse(String(init?.body ?? "{}")))
+          fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
           return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -570,7 +570,7 @@ Deno.test({
         startCalls++
       })
       const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
-        fetchBodies.push(JSON.parse(String(init?.body ?? "{}")))
+        fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
         return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -609,7 +609,7 @@ Deno.test({
         startCalls++
       })
       const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
-        fetchBodies.push(JSON.parse(String(init?.body ?? "{}")))
+        fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
         return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
