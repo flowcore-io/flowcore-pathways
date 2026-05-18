@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.3](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.2...v2.4.3) (2026-05-18)
+
+
+### Bug Fixes
+
+* **builder:** provision() respects autoProvision + per-call override ([#86](https://github.com/flowcore-io/flowcore-pathways/issues/86)) ([589f0c4](https://github.com/flowcore-io/flowcore-pathways/commit/589f0c45f41b54983541a0b55c996ccf7aeb658d))
+
 ## [2.4.2](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.1...v2.4.2) (2026-05-05)
 
 
