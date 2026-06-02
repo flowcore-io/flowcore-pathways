@@ -528,7 +528,7 @@ export class ClusterManager {
       const ws = this.transport.connect(address)
 
       ws.onopen = () => {
-        this.logger.info("Connected to worker", { address })
+        this.logger.debug("Connected to worker", { address })
         this.workerConnections.set(address, ws)
       }
 
@@ -545,7 +545,7 @@ export class ClusterManager {
       }
 
       ws.onclose = () => {
-        this.logger.info("Disconnected from worker", { address })
+        this.logger.debug("Disconnected from worker", { address })
         this.workerConnections.delete(address)
         this.workerAddresses = this.workerAddresses.filter((a) => a !== address)
       }

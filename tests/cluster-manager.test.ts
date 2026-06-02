@@ -1,7 +1,9 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts"
 import type { PathwayCoordinator } from "../src/pathways/cluster/types.ts"
+import type { ClusterSocket, ClusterTransport } from "../src/pathways/cluster/types.ts"
 import { ClusterManager } from "../src/pathways/cluster/cluster-manager.ts"
 import type { FlowcoreEvent } from "../src/contracts/event.ts"
+import type { Logger, LoggerMeta } from "../src/pathways/logger.ts"
 
 /**
  * In-memory coordinator for testing
@@ -72,6 +74,36 @@ function createTestEvent(overrides?: Partial<FlowcoreEvent>): FlowcoreEvent {
     payload: { name: "test" },
     validTime: new Date().toISOString(),
     ...overrides,
+  }
+}
+
+function createRecordingLogger(): Logger & {
+  calls: { debug: string[]; info: string[]; warn: string[]; error: string[] }
+} {
+  const calls = {
+    debug: [] as string[],
+    info: [] as string[],
+    warn: [] as string[],
+    error: [] as string[],
+  }
+  return {
+    calls,
+    debug: (message: string, _context?: LoggerMeta) => calls.debug.push(message),
+    info: (message: string, _context?: LoggerMeta) => calls.info.push(message),
+    warn: (message: string, _context?: LoggerMeta) => calls.warn.push(message),
+    error: (messageOrError: string | Error) => calls.error.push(String(messageOrError)),
+  }
+}
+
+function createFakeClusterSocket(): ClusterSocket {
+  return {
+    readyState: 1,
+    send: () => {},
+    close: () => {},
+    onopen: null,
+    onmessage: null,
+    onclose: null,
+    onerror: null,
   }
 }
 
@@ -240,6 +272,32 @@ Deno.test({
       const instances2 = await coordinator.getInstances(60000)
       assertEquals(instances2.length, 1)
       assertEquals(instances2[0].instanceId, "inst-2")
+    })
+
+    await t.step("worker connection lifecycle logs should use debug, not info", () => {
+      const logger = createRecordingLogger()
+      const socket = createFakeClusterSocket()
+      const transport: ClusterTransport = {
+        startServer: () => Promise.resolve({ shutdown: () => Promise.resolve() }),
+        connect: () => socket,
+      }
+      const manager = new ClusterManager(
+        {
+          coordinator: new InMemoryCoordinator(),
+          advertisedAddress: "ws://localhost:19007",
+          port: 19007,
+          transport,
+        },
+        logger,
+      )
+      ;(manager as unknown as { connectToWorker(address: string): void }).connectToWorker("ws://worker:19008")
+      socket.onopen?.({})
+      socket.onclose?.({})
+
+      assertEquals(logger.calls.debug.includes("Connected to worker"), true)
+      assertEquals(logger.calls.debug.includes("Disconnected from worker"), true)
+      assertEquals(logger.calls.info.includes("Connected to worker"), false)
+      assertEquals(logger.calls.info.includes("Disconnected from worker"), false)
     })
   },
 })
