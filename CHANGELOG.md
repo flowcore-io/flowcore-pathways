@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.4](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.3...v2.4.4) (2026-06-02)
+
+
+### Bug Fixes
+
+* demote lifecycle logs ([#88](https://github.com/flowcore-io/flowcore-pathways/issues/88)) ([67ce6f8](https://github.com/flowcore-io/flowcore-pathways/commit/67ce6f858108c4124887aa4778a5fa3c6c4dffcd))
+
 ## [2.4.3](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.2...v2.4.3) (2026-05-18)
 
 
