@@ -1,4 +1,4 @@
-import { assertEquals, assertFalse, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts"
+import { assert, assertEquals, assertFalse, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts"
 import { createPostgresPathwayState, PostgresPathwayState } from "../src/pathways/postgres/postgres-pathway-state.ts"
 
 // Test configuration
@@ -120,13 +120,18 @@ Deno.test({
         port: 54321,
       }
 
-      await assertRejects(
+      const error = await assertRejects(
         async () => {
           const badState = createPostgresPathwayState(badConfig)
           await badState.isProcessed("some-event")
         },
         Error,
-        "ENOTFOUND",
+      )
+      // An unresolvable host is reported differently across resolvers/runners
+      // (ENOTFOUND vs EAI_AGAIN); both mean the host did not resolve.
+      assert(
+        /ENOTFOUND|EAI_AGAIN/.test(error.message),
+        `expected a DNS resolution failure (ENOTFOUND/EAI_AGAIN), got: ${error.message}`,
       )
     })
 
