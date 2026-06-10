@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.5](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.4...v2.4.5) (2026-06-10)
+
+
+### Bug Fixes
+
+* **pump:** vendor @flowcore/data-pump 0.21.4 (hung-connect self-heal) ([#90](https://github.com/flowcore-io/flowcore-pathways/issues/90)) ([7a9dbbb](https://github.com/flowcore-io/flowcore-pathways/commit/7a9dbbb2d68cf572d407c84158249afb33089b12))
+
 ## [2.4.4](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.3...v2.4.4) (2026-06-02)
 
 
