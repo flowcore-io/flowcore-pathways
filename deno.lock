@@ -5,7 +5,7 @@
     "jsr:@deno/cache-dir@~0.10.3": "0.10.3",
     "jsr:@deno/dnt@~0.41.3": "0.41.3",
     "jsr:@deno/graph@~0.73.1": "0.73.1",
-    "jsr:@flowcore/data-pump@~0.21.3": "0.21.3",
+    "jsr:@flowcore/data-pump@~0.21.4": "0.21.4",
     "jsr:@flowcore/sdk@^4.2.2": "4.2.2",
     "jsr:@flowcore/time-uuid@~0.1.1": "0.1.2",
     "jsr:@std/assert@0.223": "0.223.0",
@@ -69,8 +69,8 @@
     "@deno/graph@0.73.1": {
       "integrity": "cd69639d2709d479037d5ce191a422eabe8d71bb68b0098344f6b07411c84d41"
     },
-    "@flowcore/data-pump@0.21.3": {
-      "integrity": "c18caf7623501b7d3b6d0eb85a577909481950ddf850958208aa7d701d49b0c0",
+    "@flowcore/data-pump@0.21.4": {
+      "integrity": "488532273480244bc6401183f080094a600441fa7f87d6ed3cef9a76f56b2a24",
       "dependencies": [
         "jsr:@flowcore/sdk@^4.2.2",
         "jsr:@flowcore/time-uuid",
@@ -384,7 +384,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@deno/dnt@~0.41.3",
-      "jsr:@flowcore/data-pump@~0.21.3",
+      "jsr:@flowcore/data-pump@~0.21.4",
       "npm:@flowcore/sdk-transformer-core@^2.5.1",
       "npm:@flowcore/sdk@^4.2.2",
       "npm:bun-sqlite-key-value@^1.13.1",
