@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.6](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.5...v2.4.6) (2026-06-23)
+
+
+### Bug Fixes
+
+* consume npm @flowcore/data-pump + @flowcore/sdk (drop frozen JSR copies) ([#92](https://github.com/flowcore-io/flowcore-pathways/issues/92)) ([58403d1](https://github.com/flowcore-io/flowcore-pathways/commit/58403d1881f50316b6705e760273d1db1525d456))
+
 ## [2.4.5](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.4...v2.4.5) (2026-06-10)
 
 
