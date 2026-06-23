@@ -5,9 +5,6 @@
     "jsr:@deno/cache-dir@~0.10.3": "0.10.3",
     "jsr:@deno/dnt@~0.41.3": "0.41.3",
     "jsr:@deno/graph@~0.73.1": "0.73.1",
-    "jsr:@flowcore/data-pump@~0.21.4": "0.21.4",
-    "jsr:@flowcore/sdk@^4.2.2": "4.2.2",
-    "jsr:@flowcore/time-uuid@~0.1.1": "0.1.2",
     "jsr:@std/assert@0.223": "0.223.0",
     "jsr:@std/assert@0.226": "0.226.0",
     "jsr:@std/bytes@0.223": "0.223.0",
@@ -25,18 +22,13 @@
     "jsr:@std/path@~0.225.2": "0.225.2",
     "jsr:@ts-morph/bootstrap@0.24": "0.24.0",
     "jsr:@ts-morph/common@0.24": "0.24.0",
-    "npm:@date-fns/utc@^2.1.0": "2.1.1",
+    "npm:@flowcore/data-pump@~0.22.1": "0.22.1",
     "npm:@flowcore/sdk-transformer-core@^2.5.1": "2.5.1",
-    "npm:@flowcore/sdk@^4.2.2": "4.2.2",
-    "npm:@sinclair/typebox@0.32.15": "0.32.15",
+    "npm:@flowcore/sdk@^4.2.4": "4.2.4",
     "npm:bun-sqlite-key-value@^1.13.1": "1.13.1_typescript@5.9.3",
-    "npm:date-fns@^4.1.0": "4.4.0",
     "npm:file-type@21": "21.3.4",
-    "npm:long@^5.3.1": "5.3.2",
-    "npm:nats@^2.29.1": "2.29.3",
     "npm:node-cache@^5.1.2": "5.1.2",
     "npm:postgres@^3.4.3": "3.4.9",
-    "npm:prom-client@^15.1.3": "15.1.3",
     "npm:rxjs@^7.8.1": "7.8.2",
     "npm:ws@^8.18.0": "8.20.1",
     "npm:zod@^3.25.63": "3.25.76"
@@ -68,31 +60,6 @@
     },
     "@deno/graph@0.73.1": {
       "integrity": "cd69639d2709d479037d5ce191a422eabe8d71bb68b0098344f6b07411c84d41"
-    },
-    "@flowcore/data-pump@0.21.4": {
-      "integrity": "488532273480244bc6401183f080094a600441fa7f87d6ed3cef9a76f56b2a24",
-      "dependencies": [
-        "jsr:@flowcore/sdk@^4.2.2",
-        "jsr:@flowcore/time-uuid",
-        "npm:@date-fns/utc",
-        "npm:date-fns",
-        "npm:nats",
-        "npm:prom-client",
-        "npm:rxjs"
-      ]
-    },
-    "@flowcore/sdk@4.2.2": {
-      "integrity": "1f62166e11376d6e7aafa572e072665ea2e7591497254abce4e8b13b7b5d166c",
-      "dependencies": [
-        "npm:@sinclair/typebox",
-        "npm:rxjs"
-      ]
-    },
-    "@flowcore/time-uuid@0.1.2": {
-      "integrity": "3d531115cd5fef4ef9d72dbaec174aec827d8186965f92aec04359853722a705",
-      "dependencies": [
-        "npm:long"
-      ]
     },
     "@std/assert@0.223.0": {
       "integrity": "eb8d6d879d76e1cc431205bd346ed4d88dc051c6366365b1af47034b0670be24"
@@ -177,15 +144,22 @@
     "@date-fns/utc@2.1.1": {
       "integrity": "sha512-SlJDfG6RPeEX8wEVv6ZB3kak4MmbtyiI2qX/5zuKdordbrhB/iaJ58GVMZgJ6P1sJaM1gMgENFYYeg1JWrCFrA=="
     },
-    "@deno/shim-deno-test@0.5.0": {
-      "integrity": "sha512-4nMhecpGlPi0cSzT67L+Tm+GOJqvuk8gqHBziqcUQOarnuIax1z96/gJHCSIz2Z0zhxE6Rzwb3IZXPtFh51j+w=="
-    },
-    "@deno/shim-deno@0.18.2": {
-      "integrity": "sha512-oQ0CVmOio63wlhwQF75zA4ioolPvOwAoK0yuzcS5bDC1JUvH3y1GS8xPh8EOpcoDQRU4FTG8OQfxhpR+c6DrzA==",
+    "@flowcore/data-pump@0.22.1": {
+      "integrity": "sha512-Nv4cgGWoOvFRNAqd1E2hmR4lpfbdb1GqA0CNnYdg5eYE7Lj1AXbo4fVP8YMCm+iQDtEl/eH+GdVvVlveNkuJ1g==",
       "dependencies": [
-        "@deno/shim-deno-test",
-        "which"
+        "@date-fns/utc",
+        "@flowcore/sdk",
+        "@flowcore/sdk-oidc-client",
+        "@flowcore/time-uuid",
+        "@sinclair/typebox",
+        "date-fns",
+        "nats",
+        "prom-client",
+        "rxjs"
       ]
+    },
+    "@flowcore/sdk-oidc-client@1.3.1": {
+      "integrity": "sha512-fUHOmKDQYMqMDlh/KucJiDZ9he12QUkQ2KOJKCVy6GD7qsJs9qiJ8jV9th1Xeuz9kAca4TRXt+spMUhZ4CfUDw=="
     },
     "@flowcore/sdk-transformer-core@2.5.1": {
       "integrity": "sha512-RgXxMBsF/SxpE5libbPA+RKKM8tXJtKJKiHV86nY0ALY+5xSOmGXbvw1qUndwgOxSv5xiwL9rty0p1gLPFXmtw==",
@@ -194,13 +168,18 @@
         "radash"
       ]
     },
-    "@flowcore/sdk@4.2.2": {
-      "integrity": "sha512-PRLXCAqzKfeacBRCAZJTPciycmqB4WJSGxS94mzkkVWhvP0AwDRj8/yA2pP2juygDZRvtHEkD57E9HBTVJ0ZBA==",
+    "@flowcore/sdk@4.2.4": {
+      "integrity": "sha512-ODsC54c0QY8y1iySU+1MeSUOjdnxc64b3atIx/Vif94++uJzYclNaV4uBJKbEgijP1g3qQD65z6lcA2YoVf1Gw==",
       "dependencies": [
-        "@deno/shim-deno",
         "@sinclair/typebox",
         "rxjs",
         "ws"
+      ]
+    },
+    "@flowcore/time-uuid@0.2.0": {
+      "integrity": "sha512-48+3o2EAsJa0lZbVEb5GRYbGoq5FSBgis4LFvhWspdtrSI6LBHTkhKNJKMkLVw9GzYxvIKyjRfFgEQ9aqbkUSQ==",
+      "dependencies": [
+        "long"
       ]
     },
     "@opentelemetry/api@1.9.1": {
@@ -251,9 +230,6 @@
     },
     "ieee754@1.2.1": {
       "integrity": "sha512-dcyqhDvX1C46lXZcVqCpK+FtMRQVdIMN6/Df5js2zouUsqG7I6sFxitIC+7KYK29KdXOLHdu9zL4sFnoVQnqaA=="
-    },
-    "isexe@3.1.5": {
-      "integrity": "sha512-6B3tLtFqtQS4ekarvLVMZ+X+VlvQekbe4taUkf/rhVO3d/h0M2rfARm/pXLcPEsjjMsFgrFgSrhQIxcSVrBz8w=="
     },
     "long@5.3.2": {
       "integrity": "sha512-mNAgZ1GmyNhD7AuqnTG3/VQ26o760+ZYBPKjPvugO8+nLbYfX6TVpJPseBvopbdY+qpZ/lKUnmEc1LeZYS3QAA=="
@@ -332,13 +308,6 @@
     "uint8array-extras@1.5.0": {
       "integrity": "sha512-rvKSBiC5zqCCiDZ9kAOszZcDvdAHwwIKJG33Ykj43OKcWsnmcBRL09YTU4nOeHZ8Y2a7l1MgTd08SBe9A8Qj6A=="
     },
-    "which@4.0.0": {
-      "integrity": "sha512-GlaYyEb07DPxYCKhKzplCWBJtvxZcZMrL+4UkrTSJHHPyZU4mYYTv3qaOe77H7EODLSSopAUFAc6W8U4yqvscg==",
-      "dependencies": [
-        "isexe"
-      ],
-      "bin": true
-    },
     "ws@8.20.1": {
       "integrity": "sha512-It4dO0K5v//JtTXuPkfEOaI3uUN87iYPnqo/ZzqCoG3g8uhA66QUMs/SrM0YK7/NAu+r4LMh/9dq2A7k+rHs+w=="
     },
@@ -376,17 +345,27 @@
     "https://deno.land/std@0.224.0/assert/mod.ts": "48b8cb8a619ea0b7958ad7ee9376500fe902284bb36f0e32c598c3dc34cbd6f3",
     "https://deno.land/std@0.224.0/assert/unimplemented.ts": "8c55a5793e9147b4f1ef68cd66496b7d5ba7a9e7ca30c6da070c1a58da723d73",
     "https://deno.land/std@0.224.0/assert/unreachable.ts": "5ae3dbf63ef988615b93eb08d395dda771c96546565f9e521ed86f6510c29e19",
+    "https://deno.land/std@0.224.0/async/delay.ts": "f90dd685b97c2f142b8069082993e437b1602b8e2561134827eeb7c12b95c499",
+    "https://deno.land/std@0.224.0/data_structures/_binary_search_node.ts": "ce1da11601fef0638df4d1e53c377f791f96913383277389286b390685d76c07",
+    "https://deno.land/std@0.224.0/data_structures/_red_black_node.ts": "4af8d3c5ac5f119d8058269259c46ea22ead567246cacde04584a83e43a9d2ea",
+    "https://deno.land/std@0.224.0/data_structures/binary_search_tree.ts": "2dd43d97ce5f5a4bdba11b075eb458db33e9143f50997b0eebf02912cb44f5d5",
+    "https://deno.land/std@0.224.0/data_structures/comparators.ts": "17dfa68bf1550edadbfdd453a06f9819290bcb534c9945b5cec4b30242cff475",
+    "https://deno.land/std@0.224.0/data_structures/red_black_tree.ts": "2222be0c46842fc932e2c8589a66dced9e6eae180914807c5c55d1aa4c8c1b9b",
     "https://deno.land/std@0.224.0/fmt/colors.ts": "508563c0659dd7198ba4bbf87e97f654af3c34eb56ba790260f252ad8012e1c5",
+    "https://deno.land/std@0.224.0/http/server.ts": "f9313804bf6467a1704f45f76cb6cd0a3396a3b31c316035e6a4c2035d1ea514",
     "https://deno.land/std@0.224.0/internal/diff.ts": "6234a4b493ebe65dc67a18a0eb97ef683626a1166a1906232ce186ae9f65f4e6",
     "https://deno.land/std@0.224.0/internal/format.ts": "0a98ee226fd3d43450245b1844b47003419d34d210fa989900861c79820d21c2",
-    "https://deno.land/std@0.224.0/internal/mod.ts": "534125398c8e7426183e12dc255bb635d94e06d0f93c60a297723abe69d3b22e"
+    "https://deno.land/std@0.224.0/internal/mod.ts": "534125398c8e7426183e12dc255bb635d94e06d0f93c60a297723abe69d3b22e",
+    "https://deno.land/std@0.224.0/testing/_time.ts": "fefd1ff35b50a410db9b0e7227e05163e1b172c88afd0d2071df0125958c3ff3",
+    "https://deno.land/std@0.224.0/testing/mock.ts": "a963181c2860b6ba3eb60e08b62c164d33cf5da7cd445893499b2efda20074db",
+    "https://deno.land/std@0.224.0/testing/time.ts": "7119072a198e9913da0d21106b1f05a90a4c05b07075529770ff0e2a9eb5eaba"
   },
   "workspace": {
     "dependencies": [
       "jsr:@deno/dnt@~0.41.3",
-      "jsr:@flowcore/data-pump@~0.21.4",
+      "npm:@flowcore/data-pump@~0.22.1",
       "npm:@flowcore/sdk-transformer-core@^2.5.1",
-      "npm:@flowcore/sdk@^4.2.2",
+      "npm:@flowcore/sdk@^4.2.4",
       "npm:bun-sqlite-key-value@^1.13.1",
       "npm:file-type@21",
       "npm:node-cache@^5.1.2",
