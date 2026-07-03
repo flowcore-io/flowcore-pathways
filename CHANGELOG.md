@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.6...v2.5.0) (2026-07-03)
+
+
+### Features
+
+* add encrypted pathway payload envelopes ([#94](https://github.com/flowcore-io/flowcore-pathways/issues/94)) ([1a12521](https://github.com/flowcore-io/flowcore-pathways/commit/1a12521e42be2688ad650b845c2ef8b533a55230))
+
 ## [2.4.6](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.5...v2.4.6) (2026-06-23)
 
 
