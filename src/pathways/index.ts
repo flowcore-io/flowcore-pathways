@@ -21,6 +21,7 @@ export type {
   ProvisionFailureMode,
 } from "./provisioner.ts"
 export * from "./constants.ts"
+export * from "./encryption.ts"
 export * from "./internal-pathway.state.ts"
 export * from "./kv/kv-adapter.ts"
 export * from "./logger.ts"

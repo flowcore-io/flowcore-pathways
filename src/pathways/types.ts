@@ -86,6 +86,14 @@ export interface PathwayContract<F extends string, E extends string, T extends A
   isFilePathway?: boolean
 
   /**
+   * Enables whole-payload encryption for this pathway.
+   *
+   * When a symmetric key is configured on the builder, writes send a Flowcore-compatible
+   * encrypted envelope and processing decrypts marked events before validation.
+   */
+  encrypted?: boolean
+
+  /**
    * Description for the event type. When provided, the provisioner will create/update
    * this event type on the platform. When undefined, the event type must pre-exist.
    */

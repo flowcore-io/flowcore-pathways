@@ -86,6 +86,16 @@ import {
 import { FileEventSchema, FileInputSchema } from "./types.ts"
 import type { Buffer } from "node:buffer"
 import process from "node:process"
+import {
+  createPathwayEncryptionProvider,
+  decryptPayloadEnvelope,
+  encryptPayloadEnvelope,
+  PATHWAY_ENCRYPTED_METADATA_KEY,
+  PATHWAY_ENCRYPTION_SCHEME,
+  PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY,
+  type PathwayEncryptionConfig,
+  type PathwayEncryptionProvider,
+} from "./encryption.ts"
 
 /**
  * Default timeout for pathway processing in milliseconds (10 seconds)
@@ -247,6 +257,15 @@ export interface PathwaysBuilderConfig {
    */
   provisionFailure?: ProvisionFailureMode | ProvisionFailureConfig
   managedConfig?: ManagedPathwayConfig
+  /**
+   * Optional symmetric encryption for pathways marked with `encrypted`.
+   *
+   * When omitted, `mode: "none"`, or `mode: "symmetric"` without a key, encrypted
+   * pathway payloads are left unchanged. When a symmetric key is supplied, the
+   * full payload is AES-256-GCM encrypted on write and decrypted before
+   * process-time schema validation and handlers.
+   */
+  encryption?: PathwayEncryptionConfig
 }
 
 /**
@@ -386,6 +405,7 @@ export class PathwaysBuilder<
   private readonly writable: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
   private readonly subscribed: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
   private readonly pumpGroups: Record<keyof TPathway, string> = {} as Record<keyof TPathway, string>
+  private readonly encryptedPathways: Record<keyof TPathway, boolean> = {} as Record<keyof TPathway, boolean>
   private readonly timeouts: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
   private readonly maxRetries: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
   private readonly retryDelays: Record<keyof TPathway, number> = {} as Record<keyof TPathway, number>
@@ -403,6 +423,7 @@ export class PathwaysBuilder<
 
   // Logger instance (but not using it yet due to TypeScript errors)
   private readonly logger: Logger
+  private readonly encryptionProvider: PathwayEncryptionProvider | null
 
   // Configuration values needed for cloning
   private readonly baseUrl: string
@@ -481,6 +502,7 @@ export class PathwaysBuilder<
     defaultAutoProvision,
     provisionFailure,
     managedConfig,
+    encryption,
   }: PathwaysBuilderConfig) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger()
@@ -505,6 +527,7 @@ export class PathwaysBuilder<
     this.dataCoreAccessControl = dataCoreAccessControl ?? "private"
     this.dataCoreDeleteProtection = dataCoreDeleteProtection ?? false
     this.provisionFailure = provisionFailure
+    this.encryptionProvider = createPathwayEncryptionProvider(encryption)
 
     // Store virtual pathway auto-provisioning config
     this.pathwayName = pathwayName
@@ -661,6 +684,8 @@ export class PathwaysBuilder<
       this.logger.error(error)
       throw new Error(error)
     }
+
+    data.payload = this.decryptPathwayPayload(pathway, data.payload, data.metadata)
 
     // Validate event payload against schema if available
     if (this.schemas[pathway]) {
@@ -845,6 +870,7 @@ export class PathwaysBuilder<
       maxRetries?: number
       retryDelayMs?: number
       isFilePathway?: FP
+      encrypted?: boolean
     },
   ): PathwaysBuilder<
     & TPathway
@@ -857,6 +883,10 @@ export class PathwaysBuilder<
     const path = `${contract.flowType}/${contract.eventType}` as PathwayKey<F, E>
     const writable = contract.writable ?? true
     const subscribe = contract.subscribe ?? true
+    const encrypted = contract.encrypted === true
+    if (contract.isFilePathway && encrypted) {
+      throw new Error(`Pathway ${path} is a file pathway and cannot be encrypted`)
+    }
     if (contract.pumpGroup !== undefined && contract.pumpGroup.trim() === "") {
       throw new Error(
         `Pathway ${path} has an empty pumpGroup — pumpGroup must be a non-empty string when set`,
@@ -871,6 +901,7 @@ export class PathwaysBuilder<
       writable,
       subscribe,
       pumpGroup,
+      encrypted,
       isFilePathway: contract.isFilePathway,
       timeoutMs: contract.timeoutMs,
       maxRetries: contract.maxRetries,
@@ -921,6 +952,7 @@ export class PathwaysBuilder<
     this.writable[path] = writable
     this.subscribed[path] = subscribe
     this.pumpGroups[path] = pumpGroup
+    this.encryptedPathways[path] = encrypted
 
     // Store provisioning descriptions
     if (contract.description !== undefined) {
@@ -937,6 +969,7 @@ export class PathwaysBuilder<
       writable,
       subscribe,
       pumpGroup,
+      encrypted,
       isFilePathway: contract.isFilePathway,
     })
 
@@ -1208,11 +1241,17 @@ export class PathwaysBuilder<
       finalMetadata[AUDIT_SESSION_ID] = options.sessionId
     }
 
+    const { data: eventData, encrypted } = this.encryptPathwayPayload(path, data, Boolean(batch))
+    if (encrypted) {
+      finalMetadata[PATHWAY_ENCRYPTED_METADATA_KEY] = "true"
+      finalMetadata[PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY] = PATHWAY_ENCRYPTION_SCHEME
+    }
+
     let eventIds: string | string[] = []
     this.logger.debug(`Writing webhook data to pathway`, { pathway: pathStr, batch })
     if (batch) {
       eventIds = await (this.batchWriters[path] as SendWebhookBatch<TPathway[TPath]["output"]>)(
-        data as unknown as TPathway[TPath]["output"][],
+        eventData as unknown as TPathway[TPath]["output"][],
         finalMetadata,
         options,
       ).catch((error) => {
@@ -1223,7 +1262,7 @@ export class PathwaysBuilder<
         throw error
       })
     } else if (this.filePathways.has(path)) {
-      const { fileId, fileName, fileContent, ...additionalProperties } = data as z.infer<typeof FileInputSchema>
+      const { fileId, fileName, fileContent, ...additionalProperties } = eventData as z.infer<typeof FileInputSchema>
       const fileType = await fileTypeFromBuffer(fileContent as Buffer)
       process.env.DEBUG?.includes("pathways") && console.log("additionalProperties", additionalProperties)
       eventIds = await (this.fileWriters[path] as SendFilehook)(
@@ -1246,7 +1285,7 @@ export class PathwaysBuilder<
         throw error
       })
     } else {
-      eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]["output"]>)(data, finalMetadata, options)
+      eventIds = await (this.writers[path] as SendWebhook<TPathway[TPath]["output"]>)(eventData, finalMetadata, options)
         .catch((error) => {
           this.logger.error(`Error writing webhook to pathway`, {
             pathway: pathStr,
@@ -1276,6 +1315,58 @@ export class PathwaysBuilder<
     }
 
     return eventIds
+  }
+
+  private encryptPathwayPayload<TPath extends keyof TPathway>(
+    path: TPath,
+    data: unknown,
+    batch: boolean,
+  ): { data: unknown; encrypted: boolean } {
+    if (!this.encryptedPathways[path] || !this.encryptionProvider) {
+      return { data, encrypted: false }
+    }
+
+    if (batch) {
+      if (!Array.isArray(data)) {
+        return { data, encrypted: false }
+      }
+      return {
+        data: data.map((item) => encryptPayloadEnvelope(item, this.encryptionProvider!)),
+        encrypted: true,
+      }
+    }
+
+    return {
+      data: encryptPayloadEnvelope(data, this.encryptionProvider),
+      encrypted: true,
+    }
+  }
+
+  private decryptPathwayPayload<TPath extends keyof TPathway>(
+    path: TPath,
+    payload: unknown,
+    metadata: unknown,
+  ): unknown {
+    if (!this.encryptedPathways[path] || !this.hasEncryptedPayloadMetadata(metadata)) {
+      return payload
+    }
+
+    if (!this.encryptionProvider) {
+      throw new Error(
+        `Pathway ${String(path)} received encrypted payload but no symmetric encryption key is configured`,
+      )
+    }
+
+    return decryptPayloadEnvelope(payload, this.encryptionProvider)
+  }
+
+  private hasEncryptedPayloadMetadata(metadata: unknown): boolean {
+    if (!metadata || typeof metadata !== "object") {
+      return false
+    }
+
+    const value = (metadata as Record<string, unknown>)[PATHWAY_ENCRYPTED_METADATA_KEY]
+    return value === true || value === "true"
   }
 
   /**
