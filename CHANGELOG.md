@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.1](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.0...v2.5.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **ci:** stop upgrading npm beyond node support ([#96](https://github.com/flowcore-io/flowcore-pathways/issues/96)) ([9cf2bb9](https://github.com/flowcore-io/flowcore-pathways/commit/9cf2bb99dec8a5f1b3177af60299bb732e09437f))
+
 ## [2.5.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.4.6...v2.5.0) (2026-07-03)
 
 
