@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.2](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.1...v2.5.2) (2026-08-06)
+
+
+### Bug Fixes
+
+* **ci:** use supported npm trusted publish runtime ([#98](https://github.com/flowcore-io/flowcore-pathways/issues/98)) ([4ceddbe](https://github.com/flowcore-io/flowcore-pathways/commit/4ceddbead0b7d537dc1bc19cfed42d9d9cfb9660))
+
 ## [2.5.1](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.0...v2.5.1) (2026-08-06)
 
 
