@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.3](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.2...v2.5.3) (2026-08-13)
+
+
+### Bug Fixes
+
+* **encryption:** decrypt cluster-routed payloads exactly once ([#100](https://github.com/flowcore-io/flowcore-pathways/issues/100)) ([1ae1cfe](https://github.com/flowcore-io/flowcore-pathways/commit/1ae1cfe8e31e94c3f678c5f0deca642c06ecf47e))
+
 ## [2.5.2](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.1...v2.5.2) (2026-08-06)
 
 
