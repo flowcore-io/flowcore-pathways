@@ -92,6 +92,30 @@ export function encryptPayloadEnvelope(payload: unknown, provider: PathwayEncryp
   }
 }
 
+/**
+ * Removes the pathway encryption markers from event metadata.
+ *
+ * The markers describe the payload as it was written to Flowcore. Once the payload has been
+ * decrypted they no longer hold, so they are dropped to keep the event self-consistent and to stop
+ * a later pass (cluster mode re-enters `process()` through the cluster event handler) from trying
+ * to decrypt the now-plaintext payload.
+ *
+ * Returns a new object; the input is left untouched.
+ */
+export function stripPathwayEncryptionMetadata(metadata: unknown): unknown {
+  if (!metadata || typeof metadata !== "object") {
+    return metadata
+  }
+
+  const {
+    [PATHWAY_ENCRYPTED_METADATA_KEY]: _encrypted,
+    [PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY]: _scheme,
+    ...rest
+  } = metadata as Record<string, unknown>
+
+  return rest
+}
+
 export function decryptPayloadEnvelope(payload: unknown, provider: PathwayEncryptionProvider): unknown {
   const encryptedPayload = typeof payload === "string"
     ? payload
