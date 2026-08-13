@@ -95,6 +95,7 @@ import {
   PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY,
   type PathwayEncryptionConfig,
   type PathwayEncryptionProvider,
+  stripPathwayEncryptionMetadata,
 } from "./encryption.ts"
 
 /**
@@ -685,7 +686,13 @@ export class PathwaysBuilder<
       throw new Error(error)
     }
 
-    data.payload = this.decryptPathwayPayload(pathway, data.payload, data.metadata)
+    if (this.shouldDecryptPathwayPayload(pathway, data.metadata)) {
+      data.payload = this.decryptPathwayPayload(pathway, data.payload)
+      // Drop the encryption markers once the payload is plaintext. Cluster mode hands this same
+      // event back to process() through the cluster event handler; a stale marker would make the
+      // second pass try to decrypt an already-decrypted payload and throw.
+      data.metadata = stripPathwayEncryptionMetadata(data.metadata) as typeof data.metadata
+    }
 
     // Validate event payload against schema if available
     if (this.schemas[pathway]) {
@@ -1342,15 +1349,22 @@ export class PathwaysBuilder<
     }
   }
 
+  /**
+   * Whether an incoming event still carries an encrypted payload that this pathway must decrypt.
+   * Pathways that are not registered with `encrypted: true` are left alone even when the marker is
+   * present — those carry an application-level envelope the handler owns.
+   */
+  private shouldDecryptPathwayPayload<TPath extends keyof TPathway>(
+    path: TPath,
+    metadata: unknown,
+  ): boolean {
+    return Boolean(this.encryptedPathways[path]) && this.hasEncryptedPayloadMetadata(metadata)
+  }
+
   private decryptPathwayPayload<TPath extends keyof TPathway>(
     path: TPath,
     payload: unknown,
-    metadata: unknown,
   ): unknown {
-    if (!this.encryptedPathways[path] || !this.hasEncryptedPayloadMetadata(metadata)) {
-      return payload
-    }
-
     if (!this.encryptionProvider) {
       throw new Error(
         `Pathway ${String(path)} received encrypted payload but no symmetric encryption key is configured`,
