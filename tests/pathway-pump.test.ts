@@ -271,7 +271,11 @@ Deno.test({
       },
     )
 
-    await t.step("notifier dataSource.eventTypes is restricted to the group's subset", async () => {
+    // The notifier reads its data source from the pump's TOP-LEVEL `dataSource`, not from
+    // anything nested under `notifier` — it uses those event types to filter incoming
+    // websocket frames, which are delivered at flowType scope. Asserting the top-level
+    // field is what actually protects per-group scoping.
+    await t.step("dataSource.eventTypes is restricted to the group's subset", async () => {
       const factory = createInMemoryStateFactory()
       const pump = new PathwayPump({
         stateManagerFactory: factory,
@@ -290,8 +294,8 @@ Deno.test({
       const internal = pump as unknown as InternalPump
       internal.dataPumpConstructor = {
         create: (options: Record<string, unknown>) => {
-          const notifier = options.notifier as { dataSource: { eventTypes: string[] } }
-          seenNotifierEventTypes.push([...notifier.dataSource.eventTypes])
+          const dataSource = options.dataSource as { eventTypes: string[] }
+          seenNotifierEventTypes.push([...dataSource.eventTypes])
           return Promise.resolve({ start: async () => {} })
         },
       }

@@ -12,6 +12,7 @@ Pathways helps you build event-driven applications with type-safe pathways for p
   - [Creating a Pathways Builder](#creating-a-pathways-builder)
   - [Runtime Defaults and Auto-Provisioning](#runtime-defaults-and-auto-provisioning)
   - [Pump Concurrency](#pump-concurrency)
+  - [Notification Delivery and Write Timeouts](#notification-delivery-and-write-timeouts)
   - [Registering Pathways](#registering-pathways)
   - [Handling Events](#handling-events)
   - [Writing Events](#writing-events)
@@ -311,6 +312,65 @@ const factory: PumpStateManagerFactory = (flowType, pumpGroup) => createMyStateM
 Legacy single-argument factories continue to work but share state across pump groups on the same flow type — a
 deprecation warning is logged once per pump.
 
+### Notification Delivery and Write Timeouts
+
+A non-`fireAndForget` `write()` returns only once the local pump has processed the event. The pump learns that an event
+exists from an `event.stored.*` notification, so the write's latency is bounded by notification delivery — not by the
+write itself.
+
+**The write and the wait are separate concerns.** When `write()` throws a timeout, the event has already been stored
+durably; only the acknowledgement is missing. Retrying such a write duplicates the event. If a notification is dropped
+in transit, the pump's own safety re-poll recovers it — but that re-poll is currently `20000ms`, which is longer than
+the default `pathwayTimeoutMs` of `10000ms`. Any dropped notification therefore surfaces as a timeout on a write that
+actually succeeded.
+
+**On request paths, use `fireAndForget`:**
+
+```typescript
+// An HTTP handler should not block on downstream processing.
+await pathways.write("order/placed", {
+  data: orderData,
+  options: { fireAndForget: true },
+})
+```
+
+Reach for the blocking form when the caller genuinely needs read-your-writes behaviour — a test, a migration, a CLI step
+— and raise `pathwayTimeoutMs` above the re-poll interval if a dropped notification must not fail the call:
+
+```typescript
+const pathways = new PathwaysBuilder({
+  // ...other config
+  pathwayTimeoutMs: 25000, // above the 20s notifier re-poll
+})
+```
+
+#### Choosing a notifier
+
+`startPump({ notifier })` selects how the pump is told that new events exist. It defaults to `websocket`:
+
+```typescript
+// Default — long-lived websocket subscription, lowest latency.
+await pathways.startPump({ notifier: { type: "websocket" } })
+
+// Polling — no notification dependency at all. Useful for low-volume workloads with long
+// idle windows, where a websocket can flap without surfacing an error.
+await pathways.startPump({ notifier: { type: "poller", pollerIntervalMs: 60000 } })
+
+// NATS — subscribes to stored-event subjects directly, bypassing websocket fan-out.
+await pathways.startPump({ notifier: { type: "nats", natsServers: ["nats://nats:4222"] } })
+```
+
+> **Upgrade warning (2.5.4).** Before 2.5.4 the `poller` and `nats` options were accepted but silently ignored: the
+> emitted configuration omitted the discriminator the data pump reads, so **every pump ran `websocket`** no matter what
+> was configured. From 2.5.4 you get the notifier you asked for. If you configured one of these, treat the upgrade as a
+> behaviour change, not a patch:
+>
+> - **`nats`** — the pump now really connects to your NATS servers. Confirm they are reachable from the workload before
+>   upgrading; a failing connection puts the pump into its restart backoff loop.
+> - **`poller`** — the pump now really polls. Note that `@flowcore/data-pump` currently waits
+>   `Math.min(pollerIntervalMs, 1000)`, so any interval above one second still polls every second. Budget for the
+>   request volume, and prefer `websocket` or `nats` if you chose polling to reduce load.
+
 ### Registering Pathways
 
 Register pathways with their schemas for type-safe event handling:
@@ -391,7 +451,8 @@ const eventId2 = await pathways.write("order/placed", {
   },
 })
 
-// Fire-and-forget mode (doesn't wait for processing)
+// Fire-and-forget mode (doesn't wait for processing).
+// Prefer this on request paths — see "Notification Delivery and Write Timeouts".
 const eventId3 = await pathways.write("order/placed", {
   data: orderData,
   options: {
