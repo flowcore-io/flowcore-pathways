@@ -38,6 +38,16 @@ type DataPumpInstance = any
 // deno-lint-ignore no-explicit-any
 type DataPumpConstructor = any
 
+/**
+ * Notifier options as `@flowcore/data-pump` declares them
+ * (`FlowcoreDataPumpNotifierOptions`). Mirrored here because the pump is imported
+ * dynamically and therefore untyped at this boundary — see {@link PathwayPump.buildNotifierOptions}.
+ */
+type DataPumpNotifierOptions =
+  | { type: "websocket" }
+  | { type: "nats"; servers: string[] }
+  | { type: "poller"; intervalMs: number }
+
 const RESTART_BASE_MS = 1_000
 const RESTART_MAX_MS = 30_000
 
@@ -246,7 +256,7 @@ export class PathwayPump {
     const stateManager = this.resolveStateManager(flowType, pumpGroup)
     this.stateManagers.set(key, stateManager)
 
-    const notifierOptions = this.buildNotifierOptions(flowType, eventTypes)
+    const notifierOptions = this.buildNotifierOptions()
 
     const pumpOptions: Record<string, unknown> = {
       auth: { apiKey: this.apiKey },
@@ -524,26 +534,26 @@ export class PathwayPump {
     return [...this.groupMeta.values()].map((m) => ({ flowType: m.flowType, pumpGroup: m.pumpGroup }))
   }
 
-  // deno-lint-ignore no-explicit-any
-  private buildNotifierOptions(flowType: string, eventTypes: string[]): any {
-    const base = {
-      dataSource: {
-        tenant: this.tenant,
-        dataCore: this.dataCore,
-        flowType,
-        eventTypes,
-      },
-      auth: { apiKey: this.apiKey },
-    }
-
+  /**
+   * Translate our notifier config into the exact shape `@flowcore/data-pump` reads.
+   *
+   * The pump discriminates on `notifier.type` and pulls `servers` / `intervalMs` off the
+   * matching variant. `auth` and `dataSource` come from the top-level pump options, not
+   * from here — anything extra placed on the notifier object is ignored.
+   *
+   * Emitting any other shape is silent: both discriminator checks resolve to `undefined`
+   * and every pump falls through to the websocket notifier regardless of what the caller
+   * configured. Keep this in lockstep with `FlowcoreDataPumpNotifierOptions`.
+   */
+  private buildNotifierOptions(): DataPumpNotifierOptions {
     switch (this.notifier.type) {
       case "nats":
-        return { ...base, natsServers: this.notifier.natsServers }
+        return { type: "nats", servers: this.notifier.natsServers }
       case "poller":
-        return { ...base, pollerIntervalMs: this.notifier.pollerIntervalMs }
+        return { type: "poller", intervalMs: this.notifier.pollerIntervalMs }
       case "websocket":
       default:
-        return base
+        return { type: "websocket" }
     }
   }
 }

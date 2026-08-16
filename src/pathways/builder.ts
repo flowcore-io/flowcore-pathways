@@ -1410,7 +1410,13 @@ export class PathwaysBuilder<
       const elapsedTime = Date.now() - startTime
 
       if (elapsedTime > timeoutMs) {
-        const errorMessage = `Pathway processing timed out after ${timeoutMs}ms for event ${eventId}`
+        // The write itself succeeded — this timeout only means the local pump has not
+        // observed the event yet. Say so, because the obvious reading ("the write failed")
+        // leads callers to retry and duplicate a durable event.
+        const errorMessage = `Pathway processing timed out after ${timeoutMs}ms for event ${eventId}. ` +
+          `The event was written successfully and is durable; it will still be processed. ` +
+          `Do not retry the write — it would duplicate the event. ` +
+          `Use fireAndForget on request paths that must not block on processing.`
         this.logger.error(errorMessage, new Error(errorMessage), {
           eventId,
           timeoutMs,
