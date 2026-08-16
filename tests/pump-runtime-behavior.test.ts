@@ -558,7 +558,7 @@ Deno.test({
       },
     )
 
-    await t.step("autoProvision.pathway=true triggers registerPathwayInstance", async () => {
+    await t.step("development ignores autoProvision.pathway=true and never upserts by name", async () => {
       let provisionCalls = 0
       let startCalls = 0
       const fetchBodies: Array<Record<string, unknown>> = []
@@ -588,8 +588,8 @@ Deno.test({
 
         assertEquals(provisionCalls, 1)
         assertEquals(startCalls, 1)
-        assertEquals(fetchBodies.length, 1)
-        assertEquals(fetchBodies[0].type, "virtual")
+        // A pathway instance is a shared control-plane resource — dev boots must not create one.
+        assertEquals(fetchBodies.length, 0)
       } finally {
         provisionStub.restore()
         startStub.restore()
@@ -597,7 +597,7 @@ Deno.test({
       }
     })
 
-    await t.step("per-startPump autoProvision override wins over builder-level config", async () => {
+    await t.step("development per-startPump autoProvision.pathway override is also ignored", async () => {
       let provisionCalls = 0
       let startCalls = 0
       const fetchBodies: Array<Record<string, unknown>> = []
@@ -617,7 +617,6 @@ Deno.test({
       })
 
       try {
-        // Builder-level: resources on, pathway off (default). Override via startPump.
         const builder = createBuilder({
           runtimeEnv: "development",
           pathwayName: "dev-service",
@@ -630,7 +629,133 @@ Deno.test({
 
         assertEquals(provisionCalls, 1)
         assertEquals(startCalls, 1)
+        assertEquals(fetchBodies.length, 0)
+      } finally {
+        provisionStub.restore()
+        startStub.restore()
+        fetchStub.restore()
+      }
+    })
+
+    await t.step("development provision() never upserts the pathway by name either", async () => {
+      let provisionCalls = 0
+      let fetchCalls = 0
+
+      const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {
+        provisionCalls++
+      })
+      const fetchStub = stub(globalThis, "fetch", async () => {
+        fetchCalls++
+        return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      })
+
+      try {
+        const builder = createBuilder({
+          runtimeEnv: "development",
+          pathwayName: "dev-service",
+          autoProvision: { pathway: true },
+        })
+
+        await builder.provision()
+
+        assertEquals(provisionCalls, 1)
+        assertEquals(fetchCalls, 0)
+      } finally {
+        provisionStub.restore()
+        fetchStub.restore()
+      }
+    })
+
+    await t.step(
+      "allowDevelopmentPathwayRegistration opts development back in and warns",
+      async () => {
+        let startCalls = 0
+        const warnings: string[] = []
+        const fetchBodies: Array<Record<string, unknown>> = []
+
+        const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {})
+        const startStub = stub(PathwayPump.prototype, "start", async () => {
+          startCalls++
+        })
+        const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
+          fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
+          return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          })
+        })
+
+        try {
+          const builder = createBuilder({
+            runtimeEnv: "development",
+            pathwayName: "dev-service",
+            autoProvision: { pathway: true },
+            allowDevelopmentPathwayRegistration: true,
+            logger: {
+              debug: () => {},
+              info: () => {},
+              warn: (message: string) => {
+                warnings.push(message)
+              },
+              error: () => {},
+            },
+          })
+
+          await builder.startPump(createPumpOptions())
+
+          assertEquals(startCalls, 1)
+          assertEquals(fetchBodies.length, 1)
+          assertEquals(fetchBodies[0].type, "virtual")
+          assertEquals(
+            warnings.some((message) => message.includes("development runtime")),
+            true,
+          )
+        } finally {
+          provisionStub.restore()
+          startStub.restore()
+          fetchStub.restore()
+        }
+      },
+    )
+
+    await t.step("per-startPump autoProvision override wins over builder-level config", async () => {
+      let provisionCalls = 0
+      const fetchBodies: Array<Record<string, unknown>> = []
+
+      const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {
+        provisionCalls++
+      })
+      const startStub = stub(PathwayPump.prototype, "start", async () => {})
+      const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
+        fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
+        return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      })
+
+      try {
+        // Builder-level: resources on, pathway off (default). Override via startPump.
+        const builder = createBuilder({
+          runtimeEnv: "production",
+          pathwayMode: "managed",
+          pathwayName: "managed-service",
+          managedConfig: {
+            endpointUrl: "https://app.example.com/flowcore",
+          },
+        })
+
+        await builder.startPump({
+          ...createPumpOptions(),
+          autoProvision: { pathway: true },
+        })
+
+        assertEquals(provisionCalls, 1)
         assertEquals(fetchBodies.length, 1)
+        assertEquals(fetchBodies[0].type, "managed")
       } finally {
         provisionStub.restore()
         startStub.restore()
