@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.5](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.4...v2.5.5) (2026-08-16)
+
+
+### Bug Fixes
+
+* **pathways:** never register a pathway instance in development ([#104](https://github.com/flowcore-io/flowcore-pathways/issues/104)) ([a23d743](https://github.com/flowcore-io/flowcore-pathways/commit/a23d7431d8931a82f8a4c63b0016063b25bf803a))
+
 ## [2.5.4](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.3...v2.5.4) (2026-08-16)
 
 
