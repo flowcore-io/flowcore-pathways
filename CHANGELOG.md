@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.4](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.3...v2.5.4) (2026-08-16)
+
+
+### Bug Fixes
+
+* **pump:** forward the notifier type discriminator to the data pump ([#102](https://github.com/flowcore-io/flowcore-pathways/issues/102)) ([34e5c3c](https://github.com/flowcore-io/flowcore-pathways/commit/34e5c3cb7c19caddd6464c1d2f6def4157f7e459))
+
 ## [2.5.3](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.2...v2.5.3) (2026-08-13)
 
 
