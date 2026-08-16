@@ -138,8 +138,14 @@ const pathways = new PathwaysBuilder({
 | `runtimeEnv`  | `pathwayMode` default | Shared resources | Pathway registration                   | Local pump                           |
 | ------------- | --------------------- | ---------------- | -------------------------------------- | ------------------------------------ |
 | `production`  | `managed`             | provisioned      | opt-in (`autoProvision.pathway: true`) | not started (control plane delivers) |
-| `development` | `virtual`             | provisioned      | opt-in                                 | started (single instance)            |
+| `development` | `virtual`             | provisioned      | skipped                                | started (single instance)            |
 | `test`        | `virtual`             | skipped          | skipped                                | started                              |
+
+> **`development` never registers a pathway instance**, even with `autoProvision.pathway: true`. A pathway instance is a
+> shared control-plane resource: every developer boot would otherwise create one, pulse it, and poll for restart
+> commands meant for a real deployment. Set `allowDevelopmentPathwayRegistration: true` if you deliberately need one for
+> local control-plane work — it logs a warning on every boot. With no pathway instance there is no `pathwayId`, so pulse
+> and command polling stay off in development too.
 
 > **Why `managed` in production?** Virtual cluster mode requires long-lived processes with stable networking, which
 > breaks serverless runtimes such as Next.js on Vercel (port collisions, instrumentation hook behavior, non-leader pod
@@ -170,7 +176,8 @@ const pathways = new PathwaysBuilder({
 ```
 
 Omitted fields fall back to resources-on / pathway-off, so most deployments only need to set `pathway: true` when they
-want the by-name pathway registration.
+want the by-name pathway registration. `pathway: true` has no effect when `runtimeEnv` is `"development"` — see the
+runtime table above.
 
 Unexpected lookup/list failures during shared-resource provisioning are treated as possible Flowcore outages by default:
 they are logged and startup continues. Real not-found responses still follow the provisioning path. If create/update

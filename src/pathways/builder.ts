@@ -237,6 +237,15 @@ export interface PathwaysBuilderConfig {
   runtimeEnv?: PathwayRuntimeEnv
   pathwayMode?: PathwayMode
   /**
+   * Escape hatch for local control-plane work. When `runtimeEnv` is `"development"` the
+   * by-name pathway upsert is skipped even with `autoProvision.pathway: true`, because a
+   * pathway instance is a shared control-plane resource that every developer boot would
+   * create, pulse, and receive restart commands for. Set this to `true` to register anyway.
+   *
+   * Registering from development logs a warning on every boot. Default: `false`.
+   */
+  allowDevelopmentPathwayRegistration?: boolean
+  /**
    * Granular auto-provisioning toggles. Omitted fields fall back to resources-on,
    * pathway-off defaults — see `AutoProvisionConfig`.
    */
@@ -449,6 +458,7 @@ export class PathwaysBuilder<
   private readonly commandPollingIntervalMs: number
   private readonly runtimeEnv: PathwayRuntimeEnv
   private readonly pathwayMode: PathwayMode
+  private readonly allowDevelopmentPathwayRegistration: boolean
   private readonly autoProvision: Required<AutoProvisionConfig>
   private readonly managedConfig?: ManagedPathwayConfig
   private pathwayId?: string
@@ -499,6 +509,7 @@ export class PathwaysBuilder<
     commandPollingIntervalMs,
     runtimeEnv,
     pathwayMode,
+    allowDevelopmentPathwayRegistration,
     autoProvision,
     defaultAutoProvision,
     provisionFailure,
@@ -540,6 +551,7 @@ export class PathwaysBuilder<
     // Env-aware default: production → "managed" (control-plane delivery, serverless-safe),
     // development/test → "virtual" (single-instance local pump).
     this.pathwayMode = pathwayMode ?? (this.runtimeEnv === "production" ? "managed" : "virtual")
+    this.allowDevelopmentPathwayRegistration = allowDevelopmentPathwayRegistration ?? false
     this.autoProvision = resolveAutoProvision(autoProvision, defaultAutoProvision)
     this.managedConfig = managedConfig
 
@@ -1852,7 +1864,37 @@ export class PathwaysBuilder<
     })
   }
 
+  /**
+   * A pathway instance is a shared control-plane resource. Development boots must never create
+   * one — every developer laptop would otherwise leave a stray pathway, pulse it, and poll for
+   * restart commands aimed at a real deployment. Opt in explicitly with
+   * `allowDevelopmentPathwayRegistration` when doing local control-plane work.
+   */
+  private canRegisterPathwayInstance(): boolean {
+    return this.runtimeEnv !== "development" || this.allowDevelopmentPathwayRegistration
+  }
+
   private async registerPathwayInstance(registrations: ProvisionerRegistration[]): Promise<void> {
+    if (!this.canRegisterPathwayInstance()) {
+      this.logger.info("Skipping pathway-instance registration in development runtime", {
+        runtimeEnv: this.runtimeEnv,
+        pathwayMode: this.pathwayMode,
+      })
+      return
+    }
+
+    if (this.runtimeEnv === "development") {
+      this.logger.warn(
+        "Registering a pathway instance from a development runtime — this creates a shared control-plane resource",
+        { pathwayName: this.pathwayName, pathwayMode: this.pathwayMode },
+      )
+    }
+
+    this.logger.info("Registering pathway instance", {
+      runtimeEnv: this.runtimeEnv,
+      pathwayMode: this.pathwayMode,
+    })
+
     if (this.pathwayMode === "managed") {
       const { sizeClass, config } = this.buildManagedPathwayConfig(registrations)
       await this.upsertPathwayByName("managed", {
@@ -1896,6 +1938,9 @@ export class PathwaysBuilder<
    * instance (managed or virtual by-name), opt in via builder-level
    * `autoProvision: { pathway: true }` or pass an override here.
    *
+   * `runtimeEnv: "development"` never upserts a pathway instance, whatever `autoProvision.pathway`
+   * says — see `allowDevelopmentPathwayRegistration` for the explicit escape hatch.
+   *
    * Additive only — never deletes.
    */
   async provision(autoProvisionOverride?: boolean | AutoProvisionConfig): Promise<void> {
@@ -1928,7 +1973,7 @@ export class PathwaysBuilder<
     // Resolve effective auto-provision config: per-call override wins over builder-level setting.
     const ap = options.autoProvision != null ? resolveAutoProvision(options.autoProvision) : this.autoProvision
     // Track pathway-registration intent separately so bootstrapLeaderPump can pick it up on leadership gain.
-    this.currentPumpProvisionsPathway = ap.pathway
+    this.currentPumpProvisionsPathway = ap.pathway && this.canRegisterPathwayInstance()
     this.currentPumpUsesExplicitPulse = Boolean(options.pulse)
     this.currentPumpUsesAutoPulse = false
 
@@ -1959,10 +2004,6 @@ export class PathwaysBuilder<
         // (bootstrapLeaderPump performs it after pump start). Everywhere else it happens upfront.
         const deferToLeaderBootstrap = this.runtimeEnv === "production" && this.pathwayMode === "virtual"
         if (!deferToLeaderBootstrap) {
-          this.logger.info("Registering pathway instance", {
-            runtimeEnv: this.runtimeEnv,
-            pathwayMode: this.pathwayMode,
-          })
           await this.registerPathwayInstance(registrations ?? this.buildRegistrations())
         }
       }
