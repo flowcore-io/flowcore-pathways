@@ -1,12 +1,29 @@
 import type { PostgresAdapter, PostgresConfig } from "../postgres/index.ts"
 import { PostgresJsAdapter } from "../postgres/index.ts"
+import { DEFAULT_STATE_NAMES, prefixStateName, type StatePrefixConfig } from "../state-prefix.ts"
 import type { PathwayCoordinator } from "./types.ts"
+
+/**
+ * Options for {@link PostgresPathwayCoordinator}.
+ *
+ * Set `statePrefix` when several deployables share ONE connection string. An
+ * explicit `leasesTable` or `instancesTable` always wins over the prefix.
+ */
+export interface PostgresPathwayCoordinatorOptions extends StatePrefixConfig {
+  /** Explicit lease table name. Overrides `statePrefix`. Default: `"pathway_leases"`. */
+  leasesTable?: string
+  /** Explicit instance table name. Overrides `statePrefix`. Default: `"pathway_instances"`. */
+  instancesTable?: string
+}
 
 /**
  * PostgreSQL-backed implementation of PathwayCoordinator.
  * Uses two tables:
  * - `pathway_leases`: distributed locks for leader election
  * - `pathway_instances`: instance registration and heartbeating
+ *
+ * Both table names, and the leader lease key, are namespaced by the optional
+ * `statePrefix`. Without a prefix the historical names are used unchanged.
  */
 export class PostgresPathwayCoordinator implements PathwayCoordinator {
   private adapter: PostgresAdapter
@@ -14,10 +31,20 @@ export class PostgresPathwayCoordinator implements PathwayCoordinator {
   private readonly leasesTable: string
   private readonly instancesTable: string
 
-  constructor(adapter: PostgresAdapter, options?: { leasesTable?: string; instancesTable?: string }) {
+  /**
+   * Leader lease key for this coordinator, namespaced by `statePrefix`.
+   *
+   * `ClusterManager` reads this so a prefix set here alone is enough — the same
+   * value does not have to be repeated in the cluster options.
+   */
+  readonly leaseKey: string
+
+  constructor(adapter: PostgresAdapter, options?: PostgresPathwayCoordinatorOptions) {
     this.adapter = adapter
-    this.leasesTable = options?.leasesTable ?? "pathway_leases"
-    this.instancesTable = options?.instancesTable ?? "pathway_instances"
+    this.leasesTable = options?.leasesTable ?? prefixStateName(options?.statePrefix, DEFAULT_STATE_NAMES.leases)
+    this.instancesTable = options?.instancesTable ??
+      prefixStateName(options?.statePrefix, DEFAULT_STATE_NAMES.instances)
+    this.leaseKey = prefixStateName(options?.statePrefix, DEFAULT_STATE_NAMES.leaseKey)
   }
 
   private async ensureInitialized(): Promise<void> {
@@ -126,10 +153,22 @@ export class PostgresPathwayCoordinator implements PathwayCoordinator {
 
 /**
  * Factory function to create a PostgresPathwayCoordinator
+ *
+ * @param config PostgreSQL connection configuration
+ * @param options Table naming options, including the optional `statePrefix`
+ *
+ * @example
+ * ```typescript
+ * // Two deployables that share one connection string
+ * const coordinator = await createPostgresPathwayCoordinator(
+ *   { connectionString: process.env.DATABASE_URL! },
+ *   { statePrefix: "compute_api" },
+ * )
+ * ```
  */
 export async function createPostgresPathwayCoordinator(
   config: PostgresConfig,
-  options?: { leasesTable?: string; instancesTable?: string },
+  options?: PostgresPathwayCoordinatorOptions,
 ): Promise<PostgresPathwayCoordinator> {
   const adapter = new PostgresJsAdapter(config)
   await adapter.connect()

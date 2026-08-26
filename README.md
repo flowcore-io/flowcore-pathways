@@ -21,6 +21,7 @@ Pathways helps you build event-driven applications with type-safe pathways for p
   - [Setting up a Router](#setting-up-a-router)
   - [HTTP Server Integration](#http-server-integration)
   - [Persistence Options](#persistence-options)
+  - [State Prefix (databases shared by several deployables)](#state-prefix-databases-shared-by-several-deployables)
 - [Advanced Usage](#advanced-usage)
   - [Auditing](#auditing)
   - [Custom Loggers](#custom-loggers)
@@ -616,6 +617,74 @@ The PostgreSQL implementation:
 - Automatically creates the necessary table if it doesn't exist
 - Includes TTL-based automatic cleanup of processed events
 - Creates appropriate indexes for performance
+
+### State Prefix (databases shared by several deployables)
+
+**Set `statePrefix` when two or more deployables share ONE PostgreSQL connection string.** Without it they contend for a
+single cluster leader lease. Only one of them starts a data pump. The others log
+`Could not acquire lease, becoming worker` and their projections stall silently — writes still succeed, so the failure
+is invisible at the API layer.
+
+`statePrefix` namespaces every table and key this library owns:
+
+| State               | No prefix (default)      | `statePrefix: "compute_api"`         |
+| ------------------- | ------------------------ | ------------------------------------ |
+| Pathway state table | `pathway_state`          | `compute_api_pathway_state`          |
+| Lease table         | `pathway_leases`         | `compute_api_pathway_leases`         |
+| Instance table      | `pathway_instances`      | `compute_api_pathway_instances`      |
+| Pump state table    | `pathway_pump_state`     | `compute_api_pathway_pump_state`     |
+| Leader lease key    | `pathway-cluster-leader` | `compute_api_pathway-cluster-leader` |
+
+**The default is no prefix.** Existing deployments keep their exact table names and lease key value. There is no
+migration.
+
+```typescript
+import {
+  createPostgresPathwayCoordinator,
+  createPostgresPathwayState,
+  createPostgresPumpStateManagerFactory,
+} from "@flowcore/pathways"
+
+const STATE_PREFIX = "compute_api" // "compute_reconciler" in the sibling deployable
+
+const coordinator = await createPostgresPathwayCoordinator(
+  { connectionString: process.env.DATABASE_URL! },
+  { statePrefix: STATE_PREFIX },
+)
+
+pathways.withPathwayState(
+  createPostgresPathwayState({
+    connectionString: process.env.DATABASE_URL!,
+    statePrefix: STATE_PREFIX,
+  }),
+)
+
+// The cluster reads the coordinator's lease key, so the prefix is set in one place only.
+await pathways.startCluster({
+  coordinator,
+  advertisedAddress: `ws://${process.env.HOSTNAME}`,
+  port: 9090,
+})
+
+await pathways.startPump({
+  stateManagerFactory: await createPostgresPumpStateManagerFactory({
+    connectionString: process.env.DATABASE_URL!,
+    statePrefix: STATE_PREFIX,
+  }),
+})
+```
+
+Rules:
+
+- A prefix must start with a letter or underscore and contain only letters, digits and underscores. It reaches SQL as
+  part of an identifier, so anything else is rejected. Maximum length is 40 characters.
+- An explicit `tableName`, `leasesTable`, `instancesTable` or `leaseKey` always overrides the prefix.
+- `ClusterManager` resolves its lease key from `leaseKey`, then `statePrefix`, then `coordinator.leaseKey`, then the
+  default. Setting the prefix on the coordinator alone is enough.
+- Use the same prefix for every state library inside one deployable. Use a different prefix in each deployable.
+- If you mirror these tables in Drizzle, update your schema and your `tablesFilter` to the prefixed names.
+- `ClusterManager` logs its `leaseKey` on start and on every role change. Two deployables that report the same key are
+  contending.
 
 ## Advanced Usage
 

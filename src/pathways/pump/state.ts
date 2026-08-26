@@ -1,5 +1,6 @@
 import { PostgresJsAdapter } from "../postgres/index.ts"
 import type { PostgresAdapter } from "../postgres/index.ts"
+import { DEFAULT_STATE_NAMES, prefixStateName } from "../state-prefix.ts"
 import type { PostgresPumpStateConfig, PumpState, PumpStateManager, PumpStateManagerFactory } from "./types.ts"
 
 const DEFAULT_PUMP_GROUP = "default"
@@ -102,12 +103,16 @@ class PostgresPumpStateManager implements PumpStateManager {
  * Each `(flowType, pumpGroup)` gets its own state row in the shared table.
  *
  * The adapter is created once and shared across all state managers.
+ *
+ * Set `statePrefix` when several deployables share ONE connection string, so each
+ * one gets its own pump state table. Without a prefix the table is
+ * `pathway_pump_state`, exactly as before.
  */
 export async function createPostgresPumpStateManagerFactory(
   config: PostgresPumpStateConfig,
 ): Promise<PumpStateManagerFactory> {
-  const { tableName, ...pgConfig } = config
-  const table = tableName ?? "pathway_pump_state"
+  const { tableName, statePrefix, ...pgConfig } = config
+  const table = tableName ?? prefixStateName(statePrefix, DEFAULT_STATE_NAMES.pumpState)
 
   const adapter = new PostgresJsAdapter(pgConfig)
   await adapter.connect()

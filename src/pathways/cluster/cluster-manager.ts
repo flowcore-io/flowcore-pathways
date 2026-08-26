@@ -15,13 +15,25 @@ import type {
   WsResetMessage,
 } from "./types.ts"
 import { createNodeTransport } from "./node-transport.ts"
+import { DEFAULT_STATE_NAMES, prefixStateName } from "../state-prefix.ts"
 
 const DEFAULT_LEASE_TTL_MS = 30_000
 const DEFAULT_LEASE_RENEW_INTERVAL_MS = 10_000
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 5_000
 const DEFAULT_STALE_THRESHOLD_MS = 15_000
 const DEFAULT_DELIVERY_TIMEOUT_MS = 30_000
-const LEASE_KEY = "pathway-cluster-leader"
+
+/**
+ * Resolves the leader lease key for a cluster.
+ *
+ * Two clusters that share ONE database must resolve to different keys, otherwise
+ * they contend for a single lease row and only one of them ever runs a pump.
+ */
+function resolveLeaseKey(options: PathwayClusterOptions): string {
+  if (options.leaseKey !== undefined) return options.leaseKey
+  if (options.statePrefix !== undefined) return prefixStateName(options.statePrefix, DEFAULT_STATE_NAMES.leaseKey)
+  return options.coordinator.leaseKey ?? DEFAULT_STATE_NAMES.leaseKey
+}
 
 /**
  * Creates a default transport with runtime auto-detection.
@@ -72,6 +84,7 @@ export class ClusterManager {
   private readonly staleThresholdMs: number
   private readonly deliveryTimeoutMs: number
   private readonly workerConcurrency: number
+  private readonly leaseKey: string
   private readonly logger: Logger
 
   private role: ClusterRole = "unknown"
@@ -107,6 +120,7 @@ export class ClusterManager {
     this.staleThresholdMs = options.staleThresholdMs ?? DEFAULT_STALE_THRESHOLD_MS
     this.deliveryTimeoutMs = options.deliveryTimeoutMs ?? DEFAULT_DELIVERY_TIMEOUT_MS
     this.workerConcurrency = options.workerConcurrency ?? 5
+    this.leaseKey = resolveLeaseKey(options)
     this.logger = logger ?? new NoopLogger()
   }
 
@@ -179,6 +193,7 @@ export class ClusterManager {
     this.logger.info("Starting cluster manager", {
       instanceId: this.instanceId,
       advertisedAddress: this.advertisedAddress,
+      leaseKey: this.leaseKey,
     })
 
     // Register this instance with full WebSocket URL
@@ -229,7 +244,7 @@ export class ClusterManager {
     // Release lease if leader
     if (this.role === "leader") {
       try {
-        await this.coordinator.releaseLease(this.instanceId, LEASE_KEY)
+        await this.coordinator.releaseLease(this.instanceId, this.leaseKey)
       } catch (err) {
         this.logger.error("Error releasing lease", err instanceof Error ? err : new Error(String(err)))
       }
@@ -340,19 +355,32 @@ export class ClusterManager {
     return this.instanceId
   }
 
+  /**
+   * Leader lease key this instance contends for.
+   *
+   * Two clusters on ONE database must report different keys. Equal keys mean the
+   * clusters contend, and only one of them will run a pump.
+   */
+  get currentLeaseKey(): string {
+    return this.leaseKey
+  }
+
   // --- Private: Leader Election ---
 
   private async tryAcquireLease(): Promise<void> {
-    const acquired = await this.coordinator.acquireLease(this.instanceId, LEASE_KEY, this.leaseTtlMs)
+    const acquired = await this.coordinator.acquireLease(this.instanceId, this.leaseKey, this.leaseTtlMs)
     if (acquired) {
       if (this.role !== "leader") {
-        this.logger.info("Acquired leader lease", { instanceId: this.instanceId })
+        this.logger.info("Acquired leader lease", { instanceId: this.instanceId, leaseKey: this.leaseKey })
         this.role = "leader"
         await this.onBecomeLeader()
       }
     } else {
       if (this.role !== "worker") {
-        this.logger.info("Could not acquire lease, becoming worker", { instanceId: this.instanceId })
+        this.logger.info("Could not acquire lease, becoming worker", {
+          instanceId: this.instanceId,
+          leaseKey: this.leaseKey,
+        })
         this.role = "worker"
       }
     }
@@ -360,7 +388,7 @@ export class ClusterManager {
 
   private async leaseLoop(): Promise<void> {
     if (this.role === "leader") {
-      const renewed = await this.coordinator.renewLease(this.instanceId, LEASE_KEY, this.leaseTtlMs)
+      const renewed = await this.coordinator.renewLease(this.instanceId, this.leaseKey, this.leaseTtlMs)
       if (!renewed) {
         this.logger.warn("Lost leader lease", { instanceId: this.instanceId })
         this.role = "worker"
