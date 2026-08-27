@@ -1,11 +1,21 @@
 import type { FlowcoreEvent } from "../../contracts/event.ts"
 import type { PumpState } from "../pump/types.ts"
+import type { StatePrefixConfig } from "../state-prefix.ts"
 
 /**
  * Coordinator interface for distributed cluster coordination
  * Handles instance registration, heartbeating, and leader election via leases
  */
 export interface PathwayCoordinator {
+  /**
+   * Optional leader lease key this coordinator is namespaced to.
+   *
+   * `ClusterManager` uses it when neither `leaseKey` nor `statePrefix` is set in
+   * the cluster options, so configuring a `statePrefix` on the coordinator alone
+   * is enough to isolate a cluster. Coordinators that omit it keep the default
+   * key `"pathway-cluster-leader"`.
+   */
+  readonly leaseKey?: string
   acquireLease(instanceId: string, key: string, ttlMs: number): Promise<boolean>
   renewLease(instanceId: string, key: string, ttlMs: number): Promise<boolean>
   releaseLease(instanceId: string, key: string): Promise<void>
@@ -17,8 +27,17 @@ export interface PathwayCoordinator {
 
 /**
  * Options for starting a cluster
+ *
+ * The leader lease key is resolved in this order, first hit wins:
+ *   1. `leaseKey`
+ *   2. `statePrefix` applied to `"pathway-cluster-leader"`
+ *   3. `coordinator.leaseKey`
+ *   4. `"pathway-cluster-leader"`
+ *
+ * Two clusters that share ONE database MUST resolve to different lease keys.
+ * Otherwise only one of them elects a leader and the others never start a pump.
  */
-export interface PathwayClusterOptions {
+export interface PathwayClusterOptions extends StatePrefixConfig {
   coordinator: PathwayCoordinator
   advertisedAddress: string
   port: number
@@ -29,6 +48,11 @@ export interface PathwayClusterOptions {
   heartbeatIntervalMs?: number
   staleThresholdMs?: number
   deliveryTimeoutMs?: number
+  /**
+   * Explicit leader lease key. Overrides `statePrefix` and the coordinator's own
+   * key. Default: `"pathway-cluster-leader"`.
+   */
+  leaseKey?: string
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { PostgresConfig } from "../postgres/index.ts"
+import type { StatePrefixConfig } from "../state-prefix.ts"
 
 /**
  * Granular toggles for each provisioning stage.
@@ -122,7 +123,11 @@ export type PumpNotifierConfig =
 
 /**
  * Config for the Postgres pump state manager factory
+ *
+ * `tableName` names the table outright. `statePrefix` namespaces the default name
+ * instead, and `tableName` wins when both are set.
  */
-export type PostgresPumpStateConfig = PostgresConfig & {
+export type PostgresPumpStateConfig = PostgresConfig & StatePrefixConfig & {
+  /** Explicit table name. Overrides `statePrefix`. Default: `"pathway_pump_state"`. */
   tableName?: string
 }

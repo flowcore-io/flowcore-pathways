@@ -1,3 +1,4 @@
+import { DEFAULT_STATE_NAMES, prefixStateName, type StatePrefixConfig } from "../state-prefix.ts"
 import type { PathwayState } from "../types.ts"
 import type { PostgresAdapter, PostgresPoolConfig } from "./postgres-adapter.ts"
 import { createPostgresAdapter } from "./postgres-adapter.ts"
@@ -5,7 +6,7 @@ import { createPostgresAdapter } from "./postgres-adapter.ts"
 /**
  * Configuration for PostgreSQL pathway state storage using a connection string
  */
-export interface PostgresPathwayStateConnectionStringConfig {
+export interface PostgresPathwayStateConnectionStringConfig extends StatePrefixConfig {
   /** Complete PostgreSQL connection string (e.g., postgres://user:password@host:port/database?sslmode=require) */
   connectionString: string
 
@@ -17,7 +18,7 @@ export interface PostgresPathwayStateConnectionStringConfig {
   database?: never
   ssl?: never
 
-  /** Table name for storing pathway state (default: "pathway_state") */
+  /** Explicit table name. Overrides `statePrefix`. Default: `"pathway_state"`. */
   tableName?: string
   /** Time-to-live in milliseconds for processed events (default: 5 minutes) */
   ttlMs?: number
@@ -28,7 +29,7 @@ export interface PostgresPathwayStateConnectionStringConfig {
 /**
  * Configuration for PostgreSQL pathway state storage using individual parameters
  */
-export interface PostgresPathwayStateParametersConfig {
+export interface PostgresPathwayStateParametersConfig extends StatePrefixConfig {
   /** Not used when individual parameters are provided */
   connectionString?: never
 
@@ -45,7 +46,7 @@ export interface PostgresPathwayStateParametersConfig {
   /** Whether to use SSL for the connection */
   ssl?: boolean
 
-  /** Table name for storing pathway state (default: "pathway_state") */
+  /** Explicit table name. Overrides `statePrefix`. Default: `"pathway_state"`. */
   tableName?: string
   /** Time-to-live in milliseconds for processed events (default: 5 minutes) */
   ttlMs?: number
@@ -133,7 +134,7 @@ export class PostgresPathwayState implements PathwayState {
    * Default table name for storing pathway state
    * @private
    */
-  private static readonly DEFAULT_TABLE_NAME = "pathway_state"
+  private static readonly DEFAULT_TABLE_NAME = DEFAULT_STATE_NAMES.pathwayState
 
   /**
    * The PostgreSQL adapter instance
@@ -165,7 +166,7 @@ export class PostgresPathwayState implements PathwayState {
    * @param {PostgresPathwayStateConfig} config The PostgreSQL configuration
    */
   constructor(private config: PostgresPathwayStateConfig) {
-    this.tableName = config.tableName || PostgresPathwayState.DEFAULT_TABLE_NAME
+    this.tableName = config.tableName || prefixStateName(config.statePrefix, PostgresPathwayState.DEFAULT_TABLE_NAME)
     this.ttlMs = config.ttlMs || PostgresPathwayState.DEFAULT_TTL_MS
     this.postgres = null as unknown as PostgresAdapter
   }
@@ -393,6 +394,13 @@ export class PostgresPathwayState implements PathwayState {
  *   connectionString: "postgres://user:pass@localhost:5432/db",
  *   tableName: "my_custom_event_state",
  *   ttlMs: 7 * 24 * 60 * 60 * 1000 // 1 week
+ * });
+ *
+ * // Namespaced for a database shared by several deployables.
+ * // The table becomes "compute_api_pathway_state".
+ * const state = createPostgresPathwayState({
+ *   connectionString: "postgres://user:pass@localhost:5432/db",
+ *   statePrefix: "compute_api"
  * });
  *
  * // With connection pool configuration
