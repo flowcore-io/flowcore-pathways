@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.6.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.5...v2.6.0) (2026-08-27)
+
+
+### Features
+
+* **pathways:** configurable state prefix for pathway state ([#106](https://github.com/flowcore-io/flowcore-pathways/issues/106)) ([dd0dc5d](https://github.com/flowcore-io/flowcore-pathways/commit/dd0dc5d1e1799be74cf20a87db8760a4ca9ed02d))
+
 ## [2.5.5](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.4...v2.5.5) (2026-08-16)
 
 
