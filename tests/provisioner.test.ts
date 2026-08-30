@@ -1043,5 +1043,168 @@ Deno.test({
       assertEquals(createdFlowTypes.sort(), ["order", "user"])
       assertEquals(createdEventTypes.sort(), ["created", "deleted", "placed"])
     })
+
+    await t.step("provisions sibling resources in bounded parallel stages", async () => {
+      let activeFlowCreates = 0
+      let maxFlowCreates = 0
+      let completedFlowCreates = 0
+      let activeEventLists = 0
+      let maxEventLists = 0
+      let activeEventCreates = 0
+      let maxEventCreates = 0
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore(),
+        FlowTypeListCommand: () => [],
+        FlowTypeCreateCommand: async (cmd) => {
+          activeFlowCreates++
+          maxFlowCreates = Math.max(maxFlowCreates, activeFlowCreates)
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          activeFlowCreates--
+          completedFlowCreates++
+          const name = cmd.input.name as string
+          return baseFlowType(name, `ft-${name}`, cmd.input.description as string)
+        },
+        EventTypeListCommand: async () => {
+          assertEquals(completedFlowCreates, 3, "event-type stage must wait for all flow types")
+          activeEventLists++
+          maxEventLists = Math.max(maxEventLists, activeEventLists)
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          activeEventLists--
+          return []
+        },
+        EventTypeCreateCommand: async (cmd) => {
+          activeEventCreates++
+          maxEventCreates = Math.max(maxEventCreates, activeEventCreates)
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          activeEventCreates--
+          return baseEventType(
+            cmd.input.name as string,
+            `et-${cmd.input.name as string}`,
+            cmd.input.flowTypeId as string,
+            cmd.input.description as string,
+          )
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        provisionConcurrency: 2,
+        registrations: ["user", "order", "invoice"].map((flowType) => ({
+          flowType,
+          eventType: "created",
+          flowTypeDescription: `${flowType} events`,
+          eventTypeDescription: `${flowType} created`,
+        })),
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+
+      assertEquals(maxFlowCreates, 2)
+      assertEquals(maxEventLists, 2)
+      assertEquals(maxEventCreates, 2)
+    })
+
+    await t.step("retries transient SDK apply failures before applying failure policy", async () => {
+      let createAttempts = 0
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore(),
+        FlowTypeListCommand: () => [],
+        FlowTypeCreateCommand: (cmd) => {
+          createAttempts++
+          if (createAttempts < 3) {
+            throw Object.assign(new Error("service unavailable"), { status: 500 })
+          }
+          return baseFlowType(cmd.input.name as string, "ft-new", cmd.input.description as string)
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        skipEventTypes: true,
+        provisionRetry: { maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+        registrations: [{
+          flowType: "user",
+          eventType: "created",
+          flowTypeDescription: "User events",
+        }],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(createAttempts, 3)
+    })
+
+    await t.step("applies check failure policy after transient retries are exhausted", async () => {
+      let checkAttempts = 0
+      const errors: Array<{ message: string; stage?: unknown }> = []
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          checkAttempts++
+          throw Object.assign(new Error("service unavailable"), { status: 503 })
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        provisionRetry: { maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
+        registrations: [],
+        logger: createTestLogger(errors),
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(checkAttempts, 2)
+      assertEquals(errors.at(-1)?.stage, "dataCore")
+    })
+
+    await t.step("applies continue policy after transient apply retries are exhausted", async () => {
+      let applyAttempts = 0
+      const errors: Array<{ message: string; stage?: unknown }> = []
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          throw new NotFoundException("DataCore", {})
+        },
+        DataCoreCreateCommand: () => {
+          applyAttempts++
+          throw Object.assign(new Error("service unavailable"), { status: 500 })
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "desc",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        provisionFailure: { apply: "continue" },
+        provisionRetry: { maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
+        registrations: [],
+        logger: createTestLogger(errors),
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(applyAttempts, 2)
+      assertEquals(errors.at(-1)?.stage, "dataCore.create")
+    })
   },
 })

@@ -14,6 +14,14 @@ import {
 } from "@flowcore/sdk"
 import type { Logger } from "./logger.ts"
 import { NoopLogger } from "./logger.ts"
+import {
+  mapWithConcurrency,
+  type ProvisionRetryConfig,
+  type ResolvedProvisionRetryConfig,
+  resolveProvisionConcurrency,
+  resolveProvisionRetryConfig,
+  retryProvisionOperation,
+} from "./provisioning-execution.ts"
 
 export type ProvisionFailureMode = "throw" | "continue"
 
@@ -129,6 +137,10 @@ export interface PathwayProvisionerOptions {
    * Passing `"throw"` or `"continue"` applies that mode to both categories.
    */
   provisionFailure?: ProvisionFailureMode | ProvisionFailureConfig
+  /** Maximum number of sibling resource operations run at once. Default: 4. */
+  provisionConcurrency?: number
+  /** Retry policy for transient provisioning requests. */
+  provisionRetry?: ProvisionRetryConfig
 }
 
 /**
@@ -151,6 +163,8 @@ export class PathwayProvisioner {
   private readonly skipFlowTypes: boolean
   private readonly skipEventTypes: boolean
   private readonly provisionFailure: ResolvedProvisionFailureConfig
+  private readonly provisionConcurrency: number
+  private readonly provisionRetry: ResolvedProvisionRetryConfig
 
   constructor(options: PathwayProvisionerOptions) {
     this.tenant = options.tenant
@@ -161,11 +175,15 @@ export class PathwayProvisioner {
     this.dataCoreDeleteProtection = options.dataCoreDeleteProtection
     this.registrations = options.registrations
     this.logger = options.logger ?? new NoopLogger()
-    this.clientFactory = options.clientFactory ?? ((apiKey: string) => new FlowcoreClient({ apiKey }))
+    // Own retries here so all provisioning commands use one policy. The SDK otherwise
+    // retries some commands internally while leaving create commands unprotected.
+    this.clientFactory = options.clientFactory ?? ((apiKey: string) => new FlowcoreClient({ apiKey, retry: null }))
     this.skipDataCore = options.skipDataCore ?? false
     this.skipFlowTypes = options.skipFlowTypes ?? false
     this.skipEventTypes = options.skipEventTypes ?? false
     this.provisionFailure = resolveProvisionFailureConfig(options.provisionFailure)
+    this.provisionConcurrency = resolveProvisionConcurrency(options.provisionConcurrency)
+    this.provisionRetry = resolveProvisionRetryConfig(options.provisionRetry)
   }
 
   /**
@@ -237,8 +255,13 @@ export class PathwayProvisioner {
     let dataCore: { id: string; description: string } | null = null
 
     try {
-      dataCore = await client.execute(
-        new DataCoreFetchCommand({ tenant: this.tenant, dataCore: this.dataCore }),
+      dataCore = await this.executeWithRetry(
+        "dataCore",
+        { tenant: this.tenant, dataCore: this.dataCore },
+        () =>
+          client.execute(
+            new DataCoreFetchCommand({ tenant: this.tenant, dataCore: this.dataCore }),
+          ),
       )
     } catch (error) {
       if (!isNotFoundError(error)) {
@@ -353,61 +376,64 @@ export class PathwayProvisioner {
     }
     const existingByName = new Map(existing.map((ft) => [ft.name, ft]))
 
-    const flowTypeIds = new Map<string, string>()
+    const resolvedFlowTypes = await mapWithConcurrency(
+      [...flowTypes.entries()],
+      this.provisionConcurrency,
+      async ([name, description]): Promise<[string, string] | null> => {
+        const existingFt = existingByName.get(name)
 
-    for (const [name, description] of flowTypes) {
-      const existingFt = existingByName.get(name)
-
-      if (existingFt) {
-        flowTypeIds.set(name, existingFt.id)
-
-        // Update description if provided and changed (unless skipping).
-        if (!this.skipFlowTypes && description !== undefined && existingFt.description !== description) {
-          this.logger.info("Updating flow type description", {
-            flowType: name,
-            from: existingFt.description,
-            to: description,
-          })
-          await this.apply(
-            "flowType.update",
-            { dataCoreId, flowType: name, flowTypeId: existingFt.id },
-            () => client.execute(new FlowTypeUpdateCommand({ flowTypeId: existingFt.id, description })),
+        if (existingFt) {
+          // Update description if provided and changed (unless skipping).
+          if (!this.skipFlowTypes && description !== undefined && existingFt.description !== description) {
+            this.logger.info("Updating flow type description", {
+              flowType: name,
+              from: existingFt.description,
+              to: description,
+            })
+            await this.apply(
+              "flowType.update",
+              { dataCoreId, flowType: name, flowTypeId: existingFt.id },
+              () => client.execute(new FlowTypeUpdateCommand({ flowTypeId: existingFt.id, description })),
+            )
+          }
+          return [name, existingFt.id]
+        } else if (!this.skipFlowTypes && description !== undefined) {
+          // Create flow type
+          this.logger.info("Creating flow type", { name, description })
+          const created = await this.apply(
+            "flowType.create",
+            { dataCoreId, flowType: name },
+            () => client.execute(new FlowTypeCreateCommand({ dataCoreId, name, description })),
+          )
+          if (created) {
+            return [name, created.id]
+          }
+        } else if (this.skipFlowTypes) {
+          // Flow type missing, create/update skipped — downstream event type stage cannot proceed.
+          this.handleApplyFailure(
+            "flowType.skipped",
+            new Error(
+              `Flow type "${name}" not found in data core and skipFlowTypes is set. ` +
+                `Pre-provision the flow type or enable flow type provisioning.`,
+            ),
+            { dataCoreId, flowType: name },
+          )
+        } else {
+          this.handleApplyFailure(
+            "flowType.missing",
+            new Error(
+              `Flow type "${name}" not found in data core. ` +
+                `Provide flowTypeDescription in the register() call to auto-create it.`,
+            ),
+            { dataCoreId, flowType: name },
           )
         }
-      } else if (!this.skipFlowTypes && description !== undefined) {
-        // Create flow type
-        this.logger.info("Creating flow type", { name, description })
-        const created = await this.apply(
-          "flowType.create",
-          { dataCoreId, flowType: name },
-          () => client.execute(new FlowTypeCreateCommand({ dataCoreId, name, description })),
-        )
-        if (created) {
-          flowTypeIds.set(name, created.id)
-        }
-      } else if (this.skipFlowTypes) {
-        // Flow type missing, create/update skipped — downstream event type stage cannot proceed.
-        this.handleApplyFailure(
-          "flowType.skipped",
-          new Error(
-            `Flow type "${name}" not found in data core and skipFlowTypes is set. ` +
-              `Pre-provision the flow type or enable flow type provisioning.`,
-          ),
-          { dataCoreId, flowType: name },
-        )
-      } else {
-        this.handleApplyFailure(
-          "flowType.missing",
-          new Error(
-            `Flow type "${name}" not found in data core. ` +
-              `Provide flowTypeDescription in the register() call to auto-create it.`,
-          ),
-          { dataCoreId, flowType: name },
-        )
-      }
-    }
 
-    return flowTypeIds
+        return null
+      },
+    )
+
+    return new Map(resolvedFlowTypes.filter((entry): entry is [string, string] => entry !== null))
   }
 
   private async provisionEventTypes(
@@ -422,21 +448,34 @@ export class PathwayProvisioner {
       byFlowType.set(reg.flowType, list)
     }
 
-    for (const [flowTypeName, regs] of byFlowType) {
-      const flowTypeId = flowTypeIds.get(flowTypeName)
-      if (!flowTypeId) continue
+    const groups = await mapWithConcurrency(
+      [...byFlowType.entries()],
+      this.provisionConcurrency,
+      async ([flowTypeName, regs]) => {
+        const flowTypeId = flowTypeIds.get(flowTypeName)
+        if (!flowTypeId) return null
 
-      // Fetch existing event types
-      const existing = await this.check(
-        "eventType.list",
-        { flowType: flowTypeName, flowTypeId },
-        () => client.execute(new EventTypeListCommand({ flowTypeId })),
-        { onNotFound: () => [] },
-      )
-      if (!existing) {
-        continue
-      }
-      const existingByName = new Map(existing.map((et) => [et.name, et]))
+        const existing = await this.check(
+          "eventType.list",
+          { flowType: flowTypeName, flowTypeId },
+          () => client.execute(new EventTypeListCommand({ flowTypeId })),
+          { onNotFound: () => [] },
+        )
+        if (!existing) return null
+
+        return {
+          flowTypeName,
+          flowTypeId,
+          regs,
+          existingByName: new Map(existing.map((eventType) => [eventType.name, eventType])),
+        }
+      },
+    )
+
+    const operations: Array<() => Promise<void>> = []
+    for (const group of groups) {
+      if (!group) continue
+      const { existingByName, flowTypeId, flowTypeName, regs } = group
 
       for (const reg of regs) {
         const existingEt = existingByName.get(reg.eventType)
@@ -445,53 +484,75 @@ export class PathwayProvisioner {
           // Update description if provided and changed
           if (reg.eventTypeDescription !== undefined && existingEt.description !== reg.eventTypeDescription) {
             const eventTypeDescription = reg.eventTypeDescription
-            this.logger.info("Updating event type description", {
-              flowType: flowTypeName,
-              eventType: reg.eventType,
-              from: existingEt.description,
-              to: eventTypeDescription,
+            operations.push(async () => {
+              this.logger.info("Updating event type description", {
+                flowType: flowTypeName,
+                eventType: reg.eventType,
+                from: existingEt.description,
+                to: eventTypeDescription,
+              })
+              await this.apply(
+                "eventType.update",
+                { flowType: flowTypeName, eventType: reg.eventType, eventTypeId: existingEt.id },
+                () =>
+                  client.execute(
+                    new EventTypeUpdateCommand({ eventTypeId: existingEt.id, description: eventTypeDescription }),
+                  ),
+              )
             })
-            await this.apply(
-              "eventType.update",
-              { flowType: flowTypeName, eventType: reg.eventType, eventTypeId: existingEt.id },
-              () =>
-                client.execute(
-                  new EventTypeUpdateCommand({ eventTypeId: existingEt.id, description: eventTypeDescription }),
-                ),
-            )
           }
         } else if (reg.eventTypeDescription !== undefined) {
           const eventTypeDescription = reg.eventTypeDescription
-          // Create event type
-          this.logger.info("Creating event type", {
-            flowType: flowTypeName,
-            eventType: reg.eventType,
-            description: eventTypeDescription,
+          operations.push(async () => {
+            this.logger.info("Creating event type", {
+              flowType: flowTypeName,
+              eventType: reg.eventType,
+              description: eventTypeDescription,
+            })
+            await this.apply(
+              "eventType.create",
+              { flowType: flowTypeName, flowTypeId, eventType: reg.eventType },
+              () =>
+                client.execute(
+                  new EventTypeCreateCommand({
+                    flowTypeId,
+                    name: reg.eventType,
+                    description: eventTypeDescription,
+                  }),
+                ),
+            )
           })
-          await this.apply(
-            "eventType.create",
-            { flowType: flowTypeName, flowTypeId, eventType: reg.eventType },
-            () =>
-              client.execute(
-                new EventTypeCreateCommand({
-                  flowTypeId,
-                  name: reg.eventType,
-                  description: eventTypeDescription,
-                }),
-              ),
-          )
         } else {
-          this.handleApplyFailure(
-            "eventType.missing",
-            new Error(
-              `Event type "${reg.eventType}" not found in flow type "${flowTypeName}". ` +
-                `Provide description in the register() call to auto-create it.`,
-            ),
-            { flowType: flowTypeName, eventType: reg.eventType },
-          )
+          operations.push(() => {
+            this.handleApplyFailure(
+              "eventType.missing",
+              new Error(
+                `Event type "${reg.eventType}" not found in flow type "${flowTypeName}". ` +
+                  `Provide description in the register() call to auto-create it.`,
+              ),
+              { flowType: flowTypeName, eventType: reg.eventType },
+            )
+            return Promise.resolve()
+          })
         }
       }
     }
+
+    await mapWithConcurrency(operations, this.provisionConcurrency, (operation) => operation())
+  }
+
+  private executeWithRetry<T>(
+    stage: string,
+    context: Record<string, unknown>,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    return retryProvisionOperation(operation, this.provisionRetry, (notice) => {
+      this.logger.warn("Retrying transient provisioning request", {
+        ...context,
+        stage,
+        ...notice,
+      })
+    })
   }
 
   private async check<T>(
@@ -501,7 +562,7 @@ export class PathwayProvisioner {
     options?: { onNotFound?: () => T },
   ): Promise<T | null> {
     try {
-      return await operation()
+      return await this.executeWithRetry(stage, context, operation)
     } catch (error) {
       if (isNotFoundError(error)) {
         if (options?.onNotFound) {
@@ -521,7 +582,7 @@ export class PathwayProvisioner {
     operation: () => Promise<T>,
   ): Promise<T | null> {
     try {
-      return await operation()
+      return await this.executeWithRetry(stage, context, operation)
     } catch (error) {
       this.handleApplyFailure(stage, error, context)
       return null
