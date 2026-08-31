@@ -1,4 +1,6 @@
 import { assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts"
+import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts"
+import { FlowcoreClient, TenantTranslateNameToIdCommand } from "@flowcore/sdk"
 import {
   isRetryableProvisionError,
   mapWithConcurrency,
@@ -48,6 +50,41 @@ Deno.test("provision retry respects Retry-After", async () => {
   assertEquals(delays, [2_000])
 })
 
+Deno.test("provision retry does not shorten Retry-After to the backoff cap", async () => {
+  const delays: number[] = []
+  let attempts = 0
+  await retryProvisionOperation(
+    async () => {
+      attempts++
+      if (attempts === 1) throw httpError(429, "30")
+      return undefined
+    },
+    resolveProvisionRetryConfig({ maxAttempts: 2, baseDelayMs: 10, maxDelayMs: 5_000, jitterRatio: 0 }),
+    undefined,
+    { sleep: (delay) => Promise.resolve(delays.push(delay)).then(() => undefined) },
+  )
+
+  assertEquals(delays, [30_000])
+})
+
+Deno.test("provision retry parses HTTP-date Retry-After", async () => {
+  const now = Date.parse("2026-08-31T10:00:00.000Z")
+  const delays: number[] = []
+  let attempts = 0
+  await retryProvisionOperation(
+    async () => {
+      attempts++
+      if (attempts === 1) throw httpError(503, new Date(now + 10_000).toUTCString())
+      return undefined
+    },
+    resolveProvisionRetryConfig({ maxAttempts: 2, baseDelayMs: 10, maxDelayMs: 5_000, jitterRatio: 0 }),
+    undefined,
+    { now: () => now, sleep: (delay) => Promise.resolve(delays.push(delay)).then(() => undefined) },
+  )
+
+  assertEquals(delays, [10_000])
+})
+
 Deno.test("provision retry handles transient network failures", async () => {
   let attempts = 0
   await retryProvisionOperation(
@@ -62,18 +99,31 @@ Deno.test("provision retry handles transient network failures", async () => {
   assertEquals(attempts, 2)
 })
 
-Deno.test("provision retry handles SDK network errors reported with status zero", async () => {
-  let attempts = 0
-  await retryProvisionOperation(
-    async () => {
-      attempts++
-      if (attempts === 1) throw Object.assign(new Error("Failed to execute command: fetch failed"), { status: 0 })
-      return undefined
-    },
-    resolveProvisionRetryConfig({ maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0 }),
-  )
+Deno.test("provision retry handles real SDK network wrappers", async () => {
+  let fetchAttempts = 0
+  const fetchStub = stub(globalThis, "fetch", () => {
+    fetchAttempts++
+    if (fetchAttempts === 1) return Promise.reject(new TypeError("error sending request: connection refused"))
+    return Promise.resolve(
+      new Response(JSON.stringify({ id: "tenant-id", name: "tenant" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    )
+  })
 
-  assertEquals(attempts, 2)
+  try {
+    const client = new FlowcoreClient({ apiKey: "fc_test_dummy", retry: null })
+    const result = await retryProvisionOperation(
+      () => client.execute(new TenantTranslateNameToIdCommand({ tenant: "tenant" })),
+      resolveProvisionRetryConfig({ maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0 }),
+    )
+
+    assertEquals(result, { id: "tenant-id", name: "tenant" })
+    assertEquals(fetchAttempts, 2)
+  } finally {
+    fetchStub.restore()
+  }
 })
 
 Deno.test("provision retry does not retry ordinary client errors or not-found", async () => {
@@ -128,4 +178,16 @@ Deno.test("bounded map never exceeds its concurrency limit", async () => {
 
   assertEquals(maxActive, 2)
   assertEquals(values, [2, 4, 6, 8, 10, 12])
+})
+
+Deno.test("bounded map preserves the first concurrent failure", async () => {
+  await assertRejects(
+    () =>
+      mapWithConcurrency(["first", "second"], 2, async (value) => {
+        if (value === "second") await new Promise((resolve) => setTimeout(resolve, 5))
+        throw new Error(value)
+      }),
+    Error,
+    "first",
+  )
 })

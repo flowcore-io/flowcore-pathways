@@ -3,10 +3,12 @@ import {
   DataCoreFetchCommand,
   DataCoreUpdateCommand,
   EventTypeCreateCommand,
+  EventTypeFetchCommand,
   EventTypeListCommand,
   EventTypeUpdateCommand,
   FlowcoreClient,
   FlowTypeCreateCommand,
+  FlowTypeFetchCommand,
   FlowTypeListCommand,
   FlowTypeUpdateCommand,
   NotFoundException,
@@ -15,6 +17,8 @@ import {
 import type { Logger } from "./logger.ts"
 import { NoopLogger } from "./logger.ts"
 import {
+  getProvisionErrorStatus,
+  isRetryableProvisionError,
   mapWithConcurrency,
   type ProvisionRetryConfig,
   type ResolvedProvisionRetryConfig,
@@ -99,6 +103,24 @@ export interface ProvisionerRegistration {
   eventTypeDescription?: string
 }
 
+function deduplicateRegistrations(registrations: ProvisionerRegistration[]): ProvisionerRegistration[] {
+  const unique = new Map<string, ProvisionerRegistration>()
+
+  for (const registration of registrations) {
+    const key = `${registration.flowType}/${registration.eventType}`
+    const existing = unique.get(key)
+    if (!existing) {
+      unique.set(key, { ...registration })
+      continue
+    }
+
+    existing.flowTypeDescription ??= registration.flowTypeDescription
+    existing.eventTypeDescription ??= registration.eventTypeDescription
+  }
+
+  return [...unique.values()]
+}
+
 /**
  * Options for creating a PathwayProvisioner
  */
@@ -173,7 +195,7 @@ export class PathwayProvisioner {
     this.dataCoreDescription = options.dataCoreDescription
     this.dataCoreAccessControl = options.dataCoreAccessControl
     this.dataCoreDeleteProtection = options.dataCoreDeleteProtection
-    this.registrations = options.registrations
+    this.registrations = deduplicateRegistrations(options.registrations)
     this.logger = options.logger ?? new NoopLogger()
     // Own retries here so all provisioning commands use one policy. The SDK otherwise
     // retries some commands internally while leaving create commands unprotected.
@@ -331,7 +353,7 @@ export class PathwayProvisioner {
 
     const dataCoreDescription = this.dataCoreDescription
     this.logger.info("Creating data core", { name: this.dataCore })
-    const created = await this.apply(
+    const created = await this.create(
       "dataCore.create",
       { tenantId, dataCore: this.dataCore },
       () =>
@@ -344,6 +366,7 @@ export class PathwayProvisioner {
             deleteProtection: this.dataCoreDeleteProtection,
           }),
         ),
+      () => client.execute(new DataCoreFetchCommand({ tenant: this.tenant, dataCore: this.dataCore })),
     )
 
     return created?.id ?? null
@@ -400,10 +423,11 @@ export class PathwayProvisioner {
         } else if (!this.skipFlowTypes && description !== undefined) {
           // Create flow type
           this.logger.info("Creating flow type", { name, description })
-          const created = await this.apply(
+          const created = await this.create(
             "flowType.create",
             { dataCoreId, flowType: name },
             () => client.execute(new FlowTypeCreateCommand({ dataCoreId, name, description })),
+            () => client.execute(new FlowTypeFetchCommand({ dataCoreId, flowType: name })),
           )
           if (created) {
             return [name, created.id]
@@ -509,7 +533,7 @@ export class PathwayProvisioner {
               eventType: reg.eventType,
               description: eventTypeDescription,
             })
-            await this.apply(
+            await this.create(
               "eventType.create",
               { flowType: flowTypeName, flowTypeId, eventType: reg.eventType },
               () =>
@@ -519,6 +543,10 @@ export class PathwayProvisioner {
                     name: reg.eventType,
                     description: eventTypeDescription,
                   }),
+                ),
+              () =>
+                client.execute(
+                  new EventTypeFetchCommand({ flowTypeId, eventType: reg.eventType }),
                 ),
             )
           })
@@ -583,6 +611,49 @@ export class PathwayProvisioner {
   ): Promise<T | null> {
     try {
       return await this.executeWithRetry(stage, context, operation)
+    } catch (error) {
+      this.handleApplyFailure(stage, error, context)
+      return null
+    }
+  }
+
+  private async create<T>(
+    stage: string,
+    context: Record<string, unknown>,
+    operation: () => Promise<T>,
+    reconcile: () => Promise<T>,
+  ): Promise<T | null> {
+    let hadAmbiguousFailure = false
+
+    try {
+      return await this.executeWithRetry(stage, context, async () => {
+        if (hadAmbiguousFailure) {
+          try {
+            return await reconcile()
+          } catch (error) {
+            if (!isNotFoundError(error)) throw error
+          }
+        }
+
+        try {
+          return await operation()
+        } catch (error) {
+          if (isRetryableProvisionError(error)) {
+            hadAmbiguousFailure = true
+            throw error
+          }
+
+          if (hadAmbiguousFailure && getProvisionErrorStatus(error) === 409) {
+            try {
+              return await reconcile()
+            } catch (reconcileError) {
+              if (!isNotFoundError(reconcileError)) throw reconcileError
+            }
+          }
+
+          throw error
+        }
+      })
     } catch (error) {
       this.handleApplyFailure(stage, error, context)
       return null

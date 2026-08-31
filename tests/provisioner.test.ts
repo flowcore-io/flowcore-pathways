@@ -1117,6 +1117,9 @@ Deno.test({
         TenantTranslateNameToIdCommand: () => baseTenant(),
         DataCoreFetchCommand: () => baseDataCore(),
         FlowTypeListCommand: () => [],
+        FlowTypeFetchCommand: () => {
+          throw new NotFoundException("FlowType", {})
+        },
         FlowTypeCreateCommand: (cmd) => {
           createAttempts++
           if (createAttempts < 3) {
@@ -1205,6 +1208,154 @@ Deno.test({
       await provisioner.provision()
       assertEquals(applyAttempts, 2)
       assertEquals(errors.at(-1)?.stage, "dataCore.create")
+    })
+
+    await t.step("reconciles all create levels after an ambiguous server failure", async () => {
+      let dataCoreExists = false
+      let flowTypeExists = false
+      let eventTypeExists = false
+      let dataCoreCreates = 0
+      let flowTypeCreates = 0
+      let eventTypeCreates = 0
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          if (!dataCoreExists) throw new NotFoundException("DataCore", {})
+          return baseDataCore({ description: "My data core" })
+        },
+        DataCoreCreateCommand: () => {
+          dataCoreCreates++
+          dataCoreExists = true
+          throw Object.assign(new Error("response lost after commit"), { status: 500 })
+        },
+        FlowTypeListCommand: () => [],
+        FlowTypeFetchCommand: () => {
+          if (!flowTypeExists) throw new NotFoundException("FlowType", {})
+          return baseFlowType("user", "ft-user", "User events")
+        },
+        FlowTypeCreateCommand: () => {
+          flowTypeCreates++
+          flowTypeExists = true
+          throw Object.assign(new Error("response lost after commit"), { status: 500 })
+        },
+        EventTypeListCommand: () => [],
+        EventTypeFetchCommand: () => {
+          if (!eventTypeExists) throw new NotFoundException("EventType", {})
+          return baseEventType("created", "et-created", "ft-user", "User created")
+        },
+        EventTypeCreateCommand: () => {
+          eventTypeCreates++
+          eventTypeExists = true
+          throw Object.assign(new Error("response lost after commit"), { status: 500 })
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "My data core",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        provisionRetry: { maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+        registrations: [{
+          flowType: "user",
+          eventType: "created",
+          flowTypeDescription: "User events",
+          eventTypeDescription: "User created",
+        }],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(dataCoreCreates, 1)
+      assertEquals(flowTypeCreates, 1)
+      assertEquals(eventTypeCreates, 1)
+    })
+
+    await t.step("reconciles conflict after an ambiguous create failure", async () => {
+      let createAttempts = 0
+      let resourceExists = false
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore(),
+        FlowTypeListCommand: () => [],
+        FlowTypeFetchCommand: () => {
+          if (!resourceExists) throw new NotFoundException("FlowType", {})
+          return baseFlowType("user", "ft-user", "User events")
+        },
+        FlowTypeCreateCommand: () => {
+          createAttempts++
+          if (createAttempts === 1) {
+            throw Object.assign(new Error("service unavailable"), { status: 500 })
+          }
+          resourceExists = true
+          throw Object.assign(new Error("already exists"), { status: 409 })
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        skipEventTypes: true,
+        provisionRetry: { maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+        registrations: [{
+          flowType: "user",
+          eventType: "created",
+          flowTypeDescription: "User events",
+        }],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(createAttempts, 2)
+    })
+
+    await t.step("deduplicates direct provisioner registrations", async () => {
+      let eventTypeCreates = 0
+      let createdDescription: unknown
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore(),
+        FlowTypeListCommand: () => [baseFlowType("user", "ft-user", "User events")],
+        EventTypeListCommand: () => [],
+        EventTypeCreateCommand: (cmd) => {
+          eventTypeCreates++
+          createdDescription = cmd.input.description
+          return baseEventType("created", "et-created", "ft-user", String(cmd.input.description))
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        registrations: [
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "User events",
+            eventTypeDescription: "First description",
+          },
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "Conflicting flow description",
+            eventTypeDescription: "Conflicting event description",
+          },
+        ],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(eventTypeCreates, 1)
+      assertEquals(createdDescription, "First description")
     })
   },
 })

@@ -3,7 +3,7 @@ export interface ProvisionRetryConfig {
   maxAttempts?: number
   /** Initial exponential-backoff delay. Default: 250ms. */
   baseDelayMs?: number
-  /** Maximum delay between attempts. Default: 5000ms. */
+  /** Maximum exponential-backoff delay. A valid Retry-After may exceed it. Default: 5000ms. */
   maxDelayMs?: number
   /** Random delay variation as a ratio from 0 to 1. Default: 0.2. */
   jitterRatio?: number
@@ -77,12 +77,33 @@ export function getProvisionErrorStatus(error: unknown): number | undefined {
   return typeof response?.status === "number" ? response.status : undefined
 }
 
-function getErrorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null) return undefined
-  const direct = (error as { code?: unknown }).code
-  if (typeof direct === "string") return direct
-  const cause = (error as { cause?: { code?: unknown } }).cause
-  return typeof cause?.code === "string" ? cause.code : undefined
+function isNetworkError(error: unknown, seen = new Set<object>()): boolean {
+  if (typeof error !== "object" || error === null || seen.has(error)) return false
+  seen.add(error)
+
+  if (error instanceof TypeError) return true
+
+  const candidate = error as {
+    body?: unknown
+    cause?: unknown
+    code?: unknown
+    details?: unknown
+    error?: unknown
+    message?: unknown
+  }
+  if (typeof candidate.code === "string" && RETRYABLE_NETWORK_CODES.has(candidate.code)) return true
+  if (
+    typeof candidate.message === "string" &&
+    /fetch failed|error sending request|network error|socket hang up|connection reset|connection refused|timed? out/i
+      .test(
+        candidate.message,
+      )
+  ) {
+    return true
+  }
+
+  return [candidate.cause, candidate.error, candidate.body, candidate.details]
+    .some((nested) => isNetworkError(nested, seen))
 }
 
 function getRetryAfterValue(error: unknown): string | null {
@@ -118,12 +139,7 @@ export function isRetryableProvisionError(error: unknown): boolean {
     return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504
   }
 
-  const code = getErrorCode(error)
-  if (code && RETRYABLE_NETWORK_CODES.has(code)) return true
-
-  if (error instanceof TypeError) return true
-  return error instanceof Error &&
-    /fetch failed|network error|socket hang up|connection reset|connection refused|timed? out/i.test(error.message)
+  return isNetworkError(error)
 }
 
 export async function retryProvisionOperation<T>(
@@ -149,7 +165,7 @@ export async function retryProvisionOperation<T>(
       const exponentialDelay = Math.min(config.maxDelayMs, config.baseDelayMs * 2 ** (attempt - 1))
       const jitterMultiplier = 1 + (random() * 2 - 1) * config.jitterRatio
       const fallbackDelay = Math.max(0, Math.round(exponentialDelay * jitterMultiplier))
-      const delayMs = Math.min(config.maxDelayMs, retryAfterMs(error, now) ?? fallbackDelay)
+      const delayMs = retryAfterMs(error, now) ?? fallbackDelay
 
       onRetry?.({
         attempt,
@@ -182,8 +198,10 @@ export async function mapWithConcurrency<T, R>(
       try {
         results[index] = await operation(values[index], index)
       } catch (error) {
-        failed = true
-        firstError = error
+        if (!failed) {
+          failed = true
+          firstError = error
+        }
       }
     }
   })
