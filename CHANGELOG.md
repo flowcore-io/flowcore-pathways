@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.6.0...v2.7.0) (2026-08-31)
+
+
+### Features
+
+* **pathways:** parallelize provisioning with retries ([#108](https://github.com/flowcore-io/flowcore-pathways/issues/108)) ([b548e04](https://github.com/flowcore-io/flowcore-pathways/commit/b548e04d37f04c244e991eefbf43e44576451e45))
+
 ## [2.6.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.5.5...v2.6.0) (2026-08-27)
 
 
