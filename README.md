@@ -199,6 +199,32 @@ const pathways = new PathwaysBuilder({
 Passing `provisionFailure: "throw"` or `"continue"` applies the mode to both categories. The `apply` setting also
 controls by-name virtual/managed pathway registration failures.
 
+Independent flow-type and event-type operations run with bounded parallelism. Parent-child stages remain ordered so the
+data core exists before flow types, and flow types exist before event types. The default limit is four concurrent
+operations. Transient request failures retry three times in total with exponential backoff and jitter. Retryable
+failures are HTTP 408, 429, 500, 502, 503, and 504, plus common network connection errors. A valid `Retry-After` is
+honored without shortening it to `maxDelayMs` when response headers are available. The current Flowcore SDK does not
+expose response headers for shared-resource commands, so those commands use exponential backoff. Ordinary 4xx responses,
+including 404, are not retried.
+
+Tune both behaviors when needed:
+
+```typescript
+const pathways = new PathwaysBuilder({
+  /* ... */
+  provisionConcurrency: 4,
+  provisionRetry: {
+    maxAttempts: 3, // includes the initial request
+    baseDelayMs: 250,
+    maxDelayMs: 5_000, // caps exponential backoff, not Retry-After
+    jitterRatio: 0.2,
+  },
+})
+```
+
+Retries run before `provisionFailure` is applied. Once attempts are exhausted, the existing check/apply policy decides
+whether startup throws or logs and continues.
+
 To disable everything (for CI or when resources are managed elsewhere):
 
 ```typescript

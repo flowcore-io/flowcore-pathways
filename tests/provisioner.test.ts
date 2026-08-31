@@ -1043,5 +1043,319 @@ Deno.test({
       assertEquals(createdFlowTypes.sort(), ["order", "user"])
       assertEquals(createdEventTypes.sort(), ["created", "deleted", "placed"])
     })
+
+    await t.step("provisions sibling resources in bounded parallel stages", async () => {
+      let activeFlowCreates = 0
+      let maxFlowCreates = 0
+      let completedFlowCreates = 0
+      let activeEventLists = 0
+      let maxEventLists = 0
+      let activeEventCreates = 0
+      let maxEventCreates = 0
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore(),
+        FlowTypeListCommand: () => [],
+        FlowTypeCreateCommand: async (cmd) => {
+          activeFlowCreates++
+          maxFlowCreates = Math.max(maxFlowCreates, activeFlowCreates)
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          activeFlowCreates--
+          completedFlowCreates++
+          const name = cmd.input.name as string
+          return baseFlowType(name, `ft-${name}`, cmd.input.description as string)
+        },
+        EventTypeListCommand: async () => {
+          assertEquals(completedFlowCreates, 3, "event-type stage must wait for all flow types")
+          activeEventLists++
+          maxEventLists = Math.max(maxEventLists, activeEventLists)
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          activeEventLists--
+          return []
+        },
+        EventTypeCreateCommand: async (cmd) => {
+          activeEventCreates++
+          maxEventCreates = Math.max(maxEventCreates, activeEventCreates)
+          await new Promise((resolve) => setTimeout(resolve, 5))
+          activeEventCreates--
+          return baseEventType(
+            cmd.input.name as string,
+            `et-${cmd.input.name as string}`,
+            cmd.input.flowTypeId as string,
+            cmd.input.description as string,
+          )
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        provisionConcurrency: 2,
+        registrations: ["user", "order", "invoice"].map((flowType) => ({
+          flowType,
+          eventType: "created",
+          flowTypeDescription: `${flowType} events`,
+          eventTypeDescription: `${flowType} created`,
+        })),
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+
+      assertEquals(maxFlowCreates, 2)
+      assertEquals(maxEventLists, 2)
+      assertEquals(maxEventCreates, 2)
+    })
+
+    await t.step("retries transient SDK apply failures before applying failure policy", async () => {
+      let createAttempts = 0
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore(),
+        FlowTypeListCommand: () => [],
+        FlowTypeFetchCommand: () => {
+          throw new NotFoundException("FlowType", {})
+        },
+        FlowTypeCreateCommand: (cmd) => {
+          createAttempts++
+          if (createAttempts < 3) {
+            throw Object.assign(new Error("service unavailable"), { status: 500 })
+          }
+          return baseFlowType(cmd.input.name as string, "ft-new", cmd.input.description as string)
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        skipEventTypes: true,
+        provisionRetry: { maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+        registrations: [{
+          flowType: "user",
+          eventType: "created",
+          flowTypeDescription: "User events",
+        }],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(createAttempts, 3)
+    })
+
+    await t.step("applies check failure policy after transient retries are exhausted", async () => {
+      let checkAttempts = 0
+      const errors: Array<{ message: string; stage?: unknown }> = []
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          checkAttempts++
+          throw Object.assign(new Error("service unavailable"), { status: 503 })
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        provisionRetry: { maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
+        registrations: [],
+        logger: createTestLogger(errors),
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(checkAttempts, 2)
+      assertEquals(errors.at(-1)?.stage, "dataCore")
+    })
+
+    await t.step("applies continue policy after transient apply retries are exhausted", async () => {
+      let applyAttempts = 0
+      const errors: Array<{ message: string; stage?: unknown }> = []
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          throw new NotFoundException("DataCore", {})
+        },
+        DataCoreCreateCommand: () => {
+          applyAttempts++
+          throw Object.assign(new Error("service unavailable"), { status: 500 })
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "desc",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        provisionFailure: { apply: "continue" },
+        provisionRetry: { maxAttempts: 2, baseDelayMs: 0, maxDelayMs: 0 },
+        registrations: [],
+        logger: createTestLogger(errors),
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(applyAttempts, 2)
+      assertEquals(errors.at(-1)?.stage, "dataCore.create")
+    })
+
+    await t.step("reconciles all create levels after an ambiguous server failure", async () => {
+      let dataCoreExists = false
+      let flowTypeExists = false
+      let eventTypeExists = false
+      let dataCoreCreates = 0
+      let flowTypeCreates = 0
+      let eventTypeCreates = 0
+
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => {
+          if (!dataCoreExists) throw new NotFoundException("DataCore", {})
+          return baseDataCore({ description: "My data core" })
+        },
+        DataCoreCreateCommand: () => {
+          dataCoreCreates++
+          dataCoreExists = true
+          throw Object.assign(new Error("response lost after commit"), { status: 500 })
+        },
+        FlowTypeListCommand: () => [],
+        FlowTypeFetchCommand: () => {
+          if (!flowTypeExists) throw new NotFoundException("FlowType", {})
+          return baseFlowType("user", "ft-user", "User events")
+        },
+        FlowTypeCreateCommand: () => {
+          flowTypeCreates++
+          flowTypeExists = true
+          throw Object.assign(new Error("response lost after commit"), { status: 500 })
+        },
+        EventTypeListCommand: () => [],
+        EventTypeFetchCommand: () => {
+          if (!eventTypeExists) throw new NotFoundException("EventType", {})
+          return baseEventType("created", "et-created", "ft-user", "User created")
+        },
+        EventTypeCreateCommand: () => {
+          eventTypeCreates++
+          eventTypeExists = true
+          throw Object.assign(new Error("response lost after commit"), { status: 500 })
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreDescription: "My data core",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        provisionRetry: { maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+        registrations: [{
+          flowType: "user",
+          eventType: "created",
+          flowTypeDescription: "User events",
+          eventTypeDescription: "User created",
+        }],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(dataCoreCreates, 1)
+      assertEquals(flowTypeCreates, 1)
+      assertEquals(eventTypeCreates, 1)
+    })
+
+    await t.step("reconciles conflict after an ambiguous create failure", async () => {
+      let createAttempts = 0
+      let resourceExists = false
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore(),
+        FlowTypeListCommand: () => [],
+        FlowTypeFetchCommand: () => {
+          if (!resourceExists) throw new NotFoundException("FlowType", {})
+          return baseFlowType("user", "ft-user", "User events")
+        },
+        FlowTypeCreateCommand: () => {
+          createAttempts++
+          if (createAttempts === 1) {
+            throw Object.assign(new Error("service unavailable"), { status: 500 })
+          }
+          resourceExists = true
+          throw Object.assign(new Error("already exists"), { status: 409 })
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        skipEventTypes: true,
+        provisionRetry: { maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+        registrations: [{
+          flowType: "user",
+          eventType: "created",
+          flowTypeDescription: "User events",
+        }],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(createAttempts, 2)
+    })
+
+    await t.step("deduplicates direct provisioner registrations", async () => {
+      let eventTypeCreates = 0
+      let createdDescription: unknown
+      const client = createMockClient({
+        TenantTranslateNameToIdCommand: () => baseTenant(),
+        DataCoreFetchCommand: () => baseDataCore(),
+        FlowTypeListCommand: () => [baseFlowType("user", "ft-user", "User events")],
+        EventTypeListCommand: () => [],
+        EventTypeCreateCommand: (cmd) => {
+          eventTypeCreates++
+          createdDescription = cmd.input.description
+          return baseEventType("created", "et-created", "ft-user", String(cmd.input.description))
+        },
+      })
+
+      const provisioner = new PathwayProvisioner({
+        tenant: "my-org",
+        dataCore: "my-core",
+        apiKey: "fc_test_key",
+        dataCoreAccessControl: "private",
+        dataCoreDeleteProtection: false,
+        registrations: [
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "User events",
+            eventTypeDescription: "First description",
+          },
+          {
+            flowType: "user",
+            eventType: "created",
+            flowTypeDescription: "Conflicting flow description",
+            eventTypeDescription: "Conflicting event description",
+          },
+        ],
+        clientFactory: () => client,
+      })
+
+      await provisioner.provision()
+      assertEquals(eventTypeCreates, 1)
+      assertEquals(createdDescription, "First description")
+    })
   },
 })

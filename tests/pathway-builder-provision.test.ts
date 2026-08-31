@@ -189,5 +189,38 @@ Deno.test({
         fetchStub.restore()
       }
     })
+
+    await t.step("pathway upsert retries transient 500 responses", async () => {
+      let fetchCalls = 0
+      const provisionStub = stub(PathwayProvisioner.prototype, "provision", () => Promise.resolve())
+      const fetchStub = stub(globalThis, "fetch", () => {
+        fetchCalls++
+        if (fetchCalls < 3) {
+          return Promise.resolve(new Response("temporarily unavailable", { status: 500 }))
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ pathwayId: "pathway-id", status: "created" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        )
+      })
+
+      try {
+        const builder = createBuilder({
+          runtimeEnv: "production",
+          pathwayName: "managed-service",
+          autoProvision: { pathway: true },
+          managedConfig: { endpointUrl: "https://example.com/api/transformer" },
+          provisionRetry: { maxAttempts: 3, baseDelayMs: 0, maxDelayMs: 0 },
+        })
+
+        await builder.provision()
+        assertEquals(fetchCalls, 3)
+      } finally {
+        provisionStub.restore()
+        fetchStub.restore()
+      }
+    })
   },
 })

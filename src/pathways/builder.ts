@@ -29,6 +29,14 @@ import {
   type ProvisionFailureConfig,
   type ProvisionFailureMode,
 } from "./provisioner.ts"
+import {
+  getProvisionErrorStatus,
+  type ProvisionRetryConfig,
+  type ResolvedProvisionRetryConfig,
+  resolveProvisionConcurrency,
+  resolveProvisionRetryConfig,
+  retryProvisionOperation,
+} from "./provisioning-execution.ts"
 
 export type { AutoProvisionConfig } from "./pump/types.ts"
 
@@ -266,6 +274,10 @@ export interface PathwaysBuilderConfig {
    * Passing `"throw"` or `"continue"` applies that mode to both categories.
    */
   provisionFailure?: ProvisionFailureMode | ProvisionFailureConfig
+  /** Maximum number of sibling resource operations run at once. Default: 4. */
+  provisionConcurrency?: number
+  /** Retry policy for transient provisioning requests. */
+  provisionRetry?: ProvisionRetryConfig
   managedConfig?: ManagedPathwayConfig
   /**
    * Optional symmetric encryption for pathways marked with `encrypted`.
@@ -449,6 +461,8 @@ export class PathwaysBuilder<
   private readonly dataCoreAccessControl: string
   private readonly dataCoreDeleteProtection: boolean
   private readonly provisionFailure?: ProvisionFailureMode | ProvisionFailureConfig
+  private readonly provisionConcurrency: number
+  private readonly provisionRetry: ResolvedProvisionRetryConfig
 
   // Virtual pathway auto-provisioning
   private readonly pathwayName?: string
@@ -513,6 +527,8 @@ export class PathwaysBuilder<
     autoProvision,
     defaultAutoProvision,
     provisionFailure,
+    provisionConcurrency,
+    provisionRetry,
     managedConfig,
     encryption,
   }: PathwaysBuilderConfig) {
@@ -539,6 +555,8 @@ export class PathwaysBuilder<
     this.dataCoreAccessControl = dataCoreAccessControl ?? "private"
     this.dataCoreDeleteProtection = dataCoreDeleteProtection ?? false
     this.provisionFailure = provisionFailure
+    this.provisionConcurrency = resolveProvisionConcurrency(provisionConcurrency)
+    this.provisionRetry = resolveProvisionRetryConfig(provisionRetry)
     this.encryptionProvider = createPathwayEncryptionProvider(encryption)
 
     // Store virtual pathway auto-provisioning config
@@ -1738,6 +1756,8 @@ export class PathwaysBuilder<
       skipFlowTypes: skipFlags.skipFlowTypes,
       skipEventTypes: skipFlags.skipEventTypes,
       provisionFailure: this.provisionFailure,
+      provisionConcurrency: this.provisionConcurrency,
+      provisionRetry: this.provisionRetry,
     })
 
     await provisioner.provision()
@@ -1813,55 +1833,74 @@ export class PathwaysBuilder<
     )
     const url = `${this.pulseUrl}/api/v1/pathways/by-name/${encodeURIComponent(pathwayName)}`
 
-    let response: Response
     try {
-      response = await fetch(url, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: this.getPathwayProvisionAuthHeader(),
+      const result = await retryProvisionOperation(
+        async () => {
+          const response = await fetch(url, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: this.getPathwayProvisionAuthHeader(),
+            },
+            body: JSON.stringify(body),
+          })
+
+          if (!response.ok) {
+            const responseBody = await response.text().catch(() => "")
+            const error = new Error(
+              `Failed to register ${type} pathway "${pathwayName}": ${response.status} ${responseBody}`,
+            ) as Error & { response: { status: number; headers: Headers }; responseBody: string }
+            error.response = { status: response.status, headers: response.headers }
+            error.responseBody = responseBody
+            throw error
+          }
+
+          return await response.json() as { pathwayId: string; status: string }
         },
-        body: JSON.stringify(body),
+        this.provisionRetry,
+        (notice) => {
+          this.logger.warn("Retrying transient pathway registration request", {
+            pathwayName,
+            type,
+            url,
+            ...notice,
+          })
+        },
+      )
+
+      this.pathwayId = result.pathwayId
+      this.logger[this.logLevel.provisionSuccess](`${type} pathway registered`, {
+        pathwayName,
+        pathwayId: this.pathwayId,
+        status: result.status,
+        ...logMeta,
       })
     } catch (err) {
+      const status = getProvisionErrorStatus(err)
+      const responseBody = typeof err === "object" && err !== null && "responseBody" in err
+        ? String((err as { responseBody: unknown }).responseBody)
+        : undefined
       const msg = err instanceof Error ? err.message : String(err)
       this.logger[this.logLevel.provisionFailure](`${type} pathway registration failed`, {
         pathwayName,
         url,
         error: msg,
-        phase: "network",
+        status,
+        body: responseBody,
+        phase: status === undefined ? "network" : "response",
       })
-      const error = new Error(`Failed to register ${type} pathway "${pathwayName}": ${msg}`)
       if (this.shouldContinueProvisionApplyFailure()) {
         return
       }
-      throw error
-    }
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "")
-      this.logger[this.logLevel.provisionFailure](`${type} pathway registration failed`, {
-        pathwayName,
-        url,
-        status: response.status,
-        body: text,
-        phase: "response",
-      })
-      const error = new Error(`Failed to register ${type} pathway "${pathwayName}": ${response.status} ${text}`)
-      if (this.shouldContinueProvisionApplyFailure()) {
-        return
+      if (status === undefined) {
+        const wrapped = new Error(`Failed to register ${type} pathway "${pathwayName}": ${msg}`) as Error & {
+          cause?: unknown
+        }
+        wrapped.cause = err
+        throw wrapped
       }
-      throw error
+      throw err
     }
-
-    const result = await response.json() as { pathwayId: string; status: string }
-    this.pathwayId = result.pathwayId
-    this.logger[this.logLevel.provisionSuccess](`${type} pathway registered`, {
-      pathwayName,
-      pathwayId: this.pathwayId,
-      status: result.status,
-      ...logMeta,
-    })
   }
 
   /**

@@ -12,6 +12,8 @@ type InternalBuilderShape = {
   pathwayMode: "virtual" | "managed"
   autoProvision: { dataCore: boolean; flowType: boolean; eventType: boolean; pathway: boolean }
   provisionFailure?: "throw" | "continue" | { check?: "throw" | "continue"; apply?: "throw" | "continue" }
+  provisionConcurrency: number
+  provisionRetry: { maxAttempts: number; baseDelayMs: number; maxDelayMs: number; jitterRatio: number }
 }
 
 // deno-lint-ignore no-explicit-any
@@ -35,6 +37,8 @@ Deno.test({
         pathwayMode: "managed",
         defaultAutoProvision: false,
         provisionFailure: { apply: "continue" },
+        provisionConcurrency: 6,
+        provisionRetry: { maxAttempts: 4, baseDelayMs: 100, maxDelayMs: 2_000, jitterRatio: 0.1 },
         managedConfig: {
           endpointUrl: "https://app.example.com/flowcore",
           authHeaders: {
@@ -45,6 +49,13 @@ Deno.test({
       })
 
       assertEquals(typeof builder, "object")
+      assertEquals(inspect(builder).provisionConcurrency, 6)
+      assertEquals(inspect(builder).provisionRetry, {
+        maxAttempts: 4,
+        baseDelayMs: 100,
+        maxDelayMs: 2_000,
+        jitterRatio: 0.1,
+      })
     })
 
     await t.step("should accept deprecated fields without error (backward compat)", () => {
