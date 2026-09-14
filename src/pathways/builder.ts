@@ -105,6 +105,20 @@ import {
   type PathwayEncryptionProvider,
   stripPathwayEncryptionMetadata,
 } from "./encryption.ts"
+import {
+  buildChunkParts,
+  type ChunkEnvelope,
+  hasChunkedMetadata,
+  joinChunkParts,
+  parseChunkEnvelope,
+  PATHWAY_CHUNKED_METADATA_KEY,
+  type PathwayChunkingConfig,
+  type ResolvedPathwayChunkingConfig,
+  resolvePathwayChunkingConfig,
+  serializedByteLength,
+  stripPathwayChunkMetadata,
+} from "./chunking.ts"
+import type { PathwayChunkStore } from "./types.ts"
 
 /**
  * Default timeout for pathway processing in milliseconds (10 seconds)
@@ -288,6 +302,16 @@ export interface PathwaysBuilderConfig {
    * process-time schema validation and handlers.
    */
   encryption?: PathwayEncryptionConfig
+  /**
+   * Byte budgets for automatic splitting of oversized events.
+   *
+   * Flowcore rejects an event whose payload exceeds 64 000 bytes. Chunking is
+   * off until a chunk store is configured with `withPathwayChunkStore()`. With
+   * a store, `write()` splits such a payload into part events and `process()`
+   * reassembles them through the store before validation, cluster routing and
+   * handlers. Set `enabled: false` to keep chunking off even with a store.
+   */
+  chunking?: PathwayChunkingConfig
 }
 
 /**
@@ -434,6 +458,8 @@ export class PathwaysBuilder<
   private readonly filePathways: Set<keyof TPathway> = new Set()
   private readonly webhookBuilderFactory: () => WebhookBuilderType
   private pathwayState: PathwayState = new InternalPathwayState()
+  private chunkStore: PathwayChunkStore | null = null
+  private readonly chunking: ResolvedPathwayChunkingConfig
   private pathwayTimeoutMs: number = DEFAULT_PATHWAY_TIMEOUT_MS
 
   // Audit-related properties
@@ -531,6 +557,7 @@ export class PathwaysBuilder<
     provisionRetry,
     managedConfig,
     encryption,
+    chunking,
   }: PathwaysBuilderConfig) {
     // Initialize logger (use NoopLogger if none provided)
     this.logger = logger ?? new NoopLogger()
@@ -558,6 +585,7 @@ export class PathwaysBuilder<
     this.provisionConcurrency = resolveProvisionConcurrency(provisionConcurrency)
     this.provisionRetry = resolveProvisionRetryConfig(provisionRetry)
     this.encryptionProvider = createPathwayEncryptionProvider(encryption)
+    this.chunking = resolvePathwayChunkingConfig(chunking)
 
     // Store virtual pathway auto-provisioning config
     this.pathwayName = pathwayName
@@ -612,6 +640,23 @@ export class PathwaysBuilder<
   withPathwayState(state: PathwayState): PathwaysBuilder<TPathway, TWritablePaths> {
     this.logger.debug("Setting custom pathway state")
     this.pathwayState = state
+    return this as PathwaysBuilder<TPathway, TWritablePaths>
+  }
+
+  /**
+   * Enables automatic chunking of oversized events by configuring the store that collects
+   * parts until they can be reassembled.
+   *
+   * Without a store, chunking is off: an oversized write fails with the Flowcore size error,
+   * and a received part event throws. Use `createPostgresPathwayChunkStore()` whenever more
+   * than one instance consumes the same pathways. `InternalPathwayChunkStore` is in-memory and
+   * only suitable for a single process.
+   * @param store The PathwayChunkStore implementation to use
+   * @returns The PathwaysBuilder instance with the chunk store configured
+   */
+  withPathwayChunkStore(store: PathwayChunkStore): PathwaysBuilder<TPathway, TWritablePaths> {
+    this.logger.debug("Setting custom pathway chunk store")
+    this.chunkStore = store
     return this as PathwaysBuilder<TPathway, TWritablePaths>
   }
 
@@ -715,6 +760,129 @@ export class PathwaysBuilder<
       this.logger.error(error)
       throw new Error(error)
     }
+
+    // Oversized events arrive as part events. Collect them; only the call that completes the
+    // chunk continues with the reassembled logical event. Reassembly happens before cluster
+    // routing, so a worker always receives a plain event.
+    if (hasChunkedMetadata(data.metadata)) {
+      const envelope = parseChunkEnvelope(data.payload)
+      if (envelope) {
+        const completed = await this.collectChunkPart(pathway, data, envelope)
+        if (!completed) {
+          return
+        }
+        try {
+          await this.processResolvedEvent(pathway, data)
+        } finally {
+          await this.finishChunk(completed.chunkId, completed.partEventIds)
+        }
+        return
+      }
+    }
+
+    await this.processResolvedEvent(pathway, data)
+  }
+
+  /**
+   * Records one part of an oversized event.
+   *
+   * @returns `null` when the chunk is still incomplete (the part is stored and, unless it is
+   * part 1, marked processed). When this part completes the chunk, `data` is mutated into the
+   * reassembled logical event and the chunk id plus every part event id are returned.
+   */
+  private async collectChunkPart(
+    pathway: keyof TPathway,
+    data: FlowcoreEvent,
+    envelope: { header: ChunkEnvelope["pathwaysChunk"]; data: string },
+  ): Promise<{ chunkId: string; partEventIds: string[] } | null> {
+    const pathwayStr = String(pathway)
+    const { header } = envelope
+
+    let slice = envelope.data
+    if (this.shouldDecryptPathwayPayload(pathway, data.metadata)) {
+      slice = this.decryptChunkSlice(pathway, slice)
+    }
+
+    this.logger.debug(`Collecting pathway chunk part`, {
+      pathway: pathwayStr,
+      eventId: data.eventId,
+      chunkId: header.id,
+      part: header.part,
+      totalParts: header.totalParts,
+    })
+
+    if (!this.chunkStore) {
+      throw new Error(
+        `Pathway ${pathwayStr} received a chunked event but no chunk store is configured; ` +
+          `call withPathwayChunkStore() on the consumer`,
+      )
+    }
+
+    const result = await this.chunkStore.storePart({
+      chunkId: header.id,
+      part: header.part,
+      totalParts: header.totalParts,
+      digest: header.digest,
+      data: slice,
+      eventId: data.eventId,
+    })
+
+    if (result.status !== "complete") {
+      // Part 1 carries the logical event id that writers wait on. It stays unprocessed until the
+      // whole chunk has been handled, so a `write()` without fireAndForget blocks correctly.
+      if (header.part !== 1) {
+        await this.pathwayState.setProcessed(data.eventId)
+      }
+      return null
+    }
+
+    data.payload = joinChunkParts(result.parts ?? [], header.digest)
+    data.eventId = result.partEventIds?.[0] ?? data.eventId
+    // Both markers described the wire form. Drop them so the cluster re-entry into process()
+    // neither tries to reassemble nor to decrypt again.
+    data.metadata = stripPathwayEncryptionMetadata(stripPathwayChunkMetadata(data.metadata)) as typeof data.metadata
+
+    this.logger.debug(`Reassembled pathway chunk`, {
+      pathway: pathwayStr,
+      chunkId: header.id,
+      totalParts: header.totalParts,
+      eventId: data.eventId,
+    })
+
+    return { chunkId: header.id, partEventIds: result.partEventIds ?? [] }
+  }
+
+  /**
+   * Marks the remaining part events processed and removes the chunk from the store.
+   * Part 1 is handled by the regular processing path (it is the logical event id).
+   */
+  private async finishChunk(chunkId: string, partEventIds: string[]): Promise<void> {
+    await Promise.all(partEventIds.slice(1).map((eventId) => this.pathwayState.setProcessed(eventId)))
+    try {
+      await this.chunkStore?.deleteChunk(chunkId)
+    } catch (error) {
+      this.logger.warn(`Failed to delete reassembled pathway chunk; it will expire`, {
+        chunkId,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  private decryptChunkSlice(pathway: keyof TPathway, slice: string): string {
+    if (!this.encryptionProvider) {
+      throw new Error(
+        `Pathway ${String(pathway)} received encrypted chunk part but no symmetric encryption key is configured`,
+      )
+    }
+    return this.encryptionProvider.decrypt(slice)
+  }
+
+  /**
+   * Runs the regular processing path for an event whose payload is in its final wire form
+   * (decryption still pending, reassembly done).
+   */
+  private async processResolvedEvent(pathway: keyof TPathway, data: FlowcoreEvent): Promise<void> {
+    const pathwayStr = String(pathway)
 
     if (this.shouldDecryptPathwayPayload(pathway, data.metadata)) {
       data.payload = this.decryptPathwayPayload(pathway, data.payload)
@@ -1284,9 +1452,29 @@ export class PathwaysBuilder<
       finalMetadata[PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY] = PATHWAY_ENCRYPTION_SCHEME
     }
 
+    const chunkPlan = this.planChunkedWrite(path, data, eventData, Boolean(batch), encrypted)
+    if (chunkPlan) {
+      finalMetadata[PATHWAY_CHUNKED_METADATA_KEY] = "true"
+    }
+
     let eventIds: string | string[] = []
-    this.logger.debug(`Writing webhook data to pathway`, { pathway: pathStr, batch })
-    if (batch) {
+    let rawEventIds: string[] | null = null
+    this.logger.debug(`Writing webhook data to pathway`, { pathway: pathStr, batch, chunked: Boolean(chunkPlan) })
+    if (chunkPlan) {
+      rawEventIds = await (this.batchWriters[path] as SendWebhookBatch<TPathway[TPath]["output"]>)(
+        chunkPlan.items as unknown as TPathway[TPath]["output"][],
+        finalMetadata,
+        options,
+      ).catch((error) => {
+        this.logger.error(`Error writing chunked event(s) to pathway`, {
+          pathway: pathStr,
+          error,
+        })
+        throw error
+      })
+      const logicalIds = chunkPlan.logicalIds(rawEventIds)
+      eventIds = batch ? logicalIds : logicalIds[0]
+    } else if (batch) {
       eventIds = await (this.batchWriters[path] as SendWebhookBatch<TPathway[TPath]["output"]>)(
         eventData as unknown as TPathway[TPath]["output"][],
         finalMetadata,
@@ -1332,26 +1520,101 @@ export class PathwaysBuilder<
         })
     }
 
+    const idsToAwait = rawEventIds ?? (Array.isArray(eventIds) ? eventIds : [eventIds])
+
     this.logger[this.logLevel.writeSuccess](`Successfully wrote to pathway`, {
       pathway: pathStr,
-      eventIds: Array.isArray(eventIds) ? eventIds : [eventIds],
+      eventIds: idsToAwait,
       fireAndForget: options?.fireAndForget,
     })
 
     if (!options?.fireAndForget) {
       this.logger.debug(`Waiting for pathway to be processed`, {
         pathway: pathStr,
-        eventIds: Array.isArray(eventIds) ? eventIds : [eventIds],
+        eventIds: idsToAwait,
       })
 
-      await Promise.all(
-        Array.isArray(eventIds)
-          ? eventIds.map((id) => this.waitForPathwayToBeProcessed(id))
-          : [this.waitForPathwayToBeProcessed(eventIds)],
-      )
+      await Promise.all(idsToAwait.map((id) => this.waitForPathwayToBeProcessed(id)))
     }
 
     return eventIds
+  }
+
+  /**
+   * Decides whether any item of a write exceeds the event size cap and, if so, expands it into
+   * part envelopes.
+   *
+   * @param path The pathway being written
+   * @param plaintext The validated plaintext payload (array when `batch`)
+   * @param wire The payload as it would be sent (encrypted envelope when applicable)
+   * @param batch Whether this is a batch write
+   * @param encrypted Whether `wire` is encrypted
+   * @returns `null` when nothing needs splitting, otherwise the wire items to send and a mapper
+   *   from the returned raw event ids to one logical id per input item (the id of part 1)
+   */
+  private planChunkedWrite<TPath extends keyof TPathway>(
+    path: TPath,
+    plaintext: unknown,
+    wire: unknown,
+    batch: boolean,
+    encrypted: boolean,
+  ): { items: unknown[]; logicalIds: (rawIds: string[]) => string[] } | null {
+    if (!this.chunkStore || !this.chunking.enabled || this.filePathways.has(path)) {
+      return null
+    }
+
+    const plaintextItems = batch ? plaintext as unknown[] : [plaintext]
+    const wireItems = batch ? wire as unknown[] : [wire]
+    const items: unknown[] = []
+    const counts: number[] = []
+    let chunked = false
+
+    for (let index = 0; index < wireItems.length; index++) {
+      const wireItem = wireItems[index]
+      const size = serializedByteLength(wireItem)
+      if (size <= this.chunking.maxEventBytes) {
+        items.push(wireItem)
+        counts.push(1)
+        continue
+      }
+
+      const transform = encrypted && this.encryptionProvider
+        ? (slice: string) => this.encryptionProvider!.encrypt(slice)
+        : undefined
+      const parts = buildChunkParts(plaintextItems[index], this.chunking.partBudgetBytes, transform)
+      this.logger.debug(`Splitting oversized event into parts`, {
+        pathway: String(path),
+        bytes: size,
+        maxEventBytes: this.chunking.maxEventBytes,
+        totalParts: parts.length,
+        chunkId: parts[0].pathwaysChunk.id,
+      })
+      items.push(...parts)
+      counts.push(parts.length)
+      chunked = true
+    }
+
+    if (!chunked) {
+      return null
+    }
+
+    return {
+      items,
+      logicalIds: (rawIds: string[]) => {
+        if (rawIds.length !== items.length) {
+          throw new Error(
+            `Webhook returned ${rawIds.length} event ids for ${items.length} chunked items`,
+          )
+        }
+        const logical: string[] = []
+        let cursor = 0
+        for (const count of counts) {
+          logical.push(rawIds[cursor])
+          cursor += count
+        }
+        return logical
+      },
+    }
   }
 
   private encryptPathwayPayload<TPath extends keyof TPathway>(
