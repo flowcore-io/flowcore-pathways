@@ -8,3 +8,4 @@
  */
 export * from "./postgres-adapter.ts"
 export * from "./postgres-pathway-state.ts"
+export * from "./postgres-pathway-chunk-store.ts"

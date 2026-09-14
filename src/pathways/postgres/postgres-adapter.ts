@@ -115,6 +115,18 @@ export interface PostgresAdapter {
    * @returns Promise that resolves when the statement has been executed
    */
   execute(sql: string, params?: unknown[]): Promise<void>
+
+  /**
+   * Runs `fn` inside one transaction on one connection and commits when it resolves.
+   * Rolls back when `fn` throws. Statements issued through the `tx` adapter share the
+   * connection, so session-scoped features such as advisory transaction locks work.
+   *
+   * Optional so that third-party adapters keep compiling; features that need it
+   * (for example `PostgresPathwayChunkStore`) throw when it is missing.
+   * @param fn The unit of work
+   * @returns The value `fn` resolved with
+   */
+  transaction?<T>(fn: (tx: PostgresAdapter) => Promise<T>): Promise<T>
 }
 
 // Types for the postgres library
@@ -124,6 +136,15 @@ export interface PostgresAdapter {
  */
 interface PostgresClient {
   end: () => Promise<void>
+  unsafe: (sql: string, params?: unknown[]) => Promise<unknown>
+  begin: <T>(fn: (sql: PostgresTransactionClient) => Promise<T>) => Promise<T>
+}
+
+/**
+ * Internal interface for a postgres.js transaction-scoped client
+ * @private
+ */
+interface PostgresTransactionClient {
   unsafe: (sql: string, params?: unknown[]) => Promise<unknown>
 }
 
@@ -244,6 +265,29 @@ export class PostgresJsAdapter implements PostgresAdapter {
       await this.connect()
     }
     await this.sql!.unsafe(sql, params)
+  }
+
+  /**
+   * Runs `fn` inside one transaction on one pooled connection
+   * @template T The value the unit of work resolves with
+   * @param fn The unit of work; receives an adapter bound to the transaction
+   * @returns The value `fn` resolved with
+   */
+  async transaction<T>(fn: (tx: PostgresAdapter) => Promise<T>): Promise<T> {
+    if (!this.sql) {
+      await this.connect()
+    }
+    return await this.sql!.begin(async (txSql) => {
+      const tx: PostgresAdapter = {
+        connect: () => Promise.resolve(),
+        disconnect: () => Promise.resolve(),
+        query: async <R>(sql: string, params: unknown[] = []) => await txSql.unsafe(sql, params) as R,
+        execute: async (sql: string, params: unknown[] = []) => {
+          await txSql.unsafe(sql, params)
+        },
+      }
+      return await fn(tx)
+    })
   }
 }
 

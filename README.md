@@ -26,6 +26,7 @@ Pathways helps you build event-driven applications with type-safe pathways for p
   - [Auditing](#auditing)
   - [Custom Loggers](#custom-loggers)
   - [Retry Mechanisms](#retry-mechanisms)
+  - [Large Events (Automatic Chunking)](#large-events-automatic-chunking)
   - [Session Pathways](#session-pathways)
 - [File Pathways](#file-pathways)
 - [API Reference](#api-reference)
@@ -659,6 +660,7 @@ is invisible at the API layer.
 | Lease table         | `pathway_leases`         | `compute_api_pathway_leases`         |
 | Instance table      | `pathway_instances`      | `compute_api_pathway_instances`      |
 | Pump state table    | `pathway_pump_state`     | `compute_api_pathway_pump_state`     |
+| Chunk table         | `pathway_chunks`         | `compute_api_pathway_chunks`         |
 | Leader lease key    | `pathway-cluster-leader` | `compute_api_pathway-cluster-leader` |
 
 **The default is no prefix.** Existing deployments keep their exact table names and lease key value. There is no
@@ -786,6 +788,92 @@ pathways.register({
   retryDelayMs: 1000, // 1 second between retries
 })
 ```
+
+### Large Events (Automatic Chunking)
+
+Flowcore rejects a single event whose payload is larger than 64 000 bytes
+(`400 Event size exceeds maximum limit of 64000 bytes`). Pathways can split and reassemble such events for you.
+**Chunking is off until you configure a chunk store with `withPathwayChunkStore()`.** Without a store, an oversized
+write fails with the Flowcore error as before, and a consumer that receives a part event throws.
+
+- `write()` measures the payload as it will go on the wire (after encryption, when the pathway is encrypted). A payload
+  over the cap is split on UTF-8 boundaries into part events, each well under the cap, and sent in one batch request.
+- `process()` collects the parts in a **chunk store**. The call that receives the last missing part reassembles the
+  payload, verifies its SHA-256 digest, and continues with the normal path: schema validation, audit, cluster routing,
+  and your handler. Your handler sees one event with the full payload. The other parts never reach it.
+- A logical event keeps the event id of part 1. `write()` returns that id, and a write without `fireAndForget` waits
+  until every part is processed.
+- Batch writes work the same way. Only oversized items are expanded, and the returned array still has one id per input
+  item.
+- Encrypted pathways stay encrypted. Every slice is encrypted on its own. The chunk header (id, part number, part count,
+  digest) is plaintext, the payload data is not.
+- File pathways are not chunked here. The Flowcore file endpoint splits files on the server.
+
+#### Chunk store
+
+Configuring a chunk store turns chunking on for both writes and processing. `InternalPathwayChunkStore` is in memory and
+only works for a single process. Any deployment with more than one instance must use the PostgreSQL store, so a part
+received by one instance can be joined with parts received by another:
+
+```typescript
+import { createPostgresPathwayChunkStore, createPostgresPathwayState } from "@flowcore/pathways"
+
+const pathways = new PathwaysBuilder({
+  baseUrl: "https://webhook.api.flowcore.io",
+  tenant: "your-tenant",
+  dataCore: "your-data-core",
+  apiKey: "your-api-key",
+  // Optional budgets. Defaults shown.
+  chunking: {
+    maxEventBytes: 64_000, // split when the wire payload is larger than this
+    partBudgetBytes: 45_000, // maximum serialized size of one part
+  },
+})
+  .withPathwayState(createPostgresPathwayState({ connectionString }))
+  .withPathwayChunkStore(
+    createPostgresPathwayChunkStore({
+      connectionString,
+      statePrefix: "my_service", // optional, see State Prefix
+      ttlMs: 60 * 60 * 1000, // optional, parts of an incomplete chunk expire after 1 hour
+    }),
+  )
+```
+
+The PostgreSQL store creates the `pathway_chunks` table on first use. Parts are collected under a per-chunk advisory
+lock, so exactly one instance reassembles a given event. An exact replay of a part is accepted. A part with the same
+number but different bytes is rejected as a conflict.
+
+#### Wire format
+
+Every part is a normal Flowcore event on the same flow type and event type, with the metadata marker
+`pathways/chunked: "true"` and this payload:
+
+```json
+{
+  "pathwaysChunk": {
+    "id": "8b6d1b0c-4a7e-4a6f-9d84-1f7a2b3c4d5e",
+    "part": 2,
+    "totalParts": 3,
+    "digest": "<sha256 hex of the full plaintext JSON>",
+    "scheme": "utf8-split-sha256-v1"
+  },
+  "data": "<slice of the JSON text, or its AES-256-GCM ciphertext on encrypted pathways>"
+}
+```
+
+Consumers that read the raw events outside Pathways must join the `data` slices in `part` order. Consumers that run
+Pathways get the original event.
+
+#### Limits
+
+- Chunking requires a chunk store. `chunking.enabled: false` keeps it off even when a store is configured.
+- Every consumer of a chunked pathway must run this library version with a chunk store. An older consumer, or one
+  without a store, cannot reassemble the parts.
+- The `eventTime` and `validTime` write options apply to every part of a batch. A key-based override (`eventTimeKey`)
+  cannot be resolved for a chunked or encrypted item, because the server reads the key from the wire payload, which does
+  not carry your fields.
+- Parts of a chunk that never completes stay in the store until `ttlMs` expires, then they are removed on the next
+  write.
 
 ### Session Pathways
 

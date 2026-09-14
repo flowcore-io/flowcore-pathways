@@ -12,6 +12,7 @@
  * @module
  */
 export * from "./builder.ts"
+export * from "./chunking.ts"
 export * from "./cluster/index.ts"
 export { PathwayProvisioner } from "./provisioner.ts"
 export type {
@@ -22,6 +23,7 @@ export type {
 } from "./provisioner.ts"
 export * from "./constants.ts"
 export * from "./encryption.ts"
+export * from "./internal-chunk.store.ts"
 export * from "./internal-pathway.state.ts"
 export * from "./kv/kv-adapter.ts"
 export * from "./logger.ts"

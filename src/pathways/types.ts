@@ -251,3 +251,58 @@ export const FileEventSchema: z.ZodObject<{
 })
 
 export type FileEvent = z.infer<typeof FileEventSchema>
+
+/**
+ * Input for {@link PathwayChunkStore.storePart}
+ */
+export interface StorePathwayChunkPartInput {
+  /** Full UUID shared by every part of one logical event */
+  chunkId: string
+  /** 1-based part number */
+  part: number
+  /** Total number of parts in the chunk */
+  totalParts: number
+  /** SHA-256 hex digest of the full plaintext JSON */
+  digest: string
+  /** Plaintext slice carried by this part (already decrypted for encrypted pathways) */
+  data: string
+  /** Flowcore event id of this part event */
+  eventId: string
+}
+
+/**
+ * Result of {@link PathwayChunkStore.storePart}
+ *
+ * - `stored`: the part was recorded and the chunk is still incomplete
+ * - `duplicate`: an identical part was already recorded (exact replay); the chunk may or may not be complete
+ * - `complete`: this call recorded the final missing part. Exactly one call per chunk returns this.
+ */
+export interface PathwayChunkStoreResult {
+  status: "stored" | "duplicate" | "complete"
+  /** Ordered plaintext slices, present only when `status` is `complete` */
+  parts?: string[]
+  /** Ordered part event ids, present only when `status` is `complete` */
+  partEventIds?: string[]
+}
+
+/**
+ * Durable store for the parts of an oversized event while they are being collected.
+ *
+ * Implementations must be safe for concurrent callers on different instances:
+ * the same `(chunkId, part)` with identical data is an exact replay and must be
+ * accepted; with different data it is a conflict and must throw. Exactly one
+ * caller may observe `complete` for a given chunk.
+ */
+export type PathwayChunkStore = {
+  /**
+   * Records one part and reports whether the chunk is now complete
+   * @param input The part to record
+   */
+  storePart: (input: StorePathwayChunkPartInput) => Promise<PathwayChunkStoreResult>
+
+  /**
+   * Removes every part of a chunk after the logical event has been handled
+   * @param chunkId The chunk to remove
+   */
+  deleteChunk: (chunkId: string) => Promise<void>
+}
