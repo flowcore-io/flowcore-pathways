@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.7.0...v2.8.0) (2026-09-14)
+
+
+### Features
+
+* **pathways:** automatic chunking of oversized events with durable reassembly ([#110](https://github.com/flowcore-io/flowcore-pathways/issues/110)) ([256f531](https://github.com/flowcore-io/flowcore-pathways/commit/256f531dcbe2b37c27445be3c6d03fe1eed23845))
+
 ## [2.7.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.6.0...v2.7.0) (2026-08-31)
 
 
