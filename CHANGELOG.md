@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.8.0...v2.9.0) (2026-09-15)
+
+
+### Features
+
+* **pathways:** pause and resume delivery from the control plane ([#112](https://github.com/flowcore-io/flowcore-pathways/issues/112)) ([4af2989](https://github.com/flowcore-io/flowcore-pathways/commit/4af2989116668a91754c136a05228a22cd03798d))
+
 ## [2.8.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.7.0...v2.8.0) (2026-09-14)
 
 
