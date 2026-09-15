@@ -6,5 +6,6 @@ export type {
   PumpStateManager,
   PumpStateManagerFactory,
 } from "./types.ts"
-export { PathwayPump } from "./pathway-pump.ts"
+export { parsePumpTarget, PathwayPump, pumpFilterFromTargets } from "./pathway-pump.ts"
+export type { PumpResetFilter } from "./pathway-pump.ts"
 export { createPostgresPumpStateManagerFactory } from "./state.ts"

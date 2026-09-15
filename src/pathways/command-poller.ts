@@ -1,6 +1,13 @@
+import { z } from "zod"
 import type { Logger } from "./logger.ts"
 import type { LogLevel } from "./builder.ts"
 
+/**
+ * One pending control-plane command.
+ *
+ * `sourceFlowTypes` entries are either a bare flow type (`"orders.0"`, meaning every pump
+ * group on it) or a composite `"orders.0::hot"` naming exactly one pump.
+ */
 export interface PendingCommand {
   id: string
   type: string
@@ -10,9 +17,28 @@ export interface PendingCommand {
   stopAt: string | null
 }
 
-interface PendingCommandsResponse {
-  commands: PendingCommand[]
-}
+/**
+ * Wire schema for the pending-commands response.
+ *
+ * The response is validated rather than cast. A malformed command must be rejected here,
+ * because everything downstream acts on a live pump: a bad `position` would reposition a
+ * cursor and a bad target list would pause the wrong pathway.
+ *
+ * Unknown fields are allowed through unchanged, so the control plane can add fields
+ * without breaking older clients.
+ */
+const pendingCommandSchema = z.object({
+  id: z.string().min(1),
+  type: z.string().min(1),
+  position: z.record(z.unknown()).nullish().transform((value) => value ?? null),
+  sourceFlowTypes: z.array(z.string()).nullish().transform((value) => value ?? null),
+  reason: z.string().nullish().transform((value) => value ?? null),
+  stopAt: z.string().nullish().transform((value) => value ?? null),
+})
+
+const pendingCommandsResponseSchema = z.object({
+  commands: z.array(pendingCommandSchema),
+})
 
 export interface CommandPollerOptions {
   cpBaseUrl: string
@@ -95,7 +121,17 @@ export class CommandPoller {
         return
       }
 
-      const body = (await response.json()) as PendingCommandsResponse
+      const parsed = pendingCommandsResponseSchema.safeParse(await response.json())
+
+      if (!parsed.success) {
+        this.logger[this.logLevel.pollFailure]("Command poll returned a malformed response", {
+          pathwayId: this.pathwayId,
+          issues: parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`),
+        })
+        return
+      }
+
+      const body = parsed.data
 
       if (body.commands.length === 0) {
         this.logger[this.logLevel.pollSuccess]("Command poll: no pending commands", {

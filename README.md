@@ -26,6 +26,7 @@ Pathways helps you build event-driven applications with type-safe pathways for p
   - [Auditing](#auditing)
   - [Custom Loggers](#custom-loggers)
   - [Retry Mechanisms](#retry-mechanisms)
+  - [Pausing and Resuming Delivery](#pausing-and-resuming-delivery)
   - [Large Events (Automatic Chunking)](#large-events-automatic-chunking)
   - [Session Pathways](#session-pathways)
 - [File Pathways](#file-pathways)
@@ -788,6 +789,86 @@ pathways.register({
   retryDelayMs: 1000, // 1 second between retries
 })
 ```
+
+### Pausing and Resuming Delivery
+
+The Flowcore control plane can pause a pathway's delivery without stopping it. Use it to hold events back while a
+downstream system is repaired, then continue from exactly the same position.
+
+A paused pump keeps fetching, keeps its buffer, keeps its cursor and keeps reporting pulses. Only delivery to your
+handlers stops, so the control plane still sees a live pathway rather than a dead one. A batch already inside a handler
+finishes and acknowledges, so nothing is redelivered needlessly.
+
+#### Commands
+
+Three command types arrive through the existing poll-based command queue:
+
+| Type              | Effect                                       |
+| ----------------- | -------------------------------------------- |
+| `datapumpPause`   | Stops delivery on the targeted pumps         |
+| `datapumpResume`  | Continues delivery from the same position    |
+| `datapumpRestart` | Repositions the cursor on the targeted pumps |
+
+All three share one target list, carried in the command's `sourceFlowTypes`:
+
+| Entry             | Targets                            |
+| ----------------- | ---------------------------------- |
+| `"orders.0"`      | Every pump group on that flow type |
+| `"orders.0::hot"` | That one pump only                 |
+| empty or absent   | Every pump                         |
+
+The composite `flowType::pumpGroup` form is the same string the `concurrency.byPumpGroup` option uses, so pump groups
+need no separate field.
+
+A command that matches no pump is reported as **failed**, never as a successful no-op. An unknown command type is
+reported as failed too. Both cases mean the command changed nothing, and an operator must not believe otherwise.
+
+#### Making the pause durable
+
+A pause must outlive the process. Without a durable store a redeploy, a pod restart or a cluster leader change brings
+the pathway back delivering, silently, while your dashboard still reads "paused".
+
+The default store is **in memory**. Configure a durable one in production:
+
+```typescript
+import { createPostgresPathwayDeliveryStore } from "@flowcore/pathways"
+
+pathways.withPathwayDeliveryStore(
+  createPostgresPathwayDeliveryStore({
+    connectionString: process.env.DATABASE_URL!,
+    statePrefix: "compute_api", // optional, yields compute_api_pathway_delivery_state
+  }),
+)
+```
+
+The pause is then re-applied **before** the pumps start, so a restarted pathway comes back paused at the same position
+without delivering a batch on the way up. Cluster leader changes read the same row, so a failover inherits the pause.
+
+Implement `PathwayDeliveryStore` yourself if you keep this state somewhere else.
+
+#### Controlling pumps in code
+
+The same operations are available directly on the pump:
+
+```typescript
+const pump = pathways.pump!
+
+pump.pause() // every pump
+pump.pause({ keys: ["orders.0::hot"] }) // one pump group
+pump.pause({ flowTypes: ["orders.0"] }) // every group on a flow type
+
+pump.isPaused("orders.0", "hot") // true
+pump.pausedGroups // ["orders.0::hot"]
+
+pump.resume({ keys: ["orders.0::hot"] })
+```
+
+`pause()` and `resume()` return the keys they acted on. An empty array means the filter matched nothing.
+
+Two limits to know:
+
+- A paused pump holds up to `bufferSize` events in memory (default 1000 per pump).
+- Pausing does not stop `write()`. Ingestion continues, and the events wait to be delivered.
 
 ### Large Events (Automatic Chunking)
 

@@ -306,3 +306,45 @@ export type PathwayChunkStore = {
    */
   deleteChunk: (chunkId: string) => Promise<void>
 }
+
+/**
+ * Durable home for the delivery pause of a pathway.
+ *
+ * A pause issued by the control plane must outlive the process. Without this store a
+ * redeploy, a pod restart or a cluster leader change brings the pathway back delivering,
+ * silently, while the operator's dashboard still reads "paused".
+ *
+ * Implementations store an opaque set of pump keys, each `${flowType}::${pumpGroup}`.
+ * An empty set means delivery is active everywhere.
+ *
+ * Keyed by `pathwayKey`, so several deployables can share one database. Use the same
+ * value the builder derives from `statePrefix` + pathway name.
+ */
+export interface PathwayDeliveryStore {
+  /** Reads the paused pump keys. Returns an empty array when nothing is paused. */
+  getPausedPumps(pathwayKey: string): Promise<string[]>
+  /** Replaces the paused pump keys. An empty array clears the pause. */
+  setPausedPumps(pathwayKey: string, pumpKeys: string[]): Promise<void>
+}
+
+/**
+ * In-memory {@link PathwayDeliveryStore}. This is the DEFAULT, and it does NOT survive a
+ * process restart. Configure a durable implementation with `withPathwayDeliveryStore()`
+ * before relying on a pause in production.
+ */
+export class InMemoryPathwayDeliveryStore implements PathwayDeliveryStore {
+  private readonly paused = new Map<string, string[]>()
+
+  getPausedPumps(pathwayKey: string): Promise<string[]> {
+    return Promise.resolve([...(this.paused.get(pathwayKey) ?? [])])
+  }
+
+  setPausedPumps(pathwayKey: string, pumpKeys: string[]): Promise<void> {
+    if (pumpKeys.length) {
+      this.paused.set(pathwayKey, [...pumpKeys])
+    } else {
+      this.paused.delete(pathwayKey)
+    }
+    return Promise.resolve()
+  }
+}

@@ -21,15 +21,25 @@ interface PathwayRegistration {
 }
 
 /**
- * Filter for {@link PathwayPump.reset}. Each criterion narrows which pumps are reset.
- * - Omit both → reset every pump.
- * - `flowTypes` → reset every pump whose flow type matches.
- * - `pumpGroups` → reset every pump whose pump group matches.
- * - Both → reset pumps that match BOTH (intersection).
+ * Filter selecting which pumps {@link PathwayPump.reset}, {@link PathwayPump.pause} and
+ * {@link PathwayPump.resume} act on.
+ *
+ * - Omit everything → every pump.
+ * - `keys` → exact `${flowType}::${pumpGroup}` targets. This is the only criterion that
+ *   can name a SET OF PAIRS, which `flowTypes` + `pumpGroups` cannot: those two form an
+ *   intersection, so `{flowTypes:["a","b"], pumpGroups:["hot"]}` means "hot on a AND hot
+ *   on b", never "a's hot and b's cold".
+ * - `flowTypes` → every pump group on those flow types.
+ * - `pumpGroups` → those pump groups on every flow type.
+ * - `flowTypes` + `pumpGroups` → the intersection.
+ * - `keys` combined with either → the UNION of the two selections, so a command can
+ *   target `"orders.0"` wholesale and `"invoices.0::hot"` precisely in one call.
  */
 export interface PumpResetFilter {
   flowTypes?: string[]
   pumpGroups?: string[]
+  /** Exact `${flowType}::${pumpGroup}` targets, as returned by {@link PathwayPump.reset}. */
+  keys?: string[]
 }
 
 // deno-lint-ignore no-explicit-any
@@ -59,6 +69,67 @@ const DEFAULT_PUMP_GROUP = "default"
  */
 function groupKey(flowType: string, pumpGroup: string): string {
   return `${flowType}::${pumpGroup}`
+}
+
+/**
+ * Split a target into its `(flowType, pumpGroup)` parts.
+ *
+ * A bare `"orders.0"` targets every pump group on that flow type. A composite
+ * `"orders.0::hot"` targets exactly one pump. The composite form is the same string the
+ * `concurrency.byPumpGroup` option uses and the same string {@link PathwayPump.reset}
+ * returns, so control-plane commands can carry it in the existing `sourceFlowTypes` array
+ * without a new field.
+ */
+export function parsePumpTarget(target: string): { flowType: string; pumpGroup?: string } {
+  const separator = target.indexOf("::")
+  if (separator === -1) {
+    return { flowType: target }
+  }
+  return { flowType: target.slice(0, separator), pumpGroup: target.slice(separator + 2) }
+}
+
+/**
+ * Build a {@link PumpResetFilter} from a list of targets that mixes bare flow types and
+ * composite `flowType::pumpGroup` keys. An empty or missing list means "every pump".
+ */
+export function pumpFilterFromTargets(targets?: string[] | null): PumpResetFilter | undefined {
+  if (!targets?.length) {
+    return undefined
+  }
+  const flowTypes: string[] = []
+  const keys: string[] = []
+  for (const target of targets) {
+    const parsed = parsePumpTarget(target)
+    if (parsed.pumpGroup === undefined) {
+      flowTypes.push(parsed.flowType)
+    } else {
+      keys.push(groupKey(parsed.flowType, parsed.pumpGroup))
+    }
+  }
+  return {
+    flowTypes: flowTypes.length ? flowTypes : undefined,
+    keys: keys.length ? keys : undefined,
+  }
+}
+
+/** Whether one pump satisfies a filter. See {@link PumpResetFilter} for the semantics. */
+function matchesFilter(key: string, meta: GroupMeta, filter?: PumpResetFilter): boolean {
+  if (!filter || (!filter.flowTypes && !filter.pumpGroups && !filter.keys)) {
+    return true
+  }
+  if (filter.keys?.includes(key)) {
+    return true
+  }
+  if (!filter.flowTypes && !filter.pumpGroups) {
+    return false
+  }
+  if (filter.flowTypes && !filter.flowTypes.includes(meta.flowType)) {
+    return false
+  }
+  if (filter.pumpGroups && !filter.pumpGroups.includes(meta.pumpGroup)) {
+    return false
+  }
+  return true
 }
 
 /**
@@ -127,6 +198,11 @@ export class PathwayPump {
   private restartAttempts: Map<string, number> = new Map()
   private restartTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
   private groupMeta: Map<string, GroupMeta> = new Map()
+  /**
+   * Keys of pumps whose delivery is paused. Paused pumps stay in {@link pumps} and keep
+   * their state manager, their buffer and their cursor — only delivery stops.
+   */
+  private paused: Set<string> = new Set()
   private dataPumpConstructor: DataPumpConstructor = null
 
   // Required config from PathwaysBuilder
@@ -278,6 +354,9 @@ export class PathwayPump {
       },
       bufferSize: this.bufferSize,
       maxRedeliveryCount: this.maxRedeliveryCount,
+      // Born paused when this group is paused, so a restart or a backoff recovery never
+      // delivers a batch in the gap before the pause is re-applied.
+      paused: this.paused.has(key),
       notifier: notifierOptions,
       logger: {
         debug: (msg: string, m?: Record<string, unknown>) => this.logger.debug(msg, m),
@@ -408,6 +487,8 @@ export class PathwayPump {
     this.stateManagers.clear()
     this.restartAttempts.clear()
     this.groupMeta.clear()
+    // The paused set is intentionally NOT cleared: a bounced pump must come back paused.
+    // `startPumpForGroup` reads it when it builds each pump.
   }
 
   /**
@@ -423,9 +504,15 @@ export class PathwayPump {
    * @param position - Target position { timeBucket, eventId? }. If omitted, clears persisted state
    *                   and restarts pumps (pump will start from live position).
    *                   To replay from the very beginning, pass the first time bucket explicitly.
+   * @param stopAt - Optional upper bound. The pump stops once it passes this time. Only
+   *                 applied together with `position`.
    * @returns Array of `${flowType}::${pumpGroup}` keys for pumps that were reset.
    */
-  async reset(position?: PumpState, filter?: string[] | PumpResetFilter): Promise<string[]> {
+  async reset(
+    position?: PumpState,
+    filter?: string[] | PumpResetFilter,
+    stopAt?: Date | null,
+  ): Promise<string[]> {
     if (!this.running) {
       throw new Error("PathwayPump is not running — cannot reset")
     }
@@ -439,12 +526,11 @@ export class PathwayPump {
     for (const [key, pump] of this.pumps) {
       const meta = this.groupMeta.get(key)
       if (!meta) continue
-      if (normalized?.flowTypes && !normalized.flowTypes.includes(meta.flowType)) continue
-      if (normalized?.pumpGroups && !normalized.pumpGroups.includes(meta.pumpGroup)) continue
+      if (!matchesFilter(key, meta, normalized)) continue
 
       try {
         if (position) {
-          await pump.restart({ timeBucket: position.timeBucket, eventId: position.eventId })
+          await pump.restart({ timeBucket: position.timeBucket, eventId: position.eventId }, stopAt)
         } else {
           const stateManager = this.stateManagers.get(key)
           if (stateManager?.clearState) {
@@ -469,6 +555,114 @@ export class PathwayPump {
     }
 
     return reset
+  }
+
+  /**
+   * Pause delivery on the matching pumps. The pumps keep running: they keep fetching,
+   * keep their buffer, keep their cursor and keep reporting pulses. Only delivery to the
+   * registered handlers stops.
+   *
+   * A batch already inside a handler finishes and acknowledges, so the checkpoint stays
+   * accurate and nothing is redelivered needlessly.
+   *
+   * @param filter - Which pumps to pause. Omit to pause every pump. See {@link PumpResetFilter}.
+   * @returns Array of `${flowType}::${pumpGroup}` keys that were paused by this call.
+   *          An EMPTY array means the filter matched nothing — treat that as a failure,
+   *          not as a successful no-op.
+   */
+  pause(filter?: PumpResetFilter): string[] {
+    if (!this.running) {
+      throw new Error("PathwayPump is not running — cannot pause")
+    }
+
+    const paused: string[] = []
+    for (const [key, pump] of this.pumps) {
+      const meta = this.groupMeta.get(key)
+      if (!meta) continue
+      if (!matchesFilter(key, meta, filter)) continue
+
+      paused.push(key)
+      if (this.paused.has(key)) continue
+      this.paused.add(key)
+      pump.pause()
+      this.logger.info("Data pump paused", { flowType: meta.flowType, pumpGroup: meta.pumpGroup })
+    }
+
+    return paused
+  }
+
+  /**
+   * Resume delivery on the matching pumps, continuing from the exact position where
+   * {@link pause} stopped them.
+   *
+   * @param filter - Which pumps to resume. Omit to resume every pump.
+   * @returns Array of `${flowType}::${pumpGroup}` keys that were resumed by this call.
+   *          An EMPTY array means the filter matched nothing.
+   */
+  resume(filter?: PumpResetFilter): string[] {
+    if (!this.running) {
+      throw new Error("PathwayPump is not running — cannot resume")
+    }
+
+    const resumed: string[] = []
+    for (const [key, pump] of this.pumps) {
+      const meta = this.groupMeta.get(key)
+      if (!meta) continue
+      if (!matchesFilter(key, meta, filter)) continue
+
+      resumed.push(key)
+      if (!this.paused.has(key)) continue
+      this.paused.delete(key)
+      pump.resume()
+      this.logger.info("Data pump resumed", { flowType: meta.flowType, pumpGroup: meta.pumpGroup })
+    }
+
+    return resumed
+  }
+
+  /**
+   * Seed the paused set BEFORE {@link start}, so every matching pump is built already
+   * paused. Use this to restore a persisted pause: calling {@link pause} after `start()`
+   * would let the pumps deliver a batch in the gap.
+   *
+   * @param pumpKeys - `${flowType}::${pumpGroup}` keys. Keys with no matching registration
+   *                   are kept, not dropped — prune them after `start()` with
+   *                   {@link prunePausedPumps} once the registrations are known.
+   */
+  setInitialPausedPumps(pumpKeys: string[]): void {
+    if (this.running) {
+      throw new Error("PathwayPump is already running — use pause() instead")
+    }
+    this.paused = new Set(pumpKeys)
+  }
+
+  /**
+   * Drop paused keys that match no running pump, and return the keys still in effect.
+   * Registrations change between deploys, so a stored set would otherwise grow forever.
+   */
+  prunePausedPumps(): string[] {
+    for (const key of [...this.paused]) {
+      if (!this.pumps.has(key)) {
+        this.paused.delete(key)
+        this.logger.warn("Dropped a paused pump key with no matching registration", { key })
+      }
+    }
+    return [...this.paused]
+  }
+
+  /** Whether delivery is paused for one `(flowType, pumpGroup)` pair. */
+  isPaused(flowType: string, pumpGroup: string = DEFAULT_PUMP_GROUP): boolean {
+    return this.paused.has(groupKey(flowType, pumpGroup))
+  }
+
+  /** Keys of every pump whose delivery is currently paused. */
+  get pausedGroups(): string[] {
+    return [...this.paused]
+  }
+
+  /** Keys of every pump this instance runs, as `${flowType}::${pumpGroup}`. */
+  get registeredPumpKeys(): string[] {
+    return [...this.pumps.keys()]
   }
 
   async setPulseConfig(pulseConfig: NonNullable<PathwayPumpOptions["pulse"]>): Promise<void> {

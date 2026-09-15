@@ -15,6 +15,8 @@ export const DEFAULT_STATE_NAMES = {
   instances: "pathway_instances",
   /** Table used by the Postgres pump state manager for pump cursors. */
   pumpState: "pathway_pump_state",
+  /** Table used by `PostgresPathwayDeliveryStore` for the durable delivery pause. */
+  deliveryState: "pathway_delivery_state",
   /** Table used by `PostgresPathwayChunkStore` for parts of oversized events. */
   chunks: "pathway_chunks",
   /** Row key of the cluster leader lease inside the leases table. */

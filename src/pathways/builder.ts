@@ -7,10 +7,11 @@ import type { FlowcoreEvent } from "../contracts/event.ts"
 import { InternalPathwayState } from "./internal-pathway.state.ts"
 import type { Logger } from "./logger.ts"
 import { NoopLogger } from "./logger.ts"
-import { CommandPoller } from "./command-poller.ts"
+import { CommandPoller, type PendingCommand } from "./command-poller.ts"
 import type {
   EventMetadata,
   PathwayContract,
+  PathwayDeliveryStore,
   PathwayKey,
   PathwayState,
   PathwayWriteOptions,
@@ -22,7 +23,7 @@ import type {
 import type { PathwayClusterOptions } from "./cluster/types.ts"
 import { ClusterManager } from "./cluster/cluster-manager.ts"
 import type { AutoProvisionConfig, PathwayPumpOptions, PumpState } from "./pump/types.ts"
-import { PathwayPump } from "./pump/pathway-pump.ts"
+import { PathwayPump, pumpFilterFromTargets } from "./pump/pathway-pump.ts"
 import {
   PathwayProvisioner,
   type ProvisionerRegistration,
@@ -91,7 +92,7 @@ import {
   AUDIT_SYSTEM_MODE,
   AUDIT_USER_MODE,
 } from "./constants.ts"
-import { FileEventSchema, FileInputSchema } from "./types.ts"
+import { FileEventSchema, FileInputSchema, InMemoryPathwayDeliveryStore } from "./types.ts"
 import type { Buffer } from "node:buffer"
 import process from "node:process"
 import {
@@ -459,6 +460,7 @@ export class PathwaysBuilder<
   private readonly webhookBuilderFactory: () => WebhookBuilderType
   private pathwayState: PathwayState = new InternalPathwayState()
   private chunkStore: PathwayChunkStore | null = null
+  private deliveryStore: PathwayDeliveryStore = new InMemoryPathwayDeliveryStore()
   private readonly chunking: ResolvedPathwayChunkingConfig
   private pathwayTimeoutMs: number = DEFAULT_PATHWAY_TIMEOUT_MS
 
@@ -654,6 +656,19 @@ export class PathwaysBuilder<
    * @param store The PathwayChunkStore implementation to use
    * @returns The PathwaysBuilder instance with the chunk store configured
    */
+  /**
+   * Configure where a delivery pause is stored.
+   *
+   * A pause issued by the control plane must outlive the process. The default store is
+   * IN MEMORY, so a redeploy or a leader change brings the pathway back delivering with
+   * no operator action. Pass a durable implementation before relying on a pause in
+   * production — for example {@link PostgresPathwayDeliveryStore}.
+   */
+  withPathwayDeliveryStore(store: PathwayDeliveryStore): PathwaysBuilder<TPathway, TWritablePaths> {
+    this.deliveryStore = store
+    return this
+  }
+
   withPathwayChunkStore(store: PathwayChunkStore): PathwaysBuilder<TPathway, TWritablePaths> {
     this.logger.debug("Setting custom pathway chunk store")
     this.chunkStore = store
@@ -1801,6 +1816,16 @@ export class PathwaysBuilder<
   }
 
   /**
+   * The local data pump, when one is running.
+   *
+   * Use it to pause, resume or inspect delivery in code. Returns `null` before
+   * `startPump()` and on a cluster follower, which runs no pump.
+   */
+  get pump(): PathwayPump | null {
+    return this.pathwayPump
+  }
+
+  /**
    * Whether cluster mode is currently active
    */
   get isClusterActive(): boolean {
@@ -1850,20 +1875,7 @@ export class PathwaysBuilder<
       apiKey: this.apiKey,
       intervalMs: this.commandPollingIntervalMs,
       logger: this.logger,
-      onCommand: async (cmd) => {
-        if (cmd.type === "datapumpRestart") {
-          const position = cmd.position
-            ? {
-              timeBucket: (cmd.position as Record<string, string>).timeBucket ?? "",
-              eventId: (cmd.position as Record<string, string>).eventId,
-            }
-            : undefined
-          const flowTypes = cmd.sourceFlowTypes ?? undefined
-          await this.pathwayPump!.reset(position, flowTypes)
-        } else {
-          this.logger.warn("Unknown command type received", { type: cmd.type, commandId: cmd.id })
-        }
-      },
+      onCommand: (cmd) => this.executePathwayCommand(cmd),
       logLevel: {
         pollSuccess: this.logLevel.pulseSuccess,
         pollFailure: this.logLevel.pulseFailure,
@@ -1874,6 +1886,138 @@ export class PathwaysBuilder<
       pathwayId: this.pathwayId,
       intervalMs: this.commandPollingIntervalMs,
     })
+  }
+
+  /**
+   * Execute one control-plane command against the local pump.
+   *
+   * Every command shares one target filter, built from `sourceFlowTypes`. Entries are
+   * either a bare flow type (`"orders.0"`, every pump group on it) or a composite
+   * `"orders.0::hot"` naming exactly one pump. An empty or missing list targets every pump.
+   *
+   * THROWS on an unknown command type, and on a filter that matches no pump. Both cases
+   * mean the command did nothing, and the poller must report `failed` rather than let the
+   * control plane record a success that never happened.
+   */
+  private async executePathwayCommand(cmd: PendingCommand): Promise<void> {
+    const pump = this.pathwayPump
+    if (!pump) {
+      throw new Error(`Cannot execute command ${cmd.id}: no pump is running`)
+    }
+
+    const filter = pumpFilterFromTargets(cmd.sourceFlowTypes)
+
+    switch (cmd.type) {
+      case "datapumpRestart": {
+        const position = cmd.position
+          ? {
+            timeBucket: (cmd.position as Record<string, string>).timeBucket ?? "",
+            eventId: (cmd.position as Record<string, string>).eventId,
+          }
+          : undefined
+        const stopAt = cmd.stopAt ? new Date(cmd.stopAt) : undefined
+        const affected = await pump.reset(position, filter, stopAt)
+        this.assertCommandMatched(cmd, affected, "restart")
+        return
+      }
+      case "datapumpPause": {
+        const affected = pump.pause(filter)
+        this.assertCommandMatched(cmd, affected, "pause")
+        await this.persistDeliveryState(pump)
+        return
+      }
+      case "datapumpResume": {
+        const affected = pump.resume(filter)
+        this.assertCommandMatched(cmd, affected, "resume")
+        await this.persistDeliveryState(pump)
+        return
+      }
+      default:
+        throw new Error(`Unknown command type "${cmd.type}" (command ${cmd.id})`)
+    }
+  }
+
+  /**
+   * A command whose filter matched no pump did nothing. Reporting success there lets an
+   * operator believe a pathway is paused when it is still delivering, so fail loudly.
+   */
+  private assertCommandMatched(cmd: PendingCommand, affected: string[], action: string): void {
+    if (affected.length) {
+      this.logger.info(`Command applied: ${action}`, {
+        commandId: cmd.id,
+        pumps: affected,
+      })
+      return
+    }
+    throw new Error(
+      `Command ${cmd.id} (${cmd.type}) matched no pump. Targets: ${
+        cmd.sourceFlowTypes?.join(", ") ?? "<all>"
+      }. Registered pumps: ${this.pathwayPump?.registeredPumpKeys.join(", ") ?? "<none>"}`,
+    )
+  }
+
+  /**
+   * Key under which this deployable's delivery state is stored. Store implementations own
+   * their own table naming and prefixing, exactly as the pump state store does.
+   */
+  private get deliveryStateKey(): string {
+    return this.pathwayName ?? this.dataCore
+  }
+
+  /** Write the current set of paused pumps so it survives a restart. */
+  private async persistDeliveryState(pump: PathwayPump): Promise<void> {
+    try {
+      await this.deliveryStore.setPausedPumps(this.deliveryStateKey, pump.pausedGroups)
+    } catch (err) {
+      // A pause that is applied but not persisted would silently lift on the next
+      // restart, so surface it instead of swallowing it.
+      throw new Error(
+        `Delivery state could not be persisted: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+  }
+
+  /**
+   * Re-apply a persisted pause before the pump starts delivering.
+   *
+   * Runs on every leader bootstrap, so a redeploy, a pod restart and a cluster leader
+   * change all come back paused at the same position rather than quietly resuming.
+   */
+  private async restoreDeliveryState(pump: PathwayPump): Promise<void> {
+    let pausedKeys: string[]
+    try {
+      pausedKeys = await this.deliveryStore.getPausedPumps(this.deliveryStateKey)
+    } catch (err) {
+      // Failing open here would resume a paused pathway during a database blip, which is
+      // the exact surprise this feature exists to prevent.
+      throw new Error(
+        `Delivery state could not be read: ${err instanceof Error ? err.message : String(err)}`,
+      )
+    }
+
+    if (!pausedKeys.length) {
+      return
+    }
+
+    // Seeded BEFORE the pumps start, so each one is built already paused and no event is
+    // delivered in the gap between start and a post-start pause call.
+    pump.setInitialPausedPumps(pausedKeys)
+    this.logger.info("Restoring delivery pause", {
+      pathwayId: this.pathwayId,
+      pumps: pausedKeys,
+    })
+  }
+
+  /** Drop stored pause keys that match no current registration, after the pumps started. */
+  private async pruneDeliveryState(pump: PathwayPump): Promise<void> {
+    const stored = await this.deliveryStore.getPausedPumps(this.deliveryStateKey)
+    if (!stored.length) {
+      return
+    }
+    const live = pump.prunePausedPumps()
+    if (live.length !== stored.length) {
+      await this.deliveryStore.setPausedPumps(this.deliveryStateKey, live)
+    }
   }
 
   private stopCommandPoller(): void {
@@ -1933,7 +2077,10 @@ export class PathwaysBuilder<
     }
 
     await this.applyAutoPulseConfig()
+    // Re-apply a persisted pause BEFORE the pumps start delivering.
+    await this.restoreDeliveryState(this.pathwayPump)
     await this.startCurrentPump()
+    await this.pruneDeliveryState(this.pathwayPump)
 
     if (this.runtimeEnv !== "production" || this.pathwayMode !== "virtual") {
       this.startCommandPollerIfNeeded()
