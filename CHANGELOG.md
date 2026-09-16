@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.9.0...v2.10.0) (2026-09-16)
+
+
+### Features
+
+* **pathways:** restore the delivery pause from the control plane ([#114](https://github.com/flowcore-io/flowcore-pathways/issues/114)) ([a781c7a](https://github.com/flowcore-io/flowcore-pathways/commit/a781c7abe27e5d7d7dc50fcb935b2cd7e80d19d5))
+
 ## [2.9.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.8.0...v2.9.0) (2026-09-15)
 
 
