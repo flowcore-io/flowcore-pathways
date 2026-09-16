@@ -153,6 +153,7 @@ Deno.test({
         const lifecycle: string[] = []
         const fetchBodies: Array<Record<string, unknown>> = []
 
+        let deliveryStateReads = 0
         const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {
           provisionCalls++
           lifecycle.push("provision")
@@ -171,6 +172,15 @@ Deno.test({
           lifecycle.push("pollerStart")
         })
         const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
+          // The delivery-state read is a GET and carries no body. It is not registration
+          // traffic, so it is counted separately and kept out of the lifecycle ordering.
+          if (((init as RequestInit | undefined)?.method ?? "GET") === "GET") {
+            deliveryStateReads++
+            return new Response(JSON.stringify({ deliveryState: "active", deliveryPauseTargets: null }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            })
+          }
           lifecycle.push("fetch")
           fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
           return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
@@ -201,6 +211,9 @@ Deno.test({
           assertEquals(fetchBodies.length, 1)
           assertEquals(fetchBodies[0].type, "virtual")
           assertEquals(lifecycle, ["provision", "start", "fetch", "setPulse", "pollerStart"])
+          // Production virtual mode asks the control plane for the desired delivery state,
+          // so a pathway paused by an operator comes back paused after a redeploy.
+          assertEquals(deliveryStateReads, 1)
         } finally {
           provisionStub.restore()
           startStub.restore()
@@ -223,6 +236,7 @@ Deno.test({
         const lifecycle: string[] = []
         const fetchBodies: Array<Record<string, unknown>> = []
 
+        let deliveryStateReads = 0
         const provisionStub = stub(PathwayProvisioner.prototype, "provision", async () => {
           provisionCalls++
           lifecycle.push("provision")
@@ -250,6 +264,15 @@ Deno.test({
           lifecycle.push("pollerStop")
         })
         const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
+          // The delivery-state read is a GET and carries no body. It is not registration
+          // traffic, so it is counted separately and kept out of the lifecycle ordering.
+          if (((init as RequestInit | undefined)?.method ?? "GET") === "GET") {
+            deliveryStateReads++
+            return new Response(JSON.stringify({ deliveryState: "active", deliveryPauseTargets: null }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            })
+          }
           lifecycle.push("fetch")
           fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
           return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
@@ -489,7 +512,18 @@ Deno.test({
         const startStub = stub(PathwayPump.prototype, "start", async () => {
           startCalls++
         })
+        let deliveryStateReads = 0
         const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
+          // Opting development back in also opts it into the delivery-state read, since
+          // both are gated on canRegisterPathwayInstance(). It is a GET with no body, and
+          // it is not registration traffic, so count it separately.
+          if (((init as RequestInit | undefined)?.method ?? "GET") === "GET") {
+            deliveryStateReads++
+            return new Response(JSON.stringify({ deliveryState: "active", deliveryPauseTargets: null }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            })
+          }
           fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
           return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
             status: 200,
@@ -680,7 +714,18 @@ Deno.test({
         const startStub = stub(PathwayPump.prototype, "start", async () => {
           startCalls++
         })
+        let deliveryStateReads = 0
         const fetchStub = stub(globalThis, "fetch", async (_input, init) => {
+          // Opting development back in also opts it into the delivery-state read, since
+          // both are gated on canRegisterPathwayInstance(). It is a GET with no body, and
+          // it is not registration traffic, so count it separately.
+          if (((init as RequestInit | undefined)?.method ?? "GET") === "GET") {
+            deliveryStateReads++
+            return new Response(
+              JSON.stringify({ deliveryState: "active", deliveryPauseTargets: null }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            )
+          }
           fetchBodies.push(JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")))
           return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
             status: 200,
@@ -709,6 +754,7 @@ Deno.test({
           assertEquals(startCalls, 1)
           assertEquals(fetchBodies.length, 1)
           assertEquals(fetchBodies[0].type, "virtual")
+          assertEquals(deliveryStateReads, 1)
           assertEquals(
             warnings.some((message) => message.includes("development runtime")),
             true,

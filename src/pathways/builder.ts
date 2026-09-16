@@ -23,7 +23,7 @@ import type {
 import type { PathwayClusterOptions } from "./cluster/types.ts"
 import { ClusterManager } from "./cluster/cluster-manager.ts"
 import type { AutoProvisionConfig, PathwayPumpOptions, PumpState } from "./pump/types.ts"
-import { PathwayPump, pumpFilterFromTargets } from "./pump/pathway-pump.ts"
+import { parsePumpTarget, PathwayPump, pumpFilterFromTargets } from "./pump/pathway-pump.ts"
 import {
   PathwayProvisioner,
   type ProvisionerRegistration,
@@ -1983,16 +1983,115 @@ export class PathwaysBuilder<
    * Runs on every leader bootstrap, so a redeploy, a pod restart and a cluster leader
    * change all come back paused at the same position rather than quietly resuming.
    */
-  private async restoreDeliveryState(pump: PathwayPump): Promise<void> {
-    let pausedKeys: string[]
+  /**
+   * Read the desired delivery state from the control plane.
+   *
+   * The CP is the source of truth: an operator pauses there, and this instance may never
+   * have seen the command. Returns null when the CP cannot answer, so the caller can fall
+   * back to the local cache rather than resume a paused pathway during a network blip.
+   */
+  private async fetchDeliveryStateFromControlPlane(): Promise<string[] | null> {
+    // Same gate as pathway registration. A development boot must not reach the control
+    // plane: that is the regression fixed in 2.5.5, where every developer's machine
+    // touched a shared control-plane resource.
+    if (this.pathwayMode != "virtual" || !this.canRegisterPathwayInstance() || !this.pathwayName) {
+      return null
+    }
+
+    const url = `${this.pulseUrl}/api/v1/pathways/by-name/${encodeURIComponent(this.pathwayName)}?tenant=${
+      encodeURIComponent(this.tenant)
+    }`
+
     try {
-      pausedKeys = await this.deliveryStore.getPausedPumps(this.deliveryStateKey)
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: this.getPathwayProvisionAuthHeader() },
+      })
+
+      if (!response.ok) {
+        this.logger.warn("Could not read delivery state from the control plane", {
+          pathwayName: this.pathwayName,
+          status: response.status,
+        })
+        return null
+      }
+
+      const body = await response.json() as {
+        deliveryState?: string
+        deliveryPauseTargets?: string[] | null
+      }
+
+      // A control plane older than the pause feature omits the field. Treat that as "no
+      // opinion" and defer to the local cache rather than assuming active.
+      if (body.deliveryState === undefined) {
+        return null
+      }
+
+      if (body.deliveryState !== "paused") {
+        return []
+      }
+
+      // Paused with no targets means every pump.
+      const targets = body.deliveryPauseTargets ?? []
+      return targets.length ? this.expandDeliveryTargets(targets) : this.buildAllPumpKeys()
     } catch (err) {
-      // Failing open here would resume a paused pathway during a database blip, which is
-      // the exact surprise this feature exists to prevent.
-      throw new Error(
-        `Delivery state could not be read: ${err instanceof Error ? err.message : String(err)}`,
-      )
+      this.logger.warn("Could not read delivery state from the control plane", {
+        pathwayName: this.pathwayName,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return null
+    }
+  }
+
+  /** Every `${flowType}::${pumpGroup}` key this builder will run. */
+  private buildAllPumpKeys(): string[] {
+    return this.buildPumpRegistrations().map((r) => `${r.flowType}::${r.pumpGroup}`)
+  }
+
+  /**
+   * Turn control-plane targets into concrete pump keys. A bare flow type expands to every
+   * pump group registered on it; a composite key is already exact.
+   */
+  private expandDeliveryTargets(targets: string[]): string[] {
+    const registrations = this.buildPumpRegistrations()
+    const keys = new Set<string>()
+
+    for (const target of targets) {
+      const parsed = parsePumpTarget(target)
+      for (const registration of registrations) {
+        if (registration.flowType !== parsed.flowType) continue
+        if (parsed.pumpGroup !== undefined && registration.pumpGroup !== parsed.pumpGroup) continue
+        keys.add(`${registration.flowType}::${registration.pumpGroup}`)
+      }
+    }
+
+    return [...keys]
+  }
+
+  private async restoreDeliveryState(pump: PathwayPump): Promise<void> {
+    // The control plane is the source of truth. The local store is a cache for the case
+    // where the CP cannot be reached, or does not know about the pause feature yet.
+    const fromControlPlane = await this.fetchDeliveryStateFromControlPlane()
+
+    let pausedKeys: string[]
+    if (fromControlPlane !== null) {
+      pausedKeys = fromControlPlane
+      // Refresh the cache so a later boot without the CP still restores correctly.
+      await this.deliveryStore.setPausedPumps(this.deliveryStateKey, pausedKeys).catch((err) => {
+        this.logger.warn("Could not cache the delivery state locally", {
+          error: err instanceof Error ? err.message : String(err),
+        })
+      })
+    } else {
+      try {
+        pausedKeys = await this.deliveryStore.getPausedPumps(this.deliveryStateKey)
+      } catch (err) {
+        // Failing open here would resume a paused pathway during a database blip, which is
+        // the exact surprise this feature exists to prevent.
+        throw new Error(
+          `Delivery state could not be read: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
     }
 
     if (!pausedKeys.length) {
