@@ -187,3 +187,129 @@ Deno.test("InMemoryPathwayDeliveryStore", async (t) => {
     assertEquals(await store.getPausedPumps("p"), [])
   })
 })
+
+Deno.test("restoring delivery state prefers the control plane", async (t) => {
+  interface Internals {
+    pathwayMode: string
+    runtimeEnv: string
+    pathwayName?: string
+    tenant: string
+    pulseUrl: string
+    deliveryStore: PathwayDeliveryStore
+    fetchDeliveryStateFromControlPlane(): Promise<string[] | null>
+    buildPumpRegistrations(): Array<{ flowType: string; eventType: string; pumpGroup: string }>
+  }
+
+  /** A builder wired to a fake control plane, with two pump groups registered. */
+  function builderWithControlPlane(
+    response: { status: number; body?: unknown },
+    store?: PathwayDeliveryStore,
+  ) {
+    const builder = new PathwaysBuilder({
+      baseUrl: "http://localhost:9999",
+      tenant: "test-tenant",
+      dataCore: "test-data-core",
+      apiKey: "test-api-key",
+      pathwayTimeoutMs: 1000,
+    })
+    if (store) builder.withPathwayDeliveryStore(store)
+
+    const internals = builder as unknown as Internals
+    internals.pathwayMode = "virtual"
+    // Production: a development boot must never reach the control plane.
+    internals.runtimeEnv = "production"
+    internals.pathwayName = "svc"
+    internals.buildPumpRegistrations = () => [
+      { flowType: "orders.0", eventType: "e.0", pumpGroup: "default" },
+      { flowType: "orders.0", eventType: "e.0", pumpGroup: "hot" },
+    ]
+
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = () =>
+      Promise.resolve(
+        new Response(response.body === undefined ? "" : JSON.stringify(response.body), {
+          status: response.status,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+
+    return {
+      internals,
+      restore: () => {
+        globalThis.fetch = originalFetch
+      },
+    }
+  }
+
+  await t.step("a paused pathway with no targets expands to every pump", async () => {
+    const { internals, restore } = builderWithControlPlane({
+      status: 200,
+      body: { deliveryState: "paused", deliveryPauseTargets: null },
+    })
+    try {
+      const keys = await internals.fetchDeliveryStateFromControlPlane()
+      assertEquals(keys?.sort(), ["orders.0::default", "orders.0::hot"])
+    } finally {
+      restore()
+    }
+  })
+
+  await t.step("a bare flow-type target expands to every pump group on it", async () => {
+    const { internals, restore } = builderWithControlPlane({
+      status: 200,
+      body: { deliveryState: "paused", deliveryPauseTargets: ["orders.0"] },
+    })
+    try {
+      const keys = await internals.fetchDeliveryStateFromControlPlane()
+      assertEquals(keys?.sort(), ["orders.0::default", "orders.0::hot"])
+    } finally {
+      restore()
+    }
+  })
+
+  await t.step("a composite target resolves to exactly one pump", async () => {
+    const { internals, restore } = builderWithControlPlane({
+      status: 200,
+      body: { deliveryState: "paused", deliveryPauseTargets: ["orders.0::hot"] },
+    })
+    try {
+      assertEquals(await internals.fetchDeliveryStateFromControlPlane(), ["orders.0::hot"])
+    } finally {
+      restore()
+    }
+  })
+
+  await t.step("an active pathway resolves to nothing paused", async () => {
+    const { internals, restore } = builderWithControlPlane({
+      status: 200,
+      body: { deliveryState: "active", deliveryPauseTargets: null },
+    })
+    try {
+      assertEquals(await internals.fetchDeliveryStateFromControlPlane(), [])
+    } finally {
+      restore()
+    }
+  })
+
+  await t.step("an older control plane that omits the field defers to the cache", async () => {
+    const { internals, restore } = builderWithControlPlane({
+      status: 200,
+      body: { id: "x", tenant: "test-tenant" },
+    })
+    try {
+      // null means "no opinion", so the caller falls back rather than assuming active.
+      assertEquals(await internals.fetchDeliveryStateFromControlPlane(), null)
+    } finally {
+      restore()
+    }
+  })
+
+  await t.step("an unreachable control plane defers to the cache", async () => {
+    const { internals, restore } = builderWithControlPlane({ status: 503 })
+    try {
+      assertEquals(await internals.fetchDeliveryStateFromControlPlane(), null)
+    } finally {
+      restore()
+    }
+  })
+})
