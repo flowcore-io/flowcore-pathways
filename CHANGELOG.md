@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.1](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.0...v2.10.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **postgres:** sweep expired pathway state and chunk parts at most once per minute ([#116](https://github.com/flowcore-io/flowcore-pathways/issues/116)) ([77a7fd2](https://github.com/flowcore-io/flowcore-pathways/commit/77a7fd26557cbedce34fd17fd91a35ee7a7f7eae))
+
 ## [2.10.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.9.0...v2.10.0) (2026-09-16)
 
 
