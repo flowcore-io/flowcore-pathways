@@ -20,6 +20,33 @@ Deno.test({
   fn: async (t) => {
     const store: PostgresPathwayChunkStore = createPostgresPathwayChunkStore(config)
 
+    await t.step("sweeps expired parts at most once per cleanup interval", async () => {
+      const throttled = createPostgresPathwayChunkStore({
+        ...config,
+        tableName: "pathway_chunks_throttled",
+        cleanupIntervalMs: 60_000,
+      })
+      const base = { chunkId: crypto.randomUUID(), totalParts: 100, digest: "digest" }
+      // First call initializes and performs the first sweep.
+      await throttled.storePart({ ...base, part: 1, data: "a", eventId: "e1" })
+
+      const adapter = (throttled as any).postgres
+      const originalExecute = adapter.execute.bind(adapter)
+      let deletes = 0
+      adapter.execute = async (sql: string, params?: unknown[]) => {
+        if (/DELETE FROM/i.test(sql)) deletes++
+        return await originalExecute(sql, params)
+      }
+
+      for (let part = 2; part <= 21; part++) {
+        await throttled.storePart({ ...base, part, data: `p${part}`, eventId: `e${part}` })
+      }
+      assertEquals(deletes, 0)
+
+      await originalExecute(`DROP TABLE IF EXISTS pathway_chunks_throttled`)
+      await throttled.close()
+    })
+
     await t.step("stores parts, reports duplicates and completes exactly once", async () => {
       const base = { chunkId: crypto.randomUUID(), totalParts: 3, digest: "digest" }
 

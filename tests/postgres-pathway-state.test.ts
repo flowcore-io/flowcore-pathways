@@ -84,6 +84,100 @@ Deno.test({
       }
     })
 
+    await t.step("should sweep expired rows at most once per cleanup interval", async () => {
+      const throttledState = createPostgresPathwayState({
+        ...config,
+        tableName: "pathway_state_throttled",
+        cleanupIntervalMs: 60_000,
+      })
+
+      try {
+        // First call initializes and performs the first sweep.
+        await throttledState.isProcessed("warm-up")
+
+        const adapter = (throttledState as any).postgres
+        const originalExecute = adapter.execute.bind(adapter)
+        let deletes = 0
+        adapter.execute = async (sql: string, params?: unknown[]) => {
+          if (/DELETE FROM/i.test(sql)) deletes++
+          return await originalExecute(sql, params)
+        }
+
+        for (let i = 0; i < 50; i++) {
+          await throttledState.isProcessed(`throttled-${i}`)
+        }
+        assertEquals(deletes, 0)
+      } finally {
+        const adapter = (throttledState as any).postgres
+        if (adapter) {
+          await adapter.execute(`DROP TABLE IF EXISTS pathway_state_throttled`)
+          await throttledState.close()
+        }
+      }
+    })
+
+    await t.step("cleanupIntervalMs of 0 sweeps on every lookup", async () => {
+      const eagerState = createPostgresPathwayState({
+        ...config,
+        tableName: "pathway_state_eager",
+        cleanupIntervalMs: 0,
+      })
+
+      try {
+        await eagerState.isProcessed("warm-up")
+
+        const adapter = (eagerState as any).postgres
+        const originalExecute = adapter.execute.bind(adapter)
+        let deletes = 0
+        adapter.execute = async (sql: string, params?: unknown[]) => {
+          if (/DELETE FROM/i.test(sql)) deletes++
+          return await originalExecute(sql, params)
+        }
+
+        for (let i = 0; i < 5; i++) {
+          await eagerState.isProcessed(`eager-${i}`)
+        }
+        assertEquals(deletes, 5)
+      } finally {
+        const adapter = (eagerState as any).postgres
+        if (adapter) {
+          await adapter.execute(`DROP TABLE IF EXISTS pathway_state_eager`)
+          await eagerState.close()
+        }
+      }
+    })
+
+    await t.step("expired rows are removed once the cleanup interval elapses", async () => {
+      const sweepState = createPostgresPathwayState({
+        ...config,
+        tableName: "pathway_state_sweep",
+        ttlMs: 1000,
+        cleanupIntervalMs: 1500,
+      })
+
+      try {
+        await sweepState.setProcessed("expires-soon")
+        // The first lookup after start sweeps; the row is still live so it survives.
+        assertEquals(await sweepState.isProcessed("expires-soon"), true)
+
+        await new Promise((resolve) => setTimeout(resolve, 1600))
+
+        // Expired and past the interval: the lookup reports false and the sweep deletes the row.
+        assertFalse(await sweepState.isProcessed("expires-soon"))
+        const adapter = (sweepState as any).postgres
+        const rows = await adapter.query(`SELECT event_id FROM pathway_state_sweep WHERE event_id = $1`, [
+          "expires-soon",
+        ])
+        assertEquals(rows.length, 0)
+      } finally {
+        const adapter = (sweepState as any).postgres
+        if (adapter) {
+          await adapter.execute(`DROP TABLE IF EXISTS pathway_state_sweep`)
+          await sweepState.close()
+        }
+      }
+    })
+
     await t.step("should work with connection string configuration", async () => {
       const connectionStringState = createPostgresPathwayState({
         connectionString,

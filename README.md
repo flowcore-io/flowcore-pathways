@@ -633,6 +633,7 @@ const postgresState = createPostgresPathwayState({
   database: "pathway_db",
   tableName: "pathway_state", // Optional, defaults to "pathway_state"
   ttlMs: 300000, // Optional, defaults to 5 minutes (300000ms)
+  cleanupIntervalMs: 60000, // Optional, expired rows are swept at most once per minute (0 = on every lookup)
   ssl: false, // Optional, defaults to false
 })
 
@@ -916,6 +917,7 @@ const pathways = new PathwaysBuilder({
       connectionString,
       statePrefix: "my_service", // optional, see State Prefix
       ttlMs: 60 * 60 * 1000, // optional, parts of an incomplete chunk expire after 1 hour
+      cleanupIntervalMs: 60 * 1000, // optional, expired parts are swept at most once per minute
     }),
   )
 ```
