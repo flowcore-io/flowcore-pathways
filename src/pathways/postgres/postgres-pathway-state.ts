@@ -22,6 +22,11 @@ export interface PostgresPathwayStateConnectionStringConfig extends StatePrefixC
   tableName?: string
   /** Time-to-live in milliseconds for processed events (default: 5 minutes) */
   ttlMs?: number
+  /**
+   * Minimum time between two sweeps of expired rows, in milliseconds.
+   * Defaults to 60 000. `0` sweeps on every `isProcessed` call (the pre-2.10.1 behaviour).
+   */
+  cleanupIntervalMs?: number
   /** Connection pool configuration */
   pool?: PostgresPoolConfig
 }
@@ -50,6 +55,11 @@ export interface PostgresPathwayStateParametersConfig extends StatePrefixConfig 
   tableName?: string
   /** Time-to-live in milliseconds for processed events (default: 5 minutes) */
   ttlMs?: number
+  /**
+   * Minimum time between two sweeps of expired rows, in milliseconds.
+   * Defaults to 60 000. `0` sweeps on every `isProcessed` call (the pre-2.10.1 behaviour).
+   */
+  cleanupIntervalMs?: number
   /** Connection pool configuration */
   pool?: PostgresPoolConfig
 }
@@ -130,6 +140,8 @@ export class PostgresPathwayState implements PathwayState {
    */
   private static readonly DEFAULT_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
+  private static readonly DEFAULT_CLEANUP_INTERVAL_MS = 60 * 1000 // 1 minute
+
   /**
    * Default table name for storing pathway state
    * @private
@@ -158,6 +170,12 @@ export class PostgresPathwayState implements PathwayState {
    * Whether the database has been initialized
    * @private
    */
+  /** Minimum time between two sweeps of expired rows */
+  private cleanupIntervalMs: number
+
+  /** Wall-clock time of the last sweep on this instance */
+  private lastCleanupAt = 0
+
   private initialized = false
 
   /**
@@ -168,6 +186,7 @@ export class PostgresPathwayState implements PathwayState {
   constructor(private config: PostgresPathwayStateConfig) {
     this.tableName = config.tableName || prefixStateName(config.statePrefix, PostgresPathwayState.DEFAULT_TABLE_NAME)
     this.ttlMs = config.ttlMs || PostgresPathwayState.DEFAULT_TTL_MS
+    this.cleanupIntervalMs = config.cleanupIntervalMs ?? PostgresPathwayState.DEFAULT_CLEANUP_INTERVAL_MS
     this.postgres = null as unknown as PostgresAdapter
   }
 
@@ -265,8 +284,9 @@ export class PostgresPathwayState implements PathwayState {
   async isProcessed(eventId: string): Promise<boolean> {
     await this.initialize()
 
-    // Clean up expired entries
-    await this.cleanupExpired()
+    // Sweep expired rows at most once per cleanupIntervalMs. The lookup below already
+    // ignores expired rows, so correctness never depends on the sweep having run.
+    await this.cleanupExpiredIfDue()
 
     const result = await this.postgres.query<{ processed: boolean }[]>(
       `
@@ -338,6 +358,16 @@ export class PostgresPathwayState implements PathwayState {
    * @private
    * @returns {Promise<void>}
    */
+  private async cleanupExpiredIfDue(): Promise<void> {
+    const now = Date.now()
+    if (this.cleanupIntervalMs > 0 && now - this.lastCleanupAt < this.cleanupIntervalMs) {
+      return
+    }
+    // Claim the slot before awaiting so concurrent callers on this instance do not all sweep.
+    this.lastCleanupAt = now
+    await this.cleanupExpired()
+  }
+
   private async cleanupExpired(): Promise<void> {
     // Delete expired entries
     await this.postgres.execute(`

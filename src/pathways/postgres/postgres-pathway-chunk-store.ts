@@ -23,6 +23,11 @@ export interface PostgresPathwayChunkStoreConnectionStringConfig extends StatePr
   tableName?: string
   /** Time-to-live in milliseconds for parts of an incomplete chunk (default: 1 hour) */
   ttlMs?: number
+  /**
+   * Minimum time between two sweeps of expired rows, in milliseconds.
+   * Defaults to 60 000. `0` sweeps on every `storePart` call (the pre-2.10.1 behaviour).
+   */
+  cleanupIntervalMs?: number
   /** Connection pool configuration */
   pool?: PostgresPoolConfig
 }
@@ -51,6 +56,11 @@ export interface PostgresPathwayChunkStoreParametersConfig extends StatePrefixCo
   tableName?: string
   /** Time-to-live in milliseconds for parts of an incomplete chunk (default: 1 hour) */
   ttlMs?: number
+  /**
+   * Minimum time between two sweeps of expired rows, in milliseconds.
+   * Defaults to 60 000. `0` sweeps on every `storePart` call (the pre-2.10.1 behaviour).
+   */
+  cleanupIntervalMs?: number
   /** Connection pool configuration */
   pool?: PostgresPoolConfig
 }
@@ -95,17 +105,21 @@ interface ChunkRow {
 export class PostgresPathwayChunkStore implements PathwayChunkStore {
   /** Default time-to-live for parts of an incomplete chunk (1 hour) */
   private static readonly DEFAULT_TTL_MS = 60 * 60 * 1000
+  private static readonly DEFAULT_CLEANUP_INTERVAL_MS = 60 * 1000
   private static readonly DEFAULT_TABLE_NAME = DEFAULT_STATE_NAMES.chunks
 
   private postgres: PostgresAdapter | null = null
   private readonly tableName: string
   private readonly ttlMs: number
+  private readonly cleanupIntervalMs: number
+  private lastCleanupAt = 0
   private initialized = false
 
   constructor(private config: PostgresPathwayChunkStoreConfig) {
     this.tableName = config.tableName ||
       prefixStateName(config.statePrefix, PostgresPathwayChunkStore.DEFAULT_TABLE_NAME)
     this.ttlMs = config.ttlMs || PostgresPathwayChunkStore.DEFAULT_TTL_MS
+    this.cleanupIntervalMs = config.cleanupIntervalMs ?? PostgresPathwayChunkStore.DEFAULT_CLEANUP_INTERVAL_MS
   }
 
   /** The resolved table name */
@@ -170,7 +184,7 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
    */
   async storePart(input: StorePathwayChunkPartInput): Promise<PathwayChunkStoreResult> {
     const postgres = await this.initialize()
-    await this.cleanupExpired(postgres)
+    await this.cleanupExpiredIfDue(postgres)
 
     const dataHash = sha256Hex(input.data)
     const ttlSeconds = Math.max(1, Math.floor(this.ttlMs / 1000))
@@ -178,6 +192,12 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
     return await postgres.transaction!(async (tx) => {
       // 64-bit hash: collisions only serialize unrelated chunks, but fewer is better.
       await tx.execute(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [input.chunkId])
+
+      // Expired parts of this chunk never count toward completion, whether or not the
+      // table-wide sweep has run yet. This is a primary-key range delete, so it is cheap.
+      await tx.execute(`DELETE FROM ${this.tableName} WHERE chunk_id = $1 AND expires_at < NOW()`, [
+        input.chunkId,
+      ])
 
       const inserted = await tx.query<{ part: number }[]>(
         `
@@ -248,6 +268,16 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
       this.postgres = null
       this.initialized = false
     }
+  }
+
+  private async cleanupExpiredIfDue(postgres: PostgresAdapter): Promise<void> {
+    const now = Date.now()
+    if (this.cleanupIntervalMs > 0 && now - this.lastCleanupAt < this.cleanupIntervalMs) {
+      return
+    }
+    // Claim the slot before awaiting so concurrent callers on this instance do not all sweep.
+    this.lastCleanupAt = now
+    await this.cleanupExpired(postgres)
   }
 
   private async cleanupExpired(postgres: PostgresAdapter): Promise<void> {
