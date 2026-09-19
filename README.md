@@ -871,6 +871,37 @@ Two limits to know:
 - A paused pump holds up to `bufferSize` events in memory (default 1000 per pump).
 - Pausing does not stop `write()`. Ingestion continues, and the events wait to be delivered.
 
+### Encrypted Pathways and Key Rotation
+
+Pathway encryption uses the native AES-256-GCM implementation. A single legacy key remains supported:
+
+```typescript
+const pathways = new PathwaysBuilder({
+  // ...baseUrl, tenant, dataCore, and apiKey
+  encryption: { mode: "symmetric", key: process.env.PATHWAY_ENCRYPTION_KEY! },
+})
+```
+
+For rotation, configure an active key ID and retain the keys needed to read existing events. New events use the active
+key and carry only its opaque ID in metadata; the key material stays in the application configuration. A resolver can
+load retained keys lazily instead of keeping them in the process:
+
+```typescript
+const pathways = new PathwaysBuilder({
+  // ...baseUrl, tenant, dataCore, and apiKey
+  encryption: {
+    mode: "symmetric",
+    keyring: {
+      activeKeyId: "2026-09",
+      resolveKey: (keyId) => keyStore.get(keyId),
+    },
+  },
+})
+```
+
+Reads resolve the key ID stored with the event. Unknown or missing IDs fail closed. Existing single-key encrypted events
+and markerless plaintext history remain readable, and encrypted chunk parts carry the same key ID through reassembly.
+
 ### Large Events (Automatic Chunking)
 
 Flowcore rejects a single event whose payload is larger than 64 000 bytes

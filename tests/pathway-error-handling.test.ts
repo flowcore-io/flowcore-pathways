@@ -3,6 +3,48 @@ import { FlowcoreEvent, PathwaysBuilder } from "../src/mod.ts"
 import { createTestServer } from "./helpers/test-server.ts"
 import { z } from "zod"
 
+Deno.test({
+  name: "terminal handler failure does not mark the event processed",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const builder = new PathwaysBuilder({
+      baseUrl: "http://localhost:8022",
+      tenant: "test-tenant",
+      dataCore: "test-data-core",
+      apiKey: "test-api-key",
+    })
+    const pathway = builder.register({
+      flowType: "failure-flow",
+      eventType: "failed",
+      schema: z.object({ test: z.string() }),
+      maxRetries: 0,
+    })
+    const processed = new Set<string>()
+    pathway["pathwayState"].isProcessed = async (eventId: string) => processed.has(eventId)
+    pathway["pathwayState"].setProcessed = async (eventId: string) => {
+      processed.add(eventId)
+    }
+    pathway.handle("failure-flow/failed", async () => {
+      throw new Error("projection failed")
+    })
+
+    const event: FlowcoreEvent = {
+      eventId: "terminal-failure-event",
+      timeBucket: "202609190000",
+      tenant: "test-tenant",
+      dataCoreId: "test-data-core",
+      flowType: "failure-flow",
+      eventType: "failed",
+      metadata: {},
+      payload: { test: "data" },
+      validTime: new Date().toISOString(),
+    }
+    await assertRejects(() => pathway.process("failure-flow/failed", event), Error, "projection failed")
+    assertEquals(processed.has(event.eventId), false)
+  },
+})
+
 // Add ignore flag to avoid resource leak errors, but we still clean up properly
 Deno.test({
   name: "Pathway Error Handling and Retry Tests",
