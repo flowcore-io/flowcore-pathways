@@ -24,6 +24,7 @@ import {
   PATHWAY_CHUNK_SCHEME,
   PATHWAY_CHUNKED_METADATA_KEY,
   PATHWAY_ENCRYPTED_METADATA_KEY,
+  PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY,
   PATHWAY_ENCRYPTION_SCHEME,
   PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY,
   PathwaysBuilder,
@@ -471,6 +472,43 @@ Deno.test({
     await pathway.process("big-flow/created", createEvent(data, { [PATHWAY_CHUNKED_METADATA_KEY]: "true" }))
     assertEquals(handled.length, 1)
     assertEquals(handled[0].payload, data)
+  },
+})
+
+Deno.test({
+  name: "process decrypts retained-key chunk parts using the event key ID",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const oldKey = ENCRYPTION_KEY
+    const activeKey = "pathway-chunking-active-key-32-chars-ok"
+    const pathway = createBuilder({
+      encryption: {
+        keyring: {
+          activeKeyId: "v2",
+          keys: { v1: oldKey, v2: activeKey },
+        },
+      },
+      encrypted: true,
+    })
+    const data = { id: "retained", title: "historical", content: largeContent(100_000), workspaceId: "w" }
+    const parts = buildChunkParts(data, 45_000, (slice) => aesGcmEncrypt(slice, deriveEncryptionKey(oldKey)))
+    const handled: FlowcoreEvent[] = []
+    pathway.handle("big-flow/created", async (event) => {
+      handled.push(event)
+    })
+    const meta = () => ({
+      [PATHWAY_CHUNKED_METADATA_KEY]: "true",
+      [PATHWAY_ENCRYPTED_METADATA_KEY]: "true",
+      [PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY]: PATHWAY_ENCRYPTION_SCHEME,
+      [PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY]: "v1",
+    })
+    for (const [index, part] of parts.entries()) {
+      await pathway.process("big-flow/created", createEvent(part, meta(), `retained-${index + 1}`))
+    }
+    assertEquals(handled.length, 1)
+    assertEquals(handled[0].payload, data)
+    assertEquals(handled[0].metadata, {})
   },
 })
 

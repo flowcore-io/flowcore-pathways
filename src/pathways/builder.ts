@@ -99,7 +99,9 @@ import {
   createPathwayEncryptionProvider,
   decryptPayloadEnvelope,
   encryptPayloadEnvelope,
+  getPathwayEncryptionKeyId,
   PATHWAY_ENCRYPTED_METADATA_KEY,
+  PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY,
   PATHWAY_ENCRYPTION_SCHEME,
   PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY,
   type PathwayEncryptionConfig,
@@ -815,7 +817,7 @@ export class PathwaysBuilder<
 
     let slice = envelope.data
     if (this.shouldDecryptPathwayPayload(pathway, data.metadata)) {
-      slice = this.decryptChunkSlice(pathway, slice)
+      slice = this.decryptChunkSlice(pathway, slice, data.metadata)
     }
 
     this.logger.debug(`Collecting pathway chunk part`, {
@@ -883,13 +885,13 @@ export class PathwaysBuilder<
     }
   }
 
-  private decryptChunkSlice(pathway: keyof TPathway, slice: string): string {
+  private decryptChunkSlice(pathway: keyof TPathway, slice: string, metadata: unknown): string {
     if (!this.encryptionProvider) {
       throw new Error(
         `Pathway ${String(pathway)} received encrypted chunk part but no symmetric encryption key is configured`,
       )
     }
-    return this.encryptionProvider.decrypt(slice)
+    return this.encryptionProvider.decrypt(slice, getPathwayEncryptionKeyId(metadata))
   }
 
   /**
@@ -900,7 +902,7 @@ export class PathwaysBuilder<
     const pathwayStr = String(pathway)
 
     if (this.shouldDecryptPathwayPayload(pathway, data.metadata)) {
-      data.payload = this.decryptPathwayPayload(pathway, data.payload)
+      data.payload = this.decryptPathwayPayload(pathway, data.payload, data.metadata)
       // Drop the encryption markers once the payload is plaintext. Cluster mode hands this same
       // event back to process() through the cluster event handler; a stale marker would make the
       // second pass try to decrypt an already-decrypted payload and throw.
@@ -1465,6 +1467,8 @@ export class PathwaysBuilder<
     if (encrypted) {
       finalMetadata[PATHWAY_ENCRYPTED_METADATA_KEY] = "true"
       finalMetadata[PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY] = PATHWAY_ENCRYPTION_SCHEME
+      const keyId = this.encryptionProvider?.activeKeyId
+      if (keyId) finalMetadata[PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY] = keyId
     }
 
     const chunkPlan = this.planChunkedWrite(path, data, eventData, Boolean(batch), encrypted)
@@ -1672,6 +1676,7 @@ export class PathwaysBuilder<
   private decryptPathwayPayload<TPath extends keyof TPathway>(
     path: TPath,
     payload: unknown,
+    metadata: unknown,
   ): unknown {
     if (!this.encryptionProvider) {
       throw new Error(
@@ -1679,7 +1684,7 @@ export class PathwaysBuilder<
       )
     }
 
-    return decryptPayloadEnvelope(payload, this.encryptionProvider)
+    return decryptPayloadEnvelope(payload, this.encryptionProvider, getPathwayEncryptionKeyId(metadata))
   }
 
   private hasEncryptedPayloadMetadata(metadata: unknown): boolean {
