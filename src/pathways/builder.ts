@@ -1025,15 +1025,16 @@ export class PathwaysBuilder<
             continue
           }
 
-          // If we've exhausted retries, mark as processed to avoid hanging
-          this.logger.warn(`Max retries exceeded for pathway event, marking as processed`, {
+          // Keep the event unprocessed after terminal handler failure. Marking it processed here
+          // lets a local write() waiter report success even though the projection failed, and it
+          // prevents the delivery layer from retrying the retained event.
+          this.logger.warn(`Max retries exceeded for pathway event; leaving it unprocessed for retry`, {
             pathway: pathwayStr,
             eventId: data.eventId,
             retryCount,
             maxRetries,
           })
 
-          await this.pathwayState.setProcessed(data.eventId)
           throw error
         }
       }
