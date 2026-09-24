@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.10.3](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.2...v2.10.3) (2026-09-24)
+
+
+### Bug Fixes
+
+* forward base URL to data pump source ([3919e37](https://github.com/flowcore-io/flowcore-pathways/commit/3919e3717df6535a188badc0f3ee2c31567e0d12))
+
 ## [2.10.2](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.1...v2.10.2) (2026-09-24)
 
 
