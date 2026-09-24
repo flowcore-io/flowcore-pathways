@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts"
+import { assertEquals, assertExists, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts"
 import { PathwayPump } from "../src/pathways/pump/pathway-pump.ts"
 import type { PumpState, PumpStateManager, PumpStateManagerFactory } from "../src/pathways/pump/types.ts"
 import type { FlowcoreEvent } from "../src/contracts/event.ts"
@@ -210,6 +210,118 @@ Deno.test({
       await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] })
 
       assertEquals(forwardedMaxRedeliveryCount, -1)
+    })
+
+    await t.step("dispatches a reserved batch concurrently so cluster workers can overlap", async () => {
+      const pump = new PathwayPump({
+        stateManagerFactory: createInMemoryStateFactory(),
+        notifier: { type: "poller", pollerIntervalMs: 1000 },
+        concurrency: 3,
+      })
+
+      let active = 0
+      let peak = 0
+      const started: string[] = []
+      let release!: () => void
+      const gate = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      pump.configure({
+        tenant: "test-tenant",
+        dataCore: "test-dc",
+        apiKey: ["fc", "sy", "test"].join("_"),
+        baseUrl: "https://api.flowcore.io",
+        processEvent: async (_pathway, event) => {
+          active++
+          peak = Math.max(peak, active)
+          started.push(event.eventId)
+          await gate
+          active--
+        },
+      })
+
+      let handler!: (events: FlowcoreEvent[]) => Promise<void>
+      const internal = pump as unknown as InternalPump
+      internal.dataPumpConstructor = {
+        create: (options: Record<string, unknown>) => {
+          handler = (options.processor as { handler: (events: FlowcoreEvent[]) => Promise<void> }).handler
+          return Promise.resolve({ start: async () => {} })
+        },
+      }
+      await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] })
+
+      const events = [1, 2, 3].map((index) => ({
+        eventId: `event-${index}`,
+        timeBucket: "20260924230000",
+        tenant: "test-tenant",
+        dataCoreId: "test-dc",
+        flowType: "orders",
+        eventType: "placed",
+        metadata: {},
+        payload: { index },
+        validTime: "2026-09-24T23:00:00.000Z",
+      })) satisfies FlowcoreEvent[]
+
+      const processing = handler(events)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      assertEquals(started.length, 3)
+      assertEquals(peak, 3)
+      release()
+      await processing
+    })
+
+    await t.step("waits for successful siblings before rejecting a failed concurrent batch", async () => {
+      const pump = new PathwayPump({
+        stateManagerFactory: createInMemoryStateFactory(),
+        concurrency: 2,
+      })
+      let releaseSibling!: () => void
+      const siblingGate = new Promise<void>((resolve) => {
+        releaseSibling = resolve
+      })
+      let siblingCompleted = false
+      pump.configure({
+        tenant: "test-tenant",
+        dataCore: "test-dc",
+        apiKey: ["fc", "sy", "test"].join("_"),
+        baseUrl: "https://api.flowcore.io",
+        processEvent: async (_pathway, event) => {
+          if (event.eventId === "failed") throw new Error("injected failure")
+          await siblingGate
+          siblingCompleted = true
+        },
+      })
+
+      let handler!: (events: FlowcoreEvent[]) => Promise<void>
+      const internal = pump as unknown as InternalPump
+      internal.dataPumpConstructor = {
+        create: (options: Record<string, unknown>) => {
+          handler = (options.processor as { handler: (events: FlowcoreEvent[]) => Promise<void> }).handler
+          return Promise.resolve({ start: async () => {} })
+        },
+      }
+      await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] })
+
+      const makeEvent = (eventId: string): FlowcoreEvent => ({
+        eventId,
+        timeBucket: "20260924230000",
+        tenant: "test-tenant",
+        dataCoreId: "test-dc",
+        flowType: "orders",
+        eventType: "placed",
+        metadata: {},
+        payload: {},
+        validTime: "2026-09-24T23:00:00.000Z",
+      })
+      const processing = handler([makeEvent("failed"), makeEvent("sibling")])
+      let settled = false
+      processing.then(() => settled = true, () => settled = true)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      assertEquals(settled, false)
+      assertEquals(siblingCompleted, false)
+      releaseSibling()
+      await assertRejects(() => processing, Error, "injected failure")
+      assertEquals(siblingCompleted, true)
     })
 
     await t.step("numeric concurrency sets a shared default for every pump", async () => {
