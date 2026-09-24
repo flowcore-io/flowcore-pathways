@@ -157,6 +157,35 @@ Deno.test({
       assertEquals(created.order, 1)
     })
 
+    await t.step("maxRedeliveryCount forwards unlimited retries without applying the default", async () => {
+      const pump = new PathwayPump({
+        stateManagerFactory: createInMemoryStateFactory(),
+        notifier: { type: "poller", pollerIntervalMs: 1000 },
+        maxRedeliveryCount: -1,
+      })
+
+      pump.configure({
+        tenant: "test-tenant",
+        dataCore: "test-dc",
+        apiKey: "test-api-key",
+        baseUrl: "https://api.flowcore.io",
+        processEvent: async () => {},
+      })
+
+      let forwardedMaxRedeliveryCount: unknown
+      const internal = pump as unknown as InternalPump
+      internal.dataPumpConstructor = {
+        create: (options: Record<string, unknown>) => {
+          forwardedMaxRedeliveryCount = options.maxRedeliveryCount
+          return Promise.resolve({ start: async () => {} })
+        },
+      }
+
+      await internal.startPumpForGroup({ flowType: "orders", pumpGroup: "default", eventTypes: ["placed"] })
+
+      assertEquals(forwardedMaxRedeliveryCount, -1)
+    })
+
     await t.step("numeric concurrency sets a shared default for every pump", async () => {
       const factory = createInMemoryStateFactory()
       const pump = new PathwayPump({
