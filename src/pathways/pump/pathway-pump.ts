@@ -352,6 +352,7 @@ export class PathwayPump {
           }
         },
       },
+      baseUrlOverride: this.baseUrl,
       bufferSize: this.bufferSize,
       maxRedeliveryCount: this.maxRedeliveryCount,
       // Born paused when this group is paused, so a restart or a backoff recovery never
