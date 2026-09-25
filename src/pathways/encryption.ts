@@ -9,18 +9,37 @@ const MIN_KEY_LENGTH = 32
 export const ENCRYPTED_PAYLOAD_FIELD = "encryptedPayload"
 export const PATHWAY_ENCRYPTED_METADATA_KEY = "pathways/encrypted"
 export const PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY = "pathways/encryption-scheme"
+export const PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY = "pathways/encryption-key-id"
 export const PATHWAY_ENCRYPTION_SCHEME = "aes-256-gcm-sha256-v1"
 
 export type PathwayEncryptionMode = "none" | "symmetric"
 
 export interface PathwayEncryptionConfig {
   mode?: PathwayEncryptionMode
+  /** The legacy single key. It remains the fallback for markerless key IDs. */
   key?: string
+  /** Optional opaque ID for the legacy single key. */
+  keyId?: string
+  /** Optional retained keyring. The active key is used for new writes. */
+  keyring?: PathwayEncryptionKeyring
 }
+
+export interface PathwayEncryptionKeyring {
+  /** ID stamped into new event metadata. */
+  activeKeyId: string
+  /** Opaque key IDs mapped to key material resolved by the application. */
+  keys?: Readonly<Record<string, string>>
+  /** Optional lazy lookup for retained key material. Return undefined for an unknown ID. */
+  resolveKey?: PathwayEncryptionKeyResolver
+}
+
+export type PathwayEncryptionKeyResolver = (keyId: string) => string | undefined
 
 export interface PathwayEncryptionProvider {
   encrypt(plaintext: string): string
-  decrypt(payload: string): string
+  decrypt(payload: string, keyId?: string): string
+  /** The ID stamped into new encrypted event metadata, when configured. */
+  readonly activeKeyId?: string
 }
 
 export function deriveEncryptionKey(secret: string): Buffer {
@@ -59,7 +78,7 @@ export function aesGcmDecrypt(payload: string, key: Buffer): string {
 export function createPathwayEncryptionProvider(
   config?: PathwayEncryptionConfig,
 ): PathwayEncryptionProvider | null {
-  const mode = config?.mode ?? (config?.key ? "symmetric" : "none")
+  const mode = config?.mode ?? (config?.key || config?.keyring ? "symmetric" : "none")
   if (mode === "none") {
     return null
   }
@@ -68,21 +87,82 @@ export function createPathwayEncryptionProvider(
     throw new Error(`Unknown encryption mode: ${String(mode)}`)
   }
 
-  const secret = config?.key
-  if (!secret) {
+  const keyring = config?.keyring
+  const legacySecret = config?.key
+  if (!keyring && !legacySecret) {
     return null
   }
 
-  if (secret.length < MIN_KEY_LENGTH) {
-    throw new Error(
-      "Pathways symmetric encryption key must be at least 32 characters (generate with: openssl rand -hex 32)",
-    )
+  const validateSecret = (secret: string, label: string): Buffer => {
+    if (secret.length < MIN_KEY_LENGTH) {
+      throw new Error(
+        `Pathways symmetric encryption key for ${label} must be at least 32 characters (generate with: openssl rand -hex 32)`,
+      )
+    }
+    return deriveEncryptionKey(secret)
   }
 
-  const key = deriveEncryptionKey(secret)
+  const keys = new Map<string, Buffer>()
+  const legacyKeyId = config?.keyId?.trim() || undefined
+  if (config?.keyId !== undefined && !legacyKeyId) {
+    throw new Error("Pathways symmetric encryption keyId must not be empty")
+  }
+  if (legacySecret) {
+    keys.set(legacyKeyId ?? "__legacy__", validateSecret(legacySecret, legacyKeyId ?? "legacy key"))
+  }
+
+  let activeKeyId = legacyKeyId
+  if (keyring) {
+    const configuredActiveKeyId = keyring.activeKeyId.trim()
+    if (!configuredActiveKeyId) {
+      throw new Error("Pathways symmetric encryption activeKeyId must not be empty")
+    }
+    if (
+      keyring.keys !== undefined &&
+      (keyring.keys === null || typeof keyring.keys !== "object" || Array.isArray(keyring.keys))
+    ) {
+      throw new Error("Pathways symmetric encryption keyring.keys must be a key ID map")
+    }
+    if (keyring.keys === undefined && typeof keyring.resolveKey !== "function") {
+      throw new Error("Pathways symmetric encryption keyring requires keys or resolveKey")
+    }
+    for (const [keyId, secret] of Object.entries(keyring.keys ?? {})) {
+      if (!keyId.trim()) throw new Error("Pathways symmetric encryption keyring contains an empty key ID")
+      if (typeof secret !== "string") {
+        throw new Error(`Pathways symmetric encryption keyring value for ${keyId} must be a string`)
+      }
+      keys.set(keyId, validateSecret(secret, `key ID ${keyId}`))
+    }
+    if (!keys.has(configuredActiveKeyId) && typeof keyring.resolveKey === "function") {
+      const resolved = keyring.resolveKey(configuredActiveKeyId)
+      if (resolved !== undefined) {
+        keys.set(configuredActiveKeyId, validateSecret(resolved, `key ID ${configuredActiveKeyId}`))
+      }
+    }
+    if (!keys.has(configuredActiveKeyId)) {
+      throw new Error(`Pathways symmetric encryption active key ID is not present in keyring: ${configuredActiveKeyId}`)
+    }
+    activeKeyId = configuredActiveKeyId
+  }
+
+  const resolveKey = (keyId?: string): Buffer => {
+    if (!keyId) {
+      if (legacySecret) return keys.get(legacyKeyId ?? "__legacy__") as Buffer
+      throw new Error("Encrypted pathway payload is missing its encryption key ID")
+    }
+    const key = keys.get(keyId)
+    if (key) return key
+    if (keyring?.resolveKey) {
+      const resolved = keyring.resolveKey(keyId)
+      if (resolved !== undefined) return validateSecret(resolved, `key ID ${keyId}`)
+    }
+    throw new Error(`Unknown encryption key ID: ${keyId}`)
+  }
+
   return {
-    encrypt: (plaintext: string) => aesGcmEncrypt(plaintext, key),
-    decrypt: (payload: string) => aesGcmDecrypt(payload, key),
+    activeKeyId,
+    encrypt: (plaintext: string) => aesGcmEncrypt(plaintext, resolveKey(activeKeyId)),
+    decrypt: (payload: string, keyId?: string) => aesGcmDecrypt(payload, resolveKey(keyId)),
   }
 }
 
@@ -110,13 +190,24 @@ export function stripPathwayEncryptionMetadata(metadata: unknown): unknown {
   const {
     [PATHWAY_ENCRYPTED_METADATA_KEY]: _encrypted,
     [PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY]: _scheme,
+    [PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY]: _keyId,
     ...rest
   } = metadata as Record<string, unknown>
 
   return rest
 }
 
-export function decryptPayloadEnvelope(payload: unknown, provider: PathwayEncryptionProvider): unknown {
+export function getPathwayEncryptionKeyId(metadata: unknown): string | undefined {
+  if (!metadata || typeof metadata !== "object") return undefined
+  const keyId = (metadata as Record<string, unknown>)[PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY]
+  return typeof keyId === "string" && keyId.length > 0 ? keyId : undefined
+}
+
+export function decryptPayloadEnvelope(
+  payload: unknown,
+  provider: PathwayEncryptionProvider,
+  keyId?: string,
+): unknown {
   const encryptedPayload = typeof payload === "string"
     ? payload
     : payload && typeof payload === "object" && !Array.isArray(payload)
@@ -128,7 +219,7 @@ export function decryptPayloadEnvelope(payload: unknown, provider: PathwayEncryp
   }
 
   try {
-    return JSON.parse(provider.decrypt(encryptedPayload))
+    return JSON.parse(provider.decrypt(encryptedPayload, keyId))
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw new Error("Encrypted pathway payload decrypted to invalid JSON")
