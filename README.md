@@ -291,9 +291,11 @@ await pathways.startPump({
 Omit `concurrency` to keep the default of 1 per pump. `startPump()` also accepts a per-call `autoProvision` override
 (same shape as the builder-level option) for overriding provisioning behavior at a specific call site.
 
-> **Note**: this resolves to `processor.concurrency` on the underlying data pump, which is the in-flight batch width —
-> not parallel handler invocations. Resolution order per pump: `byPumpGroup["${flowType}::${pumpGroup}"]` →
-> `byFlowType[flowType]` → `default`.
+> **Note**: this resolves to `processor.concurrency` on the underlying data pump, which bounds each reserved batch.
+> Pathways dispatches the events in that batch concurrently, waits for every event to settle, and acknowledges the batch
+> only when every event succeeds. If one event fails, successful siblings may be replayed, so handlers must be
+> idempotent. Resolution order per pump: `byPumpGroup["${flowType}::${pumpGroup}"]` → `byFlowType[flowType]` →
+> `default`.
 
 ### Splitting a flow type across multiple pumps
 

@@ -346,10 +346,12 @@ export class PathwayPump {
       processor: {
         concurrency: this.resolveConcurrency(flowType, pumpGroup),
         handler: async (events: FlowcoreEvent[]) => {
-          for (const event of events) {
+          const results = await Promise.allSettled(events.map(async (event) => {
             const pathway = `${event.flowType}/${event.eventType}`
             await this.processEvent!(pathway, event)
-          }
+          }))
+          const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected")
+          if (failure) throw failure.reason
         },
       },
       baseUrlOverride: this.baseUrl,
