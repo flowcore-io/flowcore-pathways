@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.10.4](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.3...v2.10.4) (2026-09-25)
+
+
+### Bug Fixes
+
+* dispatch pump batches concurrently ([8186332](https://github.com/flowcore-io/flowcore-pathways/commit/8186332fef2aeff7d32ea90fe6d15528404fb96c))
+* **pump:** dispatch reserved batches concurrently ([4405688](https://github.com/flowcore-io/flowcore-pathways/commit/4405688e88118960cb172deaa9e6cfe9b52ad572))
+
 ## [2.10.3](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.2...v2.10.3) (2026-09-24)
 
 
