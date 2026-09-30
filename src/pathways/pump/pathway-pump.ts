@@ -209,7 +209,7 @@ export class PathwayPump {
   private tenant = ""
   private dataCore = ""
   private apiKey = ""
-  private baseUrl?: string
+  private baseUrl = ""
 
   // Event processor callback
   private processEvent: ((pathway: string, event: FlowcoreEvent) => Promise<void>) | null = null
@@ -232,14 +232,13 @@ export class PathwayPump {
     tenant: string
     dataCore: string
     apiKey: string
-    /** Optional read API override; leave unset for the SDK's dedicated service URLs. */
     baseUrl?: string
     processEvent: (pathway: string, event: FlowcoreEvent) => Promise<void>
   }): void {
     this.tenant = config.tenant
     this.dataCore = config.dataCore
     this.apiKey = config.apiKey
-    this.baseUrl = config.baseUrl
+    this.baseUrl = config.baseUrl ?? ""
     this.processEvent = config.processEvent
   }
 

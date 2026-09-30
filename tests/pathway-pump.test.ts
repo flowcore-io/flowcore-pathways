@@ -96,7 +96,7 @@ Deno.test({
       assertExists(pump)
     })
 
-    await t.step("forwards an explicit pump read URL override to the data source", async () => {
+    await t.step("forwards the builder base URL to the pinned data pump source", async () => {
       const pump = new PathwayPump({
         stateManagerFactory: createInMemoryStateFactory(),
         notifier: { type: "poller", pollerIntervalMs: 1000 },
@@ -120,28 +120,6 @@ Deno.test({
 
       await internal.startPumpForGroup({ flowType: "user", pumpGroup: "default", eventTypes: ["created"] })
       assertEquals(baseUrlOverride, "http://127.0.0.1:43127")
-    })
-
-    await t.step("uses dedicated Flowcore read hosts when no pump override is configured", async () => {
-      const pump = new PathwayPump({ stateManagerFactory: createInMemoryStateFactory() })
-      pump.configure({
-        tenant: "test-tenant",
-        dataCore: "test-dc",
-        apiKey: ["fc", "test", "key"].join("_"),
-        processEvent: async () => {},
-      })
-
-      let baseUrlOverride: unknown = "unexpected"
-      const internal = pump as unknown as InternalPump
-      internal.dataPumpConstructor = {
-        create: (options: Record<string, unknown>) => {
-          baseUrlOverride = options.baseUrlOverride
-          return Promise.resolve({ start: async () => {} })
-        },
-      }
-
-      await internal.startPumpForGroup({ flowType: "user", pumpGroup: "default", eventTypes: ["created"] })
-      assertEquals(baseUrlOverride, undefined)
     })
 
     await t.step("InMemoryPumpStateManager - get/set state", () => {

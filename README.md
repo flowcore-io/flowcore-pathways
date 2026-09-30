@@ -74,15 +74,13 @@ const userSchema = z.object({
 
 // Create a pathways builder
 const pathways = new PathwaysBuilder({
-  baseUrl: "https://webhook.api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: "your-api-key",
 })
 
-// `baseUrl` is for webhook ingestion. The virtual pump uses each SDK read command's
-// dedicated Flowcore service URL. For a local API fixture, set
-// `pumpBaseUrlOverride` separately; do not point production reads at the webhook host.
+// For hosted Flowcore, omit `baseUrl`: writes use webhook.api.flowcore.io and
+// virtual pump reads use each SDK command's dedicated service URL.
 
 // Register a pathway
 pathways
@@ -108,6 +106,11 @@ pathways
   })
 ```
 
+> **Hosted Flowcore configuration:** Omit `baseUrl` to use the SDK's webhook write default and dedicated pump read
+> hosts. Existing applications that set `baseUrl` keep their previous routing: the same URL serves writes and pump
+> reads. This preserves custom single-host installations. An explicit hosted webhook `baseUrl` still routes pump reads
+> to the webhook host; remove that option when upgrading an affected application.
+
 ## Core Concepts
 
 Flowcore Pathways is built around these core concepts:
@@ -129,7 +132,6 @@ The `PathwaysBuilder` is the main configuration point for your pathways:
 import { PathwaysBuilder } from "@flowcore/pathways"
 
 const pathways = new PathwaysBuilder({
-  baseUrl: "https://api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: "your-api-key",
@@ -166,7 +168,6 @@ Pass an `AutoProvisionConfig` to turn individual provisioning stages on or off:
 import { PathwaysBuilder } from "@flowcore/pathways"
 
 const pathways = new PathwaysBuilder({
-  baseUrl: "https://api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: process.env.FLOWCORE_API_KEY!,
@@ -244,7 +245,6 @@ const pathways = new PathwaysBuilder({
 
 ```typescript
 const pathways = new PathwaysBuilder({
-  baseUrl: "https://api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: process.env.FLOWCORE_API_KEY!,
@@ -613,7 +613,6 @@ By default, Flowcore Pathways uses an internal in-memory KV store for persistenc
 ```typescript
 // The default persistence is used automatically, no explicit setup required
 const pathways = new PathwaysBuilder({
-  baseUrl: "https://api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: "your-api-key",
@@ -907,7 +906,6 @@ received by one instance can be joined with parts received by another:
 import { createPostgresPathwayChunkStore, createPostgresPathwayState } from "@flowcore/pathways"
 
 const pathways = new PathwaysBuilder({
-  baseUrl: "https://webhook.api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: "your-api-key",
@@ -978,7 +976,6 @@ import { PathwaysBuilder } from "@flowcore/pathways"
 
 // Configure the builder with session support
 const pathways = new PathwaysBuilder({
-  baseUrl: "https://api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: "your-api-key",
@@ -1221,7 +1218,6 @@ const documentSchema = z.object({
 })
 
 const pathways = new PathwaysBuilder({
-  baseUrl: "https://api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: "your-api-key",

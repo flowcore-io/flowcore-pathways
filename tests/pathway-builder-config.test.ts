@@ -1,4 +1,6 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts"
+import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts"
+import { z } from "zod"
 import { PathwaysBuilder } from "../src/pathways/builder.ts"
 
 const baseOpts = {
@@ -84,30 +86,41 @@ Deno.test({
       assertEquals(typeof builder, "object")
     })
 
-    await t.step("keeps the webhook write host out of pump reads by default", async () => {
-      const builder = new PathwaysBuilder({
-        ...baseOpts,
-        baseUrl: "https://webhook.api.flowcore.io",
-        runtimeEnv: "test",
+    await t.step("omitting baseUrl uses the hosted webhook for writes and SDK hosts for pump reads", async () => {
+      let writeUrl = ""
+      const fetchStub = stub(globalThis, "fetch", async (input) => {
+        writeUrl = String(input)
+        return new Response(JSON.stringify({ eventId: crypto.randomUUID() }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
       })
-      await builder.startPump({ stateManagerFactory: () => ({ getState: () => null, setState: () => {} }) })
       try {
-        assertEquals((builder.pump as unknown as { baseUrl?: string }).baseUrl, undefined)
+        const builder = new PathwaysBuilder({
+          tenant: baseOpts.tenant,
+          dataCore: baseOpts.dataCore,
+          apiKey: baseOpts.apiKey,
+          runtimeEnv: "test",
+        }).register({ flowType: "sample", eventType: "created", schema: z.object({ id: z.string() }) })
+        await builder.write("sample/created", { data: { id: "one" }, options: { fireAndForget: true } })
+        assertEquals(writeUrl, "https://webhook.api.flowcore.io/event/test-tenant/test-dc/sample/created")
+
+        await builder.startPump({ stateManagerFactory: () => ({ getState: () => null, setState: () => {} }) })
+        try {
+          assertEquals((builder.pump as unknown as { baseUrl: string }).baseUrl, "")
+        } finally {
+          await builder.stopPump()
+        }
       } finally {
-        await builder.stopPump()
+        fetchStub.restore()
       }
     })
 
-    await t.step("allows a separate pump read host for local fixtures", async () => {
-      const builder = new PathwaysBuilder({
-        ...baseOpts,
-        baseUrl: "https://webhook.api.flowcore.io",
-        pumpBaseUrlOverride: "http://127.0.0.1:43127",
-        runtimeEnv: "test",
-      })
+    await t.step("an explicit baseUrl keeps legacy single-host pump routing", async () => {
+      const builder = new PathwaysBuilder({ ...baseOpts, runtimeEnv: "test" })
       await builder.startPump({ stateManagerFactory: () => ({ getState: () => null, setState: () => {} }) })
       try {
-        assertEquals((builder.pump as unknown as { baseUrl?: string }).baseUrl, "http://127.0.0.1:43127")
+        assertEquals((builder.pump as unknown as { baseUrl?: string }).baseUrl, baseOpts.baseUrl)
       } finally {
         await builder.stopPump()
       }

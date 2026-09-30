@@ -234,10 +234,8 @@ export interface ManagedPathwayConfig {
 }
 
 export interface PathwaysBuilderConfig {
-  /** Webhook ingestion URL used by write(). */
-  baseUrl: string
-  /** Optional override for pump read commands. Omit to use each SDK command's Flowcore service URL. */
-  pumpBaseUrlOverride?: string
+  /** Optional webhook ingestion URL. Omit for the SDK's hosted webhook default and dedicated pump read hosts. */
+  baseUrl?: string
   tenant: string
   dataCore: string
   apiKey: string
@@ -478,9 +476,8 @@ export class PathwaysBuilder<
   private readonly logger: Logger
   private readonly encryptionProvider: PathwayEncryptionProvider | null
 
-  // Configuration values needed for cloning
-  private readonly baseUrl: string
-  private readonly pumpBaseUrlOverride?: string
+  // Runtime configuration for webhook writes, provisioning, and pump reads.
+  private readonly baseUrl?: string
   private readonly tenant: string
   private readonly dataCore: string
   private readonly apiKey: string
@@ -521,7 +518,7 @@ export class PathwaysBuilder<
   /**
    * Creates a new PathwaysBuilder instance
    * @param options Configuration options for the PathwaysBuilder
-   * @param options.baseUrl The base URL for the Flowcore API
+   * @param options.baseUrl Optional webhook ingestion URL; omit for SDK service defaults
    * @param options.tenant The tenant name
    * @param options.dataCore The data core name
    * @param options.apiKey The API key for authentication
@@ -534,7 +531,6 @@ export class PathwaysBuilder<
    */
   constructor({
     baseUrl,
-    pumpBaseUrlOverride,
     tenant,
     dataCore,
     apiKey,
@@ -580,7 +576,6 @@ export class PathwaysBuilder<
 
     // Store configuration values for cloning
     this.baseUrl = baseUrl
-    this.pumpBaseUrlOverride = pumpBaseUrlOverride
     this.tenant = tenant
     this.dataCore = dataCore
     this.apiKey = apiKey
@@ -2593,7 +2588,7 @@ export class PathwaysBuilder<
         tenant: this.tenant,
         dataCore: this.dataCore,
         apiKey: this.apiKey,
-        baseUrl: this.pumpBaseUrlOverride,
+        baseUrl: this.baseUrl,
         processEvent: async (pathway: string, event: FlowcoreEvent) => {
           await this.process(pathway as keyof TPathway, event)
         },
@@ -2606,7 +2601,7 @@ export class PathwaysBuilder<
       tenant: this.tenant,
       dataCore: this.dataCore,
       apiKey: this.apiKey,
-      baseUrl: this.pumpBaseUrlOverride,
+      baseUrl: this.baseUrl,
       processEvent: async (pathway: string, event: FlowcoreEvent) => {
         await this.process(pathway as keyof TPathway, event)
       },
