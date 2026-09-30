@@ -132,6 +132,7 @@ type LocalPathways = Record<string, { input: { sequence: number }; output: { seq
 function createBuilder(baseUrl: string) {
   return new PathwaysBuilder<LocalPathways, string>({
     baseUrl,
+    pumpBaseUrlOverride: baseUrl,
     tenant: "local-tenant",
     dataCore: "local-core",
     apiKey: ["fc", "sy", "local"].join("_"),

@@ -74,11 +74,15 @@ const userSchema = z.object({
 
 // Create a pathways builder
 const pathways = new PathwaysBuilder({
-  baseUrl: "https://api.flowcore.io",
+  baseUrl: "https://webhook.api.flowcore.io",
   tenant: "your-tenant",
   dataCore: "your-data-core",
   apiKey: "your-api-key",
 })
+
+// `baseUrl` is for webhook ingestion. The virtual pump uses each SDK read command's
+// dedicated Flowcore service URL. For a local API fixture, set
+// `pumpBaseUrlOverride` separately; do not point production reads at the webhook host.
 
 // Register a pathway
 pathways

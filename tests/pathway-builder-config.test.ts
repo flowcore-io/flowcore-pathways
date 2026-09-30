@@ -84,6 +84,35 @@ Deno.test({
       assertEquals(typeof builder, "object")
     })
 
+    await t.step("keeps the webhook write host out of pump reads by default", async () => {
+      const builder = new PathwaysBuilder({
+        ...baseOpts,
+        baseUrl: "https://webhook.api.flowcore.io",
+        runtimeEnv: "test",
+      })
+      await builder.startPump({ stateManagerFactory: () => ({ getState: () => null, setState: () => {} }) })
+      try {
+        assertEquals((builder.pump as unknown as { baseUrl?: string }).baseUrl, undefined)
+      } finally {
+        await builder.stopPump()
+      }
+    })
+
+    await t.step("allows a separate pump read host for local fixtures", async () => {
+      const builder = new PathwaysBuilder({
+        ...baseOpts,
+        baseUrl: "https://webhook.api.flowcore.io",
+        pumpBaseUrlOverride: "http://127.0.0.1:43127",
+        runtimeEnv: "test",
+      })
+      await builder.startPump({ stateManagerFactory: () => ({ getState: () => null, setState: () => {} }) })
+      try {
+        assertEquals((builder.pump as unknown as { baseUrl?: string }).baseUrl, "http://127.0.0.1:43127")
+      } finally {
+        await builder.stopPump()
+      }
+    })
+
     await t.step("should work with only pulseUrl/pulseIntervalMs (no pathwayName)", () => {
       const builder = new PathwaysBuilder({
         ...baseOpts,
