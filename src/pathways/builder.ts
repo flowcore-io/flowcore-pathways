@@ -234,7 +234,8 @@ export interface ManagedPathwayConfig {
 }
 
 export interface PathwaysBuilderConfig {
-  baseUrl: string
+  /** Optional webhook ingestion URL. Omit for the SDK's hosted webhook default and dedicated pump read hosts. */
+  baseUrl?: string
   tenant: string
   dataCore: string
   apiKey: string
@@ -475,8 +476,8 @@ export class PathwaysBuilder<
   private readonly logger: Logger
   private readonly encryptionProvider: PathwayEncryptionProvider | null
 
-  // Configuration values needed for cloning
-  private readonly baseUrl: string
+  // Runtime configuration for webhook writes, provisioning, and pump reads.
+  private readonly baseUrl?: string
   private readonly tenant: string
   private readonly dataCore: string
   private readonly apiKey: string
@@ -517,7 +518,7 @@ export class PathwaysBuilder<
   /**
    * Creates a new PathwaysBuilder instance
    * @param options Configuration options for the PathwaysBuilder
-   * @param options.baseUrl The base URL for the Flowcore API
+   * @param options.baseUrl Optional webhook ingestion URL; omit for SDK service defaults
    * @param options.tenant The tenant name
    * @param options.dataCore The data core name
    * @param options.apiKey The API key for authentication
