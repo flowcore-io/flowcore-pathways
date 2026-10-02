@@ -18,6 +18,7 @@ permissions:
 
 jobs:
   build:
+    if: ${{ !startsWith(github.head_ref, 'release-please--') && !startsWith(github.ref, 'refs/heads/release-please--') }}
     runs-on: blacksmith-4vcpu-ubuntu-2204
 
     services:
