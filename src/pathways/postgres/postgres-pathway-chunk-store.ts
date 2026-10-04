@@ -28,6 +28,8 @@ export interface PostgresPathwayChunkStoreConnectionStringConfig extends StatePr
    * Defaults to 60 000. `0` sweeps on every `storePart` call (the pre-2.10.1 behaviour).
    */
   cleanupIntervalMs?: number
+  /** Positive finite advisory-lock wait timeout in milliseconds (default: 5 seconds). */
+  lockTimeoutMs?: number
   /** Connection pool configuration */
   pool?: PostgresPoolConfig
 }
@@ -61,6 +63,8 @@ export interface PostgresPathwayChunkStoreParametersConfig extends StatePrefixCo
    * Defaults to 60 000. `0` sweeps on every `storePart` call (the pre-2.10.1 behaviour).
    */
   cleanupIntervalMs?: number
+  /** Positive finite advisory-lock wait timeout in milliseconds (default: 5 seconds). */
+  lockTimeoutMs?: number
   /** Connection pool configuration */
   pool?: PostgresPoolConfig
 }
@@ -112,6 +116,7 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
   private readonly tableName: string
   private readonly ttlMs: number
   private readonly cleanupIntervalMs: number
+  private readonly lockTimeoutMs: number
   private lastCleanupAt = 0
   private initialized = false
 
@@ -120,6 +125,10 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
       prefixStateName(config.statePrefix, PostgresPathwayChunkStore.DEFAULT_TABLE_NAME)
     this.ttlMs = config.ttlMs || PostgresPathwayChunkStore.DEFAULT_TTL_MS
     this.cleanupIntervalMs = config.cleanupIntervalMs ?? PostgresPathwayChunkStore.DEFAULT_CLEANUP_INTERVAL_MS
+    this.lockTimeoutMs = config.lockTimeoutMs ?? 5_000
+    if (!Number.isInteger(this.lockTimeoutMs) || this.lockTimeoutMs < 1 || this.lockTimeoutMs > 2_147_483_647) {
+      throw new Error("PostgresPathwayChunkStore lockTimeoutMs must be a positive integer up to 2147483647")
+    }
   }
 
   /** The resolved table name */
@@ -191,7 +200,7 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
 
     return await postgres.transaction!(async (tx) => {
       // 64-bit hash: collisions only serialize unrelated chunks, but fewer is better.
-      await tx.execute(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [input.chunkId])
+      await this.acquireChunkLock(tx, input.chunkId)
 
       // Expired parts of this chunk never count toward completion, whether or not the
       // table-wide sweep has run yet. This is a primary-key range delete, so it is cheap.
@@ -259,9 +268,21 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
   async withChunkLock<T>(chunkId: string, action: () => Promise<T>): Promise<T> {
     const postgres = await this.initialize()
     return await postgres.transaction!(async (tx) => {
-      await tx.execute(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [chunkId])
+      await this.acquireChunkLock(tx, chunkId)
       return await action()
     })
+  }
+
+  private async acquireChunkLock(tx: PostgresAdapter, chunkId: string): Promise<void> {
+    await tx.execute("SELECT set_config('lock_timeout', $1, true)", [`${this.lockTimeoutMs}ms`])
+    try {
+      await tx.execute(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [chunkId])
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "55P03") {
+        throw new Error(`Timed out acquiring pathway chunk lock after ${this.lockTimeoutMs}ms`)
+      }
+      throw error
+    }
   }
 
   /**

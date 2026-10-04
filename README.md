@@ -776,8 +776,21 @@ const pathways = new PathwaysBuilder({
 
 Configure retry behavior for pathways:
 
+**Breaking change:** after a handler exhausts `maxRetries`, `process()` throws and leaves the event **unprocessed** on
+every pathway, including ordinary non-chunked events. Previous releases wrote a processed receipt despite failure, which
+could make an awaited `write()` falsely report success. Successful processing is unchanged. `maxRetries` bounds one
+handler invocation's retry loop; it is not a delivery retry limit or a dead-letter policy.
+
+The caller/delivery system decides whether and how to redeliver. An awaited writer can time out, and a permanently
+failing event can prevent its pump/batch from advancing. There is no automatic SDK dead-letter queue or universal
+redelivery-count bound. Before upgrading, alert on repeated failures, apply handler/downstream deadlines, and establish
+an operator recovery procedure: pause the affected delivery, repair the handler or dependency, and replay. If an event
+must be permanently skipped, use an explicit audited application quarantine/skip policy with preserved evidence; do not
+rely on exhausted retries silently discarding it. Consumers relying on the old skip-and-continue behavior must choose
+their migration policy before adopting this major release. Retried handlers must have idempotent side effects.
+
 ```typescript
-// Global timeout for pathway processing
+// Awaited write receipt timeout; this does not cancel a running handler
 const pathways = new PathwaysBuilder({
   // ...other config
   pathwayTimeoutMs: 15000, // 15 seconds
@@ -956,6 +969,7 @@ const pathways = new PathwaysBuilder({
       statePrefix: "my_service", // optional, see State Prefix
       ttlMs: 60 * 60 * 1000, // optional, incomplete and failed complete chunks expire after 1 hour
       cleanupIntervalMs: 60 * 1000, // optional, expired parts are swept at most once per minute
+      lockTimeoutMs: 5_000, // optional, positive bounded PostgreSQL lock wait (cannot disable with 0)
     }),
   )
 ```
@@ -970,8 +984,13 @@ allowing another instance to retry. A part with the same number but different by
 The processing lock holds one chunk-store connection for the entire handler/retry duration. Use a **separate pool** for
 handler queries and pathway state; do not call the chunk store from the handler or a `withChunkLock` callback. Cleanup
 runs after releasing the lock, including with a one-connection chunk-store pool. Size the pool and handler timeout for
-your deployment. This is **at-least-once delivery**, not exactly-once side effects: a crash or lost database connection
-after an external effect but before the processed receipt can run that effect again. Handlers must be idempotent.
+your deployment. PostgreSQL assembly and processing lock acquisition time out after `lockTimeoutMs` (default 5 seconds),
+rollback, return the waiter's connection and throw for delivery retry; timeout never acknowledges or deletes the parts.
+This bounds the database lock wait after a connection is acquired, not pool checkout or handler execution. A hung lock
+owner still needs application handler/downstream deadlines and operational recovery; size/bound request concurrency so
+the pool queue cannot grow indefinitely. This is **at-least-once delivery**, not exactly-once side effects: a crash or
+lost database connection after an external effect but before the processed receipt can run that effect again. Handlers
+must be idempotent.
 
 Custom stores keep their existing interface. To support recovery, they must return ordered `parts` and `partEventIds` on
 duplicates of retained complete chunks and implement `withChunkLock`, serializing processing across consumers. Native
@@ -1011,7 +1030,9 @@ Pathways get the original event.
   not carry your fields.
 - Incomplete and failed complete chunks are retained only until `ttlMs` expires, then removed on the next write. Set
   this retention longer than the recovery window you need. If previously acknowledged parts have expired, retrying only
-  the completing delivery cannot reconstruct the event; recover by replaying all its parts from retained history.
+  the completing delivery cannot reconstruct the event; recover by replaying all its parts from retained history. An
+  acknowledged part arriving at an incomplete chunk logs a content-free warning. This can also be normal replay; it
+  signals a possible recovery gap, not proof of TTL expiry. If receipt retention also expired, that hint is absent.
 
 ### Session Pathways
 

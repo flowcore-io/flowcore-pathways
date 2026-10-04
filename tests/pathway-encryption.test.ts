@@ -27,6 +27,52 @@ import { createTestServer } from "./helpers/test-server.ts"
 const ENCRYPTION_KEY = "pathway-encryption-test-key-32-chars-ok"
 const OTHER_KEY = "pathway-encryption-other-key-32-chars-ok"
 
+Deno.test("JS keyring callers receive explicit active ID and redacted resolver diagnostics", () => {
+  for (const activeKeyId of [undefined, null, 1, {}, []]) {
+    assertThrows(
+      () => createPathwayEncryptionProvider({ keyring: { activeKeyId, keys: { v2: OTHER_KEY } } }),
+      Error,
+      "activeKeyId must be a non-empty string",
+    )
+  }
+  const resolver = () => {
+    throw new Error("synthetic-secret-provider-detail")
+  }
+  const startup = assertThrows(() =>
+    createPathwayEncryptionProvider({ keyring: { activeKeyId: "v2", resolveKey: resolver } })
+  )
+  assertEquals(startup.message, "Failed to resolve pathway encryption key ID: v2")
+  assertEquals(startup.cause, undefined)
+  const provider = createPathwayEncryptionProvider({
+    keyring: { activeKeyId: "v2", keys: { v2: OTHER_KEY }, resolveKey: resolver },
+  })!
+  const retained = assertThrows(() => provider.decrypt("irrelevant", "v1"))
+  assertEquals(retained.message, "Failed to resolve pathway encryption key ID: v1")
+  assertEquals(retained.cause, undefined)
+})
+
+Deno.test("active resolver key is cached while retained lookups observe caller refresh and revocation", () => {
+  const lookups: string[] = []
+  let retained: string | undefined = ENCRYPTION_KEY
+  const provider = createPathwayEncryptionProvider({
+    keyring: {
+      activeKeyId: "v2",
+      resolveKey: (keyId) => {
+        lookups.push(keyId)
+        return keyId === "v2" ? OTHER_KEY : retained
+      },
+    },
+  })!
+  provider.encrypt("one")
+  provider.encrypt("two")
+  const ciphertext = aesGcmEncrypt("old history", deriveEncryptionKey(ENCRYPTION_KEY))
+  assertEquals(provider.decrypt(ciphertext, "v1"), "old history")
+  assertEquals(provider.decrypt(ciphertext, "v1"), "old history")
+  retained = undefined
+  assertThrows(() => provider.decrypt(ciphertext, "v1"), Error, "Unknown encryption key ID: v1")
+  assertEquals(lookups, ["v2", "v1", "v1", "v1"])
+})
+
 Deno.test("keyring opaque IDs cannot overwrite the markerless legacy fallback", () => {
   const provider = createPathwayEncryptionProvider({
     key: ENCRYPTION_KEY,

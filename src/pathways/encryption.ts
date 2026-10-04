@@ -29,7 +29,13 @@ export interface PathwayEncryptionKeyring {
   activeKeyId: string
   /** Opaque key IDs mapped to key material resolved by the application. */
   keys?: Readonly<Record<string, string>>
-  /** Optional lazy lookup for retained key material. Return undefined for an unknown ID. */
+  /**
+   * Synchronous lookup: return undefined for an unknown ID. The active key is resolved
+   * and cached at construction; retained IDs absent from `keys` are looked up on every
+   * decrypt without SDK caching, so revocation/refresh can be observed. For KMS/vault sources, preload
+   * an application-owned cache with an explicit refresh/revocation policy; do not return
+   * a Promise or perform blocking network I/O on the event processing path.
+   */
   resolveKey?: PathwayEncryptionKeyResolver
 }
 
@@ -94,6 +100,9 @@ export function createPathwayEncryptionProvider(
   }
 
   const validateSecret = (secret: string, label: string): Buffer => {
+    if (typeof secret !== "string") {
+      throw new Error(`Pathways symmetric encryption key for ${label} must be a string`)
+    }
     if (secret.length < MIN_KEY_LENGTH) {
       throw new Error(
         `Pathways symmetric encryption key for ${label} must be at least 32 characters (generate with: openssl rand -hex 32)`,
@@ -113,7 +122,19 @@ export function createPathwayEncryptionProvider(
   }
 
   let activeKeyId = legacyKeyId
+  const lookupRetainedKey = (keyId: string): string | undefined => {
+    try {
+      return keyring?.resolveKey?.(keyId)
+    } catch {
+      // Resolver errors can contain credentials or provider details; expose only
+      // the opaque key ID, including when resolving the active key at startup.
+      throw new Error(`Failed to resolve pathway encryption key ID: ${keyId}`)
+    }
+  }
   if (keyring) {
+    if (typeof keyring.activeKeyId !== "string") {
+      throw new Error("Pathways symmetric encryption activeKeyId must be a non-empty string")
+    }
     const configuredActiveKeyId = keyring.activeKeyId.trim()
     if (!configuredActiveKeyId) {
       throw new Error("Pathways symmetric encryption activeKeyId must not be empty")
@@ -140,7 +161,7 @@ export function createPathwayEncryptionProvider(
       keys.set(keyId, key)
     }
     if (!keys.has(configuredActiveKeyId) && typeof keyring.resolveKey === "function") {
-      const resolved = keyring.resolveKey(configuredActiveKeyId)
+      const resolved = lookupRetainedKey(configuredActiveKeyId)
       if (resolved !== undefined) {
         keys.set(configuredActiveKeyId, validateSecret(resolved, `key ID ${configuredActiveKeyId}`))
       }
@@ -159,7 +180,7 @@ export function createPathwayEncryptionProvider(
     const key = keys.get(keyId)
     if (key) return key
     if (keyring?.resolveKey) {
-      const resolved = keyring.resolveKey(keyId)
+      const resolved = lookupRetainedKey(keyId)
       if (resolved !== undefined) return validateSecret(resolved, `key ID ${keyId}`)
     }
     throw new Error(`Unknown encryption key ID: ${keyId}`)

@@ -580,6 +580,31 @@ Deno.test({
 })
 
 Deno.test({
+  name: "acknowledged-part replay after retained-part expiry warns without logging payload content",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const pathway = createBuilder().withPathwayChunkStore(new InternalPathwayChunkStore({ ttlMs: 10 }))
+    const payload = { id: "expiry", title: "private", content: largeContent(100_000), workspaceId: "workspace" }
+    const parts = buildChunkParts(payload, 45_000)
+    const wire = parts.map((part) => createEvent(part, { [PATHWAY_CHUNKED_METADATA_KEY]: "true" }))
+    const warnings: unknown[] = []
+    pathway.logger.warn = (...args) => {
+      warnings.push(args)
+    }
+    await pathway.process("big-flow/created", structuredClone(wire[1]))
+    assertEquals(warnings.length, 0)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await pathway.process("big-flow/created", structuredClone(wire[1]))
+    assertEquals(warnings.length, 1)
+    assertEquals(warnings[0][1].storeStatus, "stored")
+    assertEquals(warnings[0][1].part, 2)
+    assertEquals(JSON.stringify(warnings).includes("æøå"), false)
+    assertEquals(await pathway.pathwayState.isProcessed(wire[0].eventId), false)
+  },
+})
+
+Deno.test({
   name: "concurrent complete-chunk redeliveries wait for a failed handler before retrying",
   sanitizeOps: false,
   sanitizeResources: false,

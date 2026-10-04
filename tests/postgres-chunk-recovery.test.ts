@@ -1,4 +1,4 @@
-import { assertEquals, assertFalse, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts"
+import { assertEquals, assertFalse, assertRejects, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts"
 import { z } from "zod"
 import {
   buildChunkParts,
@@ -38,9 +38,9 @@ function fixture() {
   return { payload, parts, events }
 }
 
-function consumer(prefix: string) {
+function consumer(prefix: string, chunkOptions: { lockTimeoutMs?: number } = {}) {
   const state = createPostgresPathwayState({ ...config, statePrefix: prefix })
-  const store = createPostgresPathwayChunkStore({ ...config, statePrefix: prefix })
+  const store = createPostgresPathwayChunkStore({ ...config, statePrefix: prefix, ...chunkOptions })
   const builder = new PathwaysBuilder({
     baseUrl: "http://localhost:8099",
     tenant: "test-tenant",
@@ -61,6 +61,89 @@ async function dropTables(client: ReturnType<typeof consumer>, prefix: string) {
   const adapter = (client.state as any).postgres
   await adapter.execute(`DROP TABLE IF EXISTS ${prefix}_pathway_chunks, ${prefix}_pathway_state`)
 }
+
+Deno.test("PostgreSQL chunk lock timeout rejects unbounded and invalid values", () => {
+  for (const lockTimeoutMs of [0, -1, NaN, Infinity, 0.5, 2_147_483_648]) {
+    assertThrows(() => createPostgresPathwayChunkStore({ ...config, lockTimeoutMs }), Error, "lockTimeoutMs must be")
+  }
+})
+
+Deno.test({
+  name:
+    "PostgreSQL hung-handler lock waits time out without receipts or part loss and return the waiter pool connection",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const prefix = `wait_${crypto.randomUUID().replaceAll("-", "")}`
+    const holder = consumer(prefix)
+    const waiter = consumer(prefix, { lockTimeoutMs: 60 })
+    const { payload, parts, events } = fixture()
+    const chunkId = parts[0][CHUNK_ENVELOPE_FIELD].id
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let processing: Promise<void> | undefined
+    holder.builder.handle(pathwayName, async (received) => {
+      assertEquals(received.payload, payload)
+      entered()
+      await blocked
+    })
+    try {
+      for (const part of events.slice(0, -1)) await holder.builder.process(pathwayName, structuredClone(part))
+      const header = parts[0][CHUNK_ENVELOPE_FIELD]
+      // Initialize the distinct waiter pool before the holder acquires its processing lock.
+      await waiter.store.storePart({
+        chunkId,
+        part: 1,
+        totalParts: header.totalParts,
+        digest: header.digest,
+        data: parts[0][CHUNK_DATA_FIELD],
+        eventId: events[0].eventId,
+      })
+      processing = holder.builder.process(pathwayName, structuredClone(events.at(-1)!))
+      await deadline(() => started)
+      await assertRejects(
+        () => deadline(() => waiter.builder.process(pathwayName, structuredClone(events.at(-1)!))),
+        Error,
+        "Timed out acquiring pathway chunk lock after 60ms",
+      )
+      let ran = false
+      await assertRejects(
+        () =>
+          deadline(() =>
+            waiter.store.withChunkLock(chunkId, async () => {
+              ran = true
+            })
+          ),
+        Error,
+        "Timed out acquiring pathway chunk lock after 60ms",
+      )
+      assertFalse(ran)
+      assertFalse(await waiter.state.isProcessed(events[0].eventId))
+      assertFalse(await waiter.state.isProcessed(events.at(-1)!.eventId))
+      const rows = await (waiter.store as any).postgres.query(
+        `SELECT part FROM ${prefix}_pathway_chunks WHERE chunk_id = $1`,
+        [chunkId],
+      )
+      assertEquals(rows.length, parts.length)
+      // max:1 would deadlock here if a timeout leaked its transaction connection.
+      await deadline(() => waiter.store.withChunkLock(crypto.randomUUID(), async () => {}))
+    } finally {
+      release()
+      await processing
+      await dropTables(waiter, prefix)
+      await holder.store.close()
+      await holder.state.close()
+      await waiter.store.close()
+      await waiter.state.close()
+    }
+  },
+})
 
 Deno.test({
   name:

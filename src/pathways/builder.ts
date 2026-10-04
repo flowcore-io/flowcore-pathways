@@ -857,6 +857,18 @@ export class PathwaysBuilder<
     const retainedComplete = result.status === "duplicate" &&
       result.parts?.length === header.totalParts && result.partEventIds?.length === header.totalParts
     if (result.status !== "complete" && !retainedComplete) {
+      if (await this.pathwayState.isProcessed(data.eventId)) {
+        // This may be ordinary replay of an incomplete/completed chunk, or loss of
+        // retained parts after TTL. Do not claim expiry without a durable tombstone.
+        this.logger.warn("Acknowledged pathway chunk replay is incomplete; remaining parts may need history replay", {
+          pathway: pathwayStr,
+          eventId: data.eventId,
+          chunkId: header.id,
+          part: header.part,
+          totalParts: header.totalParts,
+          storeStatus: result.status,
+        })
+      }
       // Part 1 carries the logical event id that writers wait on. It stays unprocessed until the
       // whole chunk has been handled, so a `write()` without fireAndForget blocks correctly.
       if (header.part !== 1) {
