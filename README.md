@@ -776,8 +776,21 @@ const pathways = new PathwaysBuilder({
 
 Configure retry behavior for pathways:
 
+**Breaking change:** after a handler exhausts `maxRetries`, `process()` throws and leaves the event **unprocessed** on
+every pathway, including ordinary non-chunked events. Previous releases wrote a processed receipt despite failure, which
+could make an awaited `write()` falsely report success. Successful processing is unchanged. `maxRetries` bounds one
+handler invocation's retry loop; it is not a delivery retry limit or a dead-letter policy.
+
+The caller/delivery system decides whether and how to redeliver. An awaited writer can time out, and a permanently
+failing event can prevent its pump/batch from advancing. There is no automatic SDK dead-letter queue or universal
+redelivery-count bound. Before upgrading, alert on repeated failures, apply handler/downstream deadlines, and establish
+an operator recovery procedure: pause the affected delivery, repair the handler or dependency, and replay. If an event
+must be permanently skipped, use an explicit audited application quarantine/skip policy with preserved evidence; do not
+rely on exhausted retries silently discarding it. Consumers relying on the old skip-and-continue behavior must choose
+their migration policy before adopting this major release. Retried handlers must have idempotent side effects.
+
 ```typescript
-// Global timeout for pathway processing
+// Awaited write receipt timeout; this does not cancel a running handler
 const pathways = new PathwaysBuilder({
   // ...other config
   pathwayTimeoutMs: 15000, // 15 seconds
@@ -873,6 +886,40 @@ Two limits to know:
 - A paused pump holds up to `bufferSize` events in memory (default 1000 per pump).
 - Pausing does not stop `write()`. Ingestion continues, and the events wait to be delivered.
 
+### Encrypted Pathways and Key Rotation
+
+Pathway encryption uses the native AES-256-GCM implementation. A single legacy key remains supported:
+
+```typescript
+const pathways = new PathwaysBuilder({
+  // ...baseUrl, tenant, dataCore, and apiKey
+  encryption: { mode: "symmetric", key: process.env.PATHWAY_ENCRYPTION_KEY! },
+})
+```
+
+For rotation, configure an active key ID and retain the keys needed to read existing events. New events use the active
+key and carry only its opaque ID in metadata; the key material stays in the application configuration. A resolver can
+load retained keys lazily instead of keeping them in the process:
+
+```typescript
+const pathways = new PathwaysBuilder({
+  // ...baseUrl, tenant, dataCore, and apiKey
+  encryption: {
+    mode: "symmetric",
+    keyring: {
+      activeKeyId: "2026-09",
+      resolveKey: (keyId) => keyStore.get(keyId),
+    },
+  },
+})
+```
+
+Reads resolve the key ID stored with the event. Unknown IDs fail closed. An encrypted event without a key ID requires an
+explicit legacy `key`; without that fallback it fails closed. Keep that legacy key while retaining single-key encrypted
+history. It remains independent of opaque keyring IDs; assigning different key material to the same explicit legacy
+`keyId` is rejected. Markerless plaintext history remains readable, and encrypted chunk parts carry the same key ID
+through reassembly.
+
 ### Large Events (Automatic Chunking)
 
 Flowcore rejects a single event whose payload is larger than 64 000 bytes
@@ -884,7 +931,9 @@ write fails with the Flowcore error as before, and a consumer that receives a pa
   over the cap is split on UTF-8 boundaries into part events, each well under the cap, and sent in one batch request.
 - `process()` collects the parts in a **chunk store**. The call that receives the last missing part reassembles the
   payload, verifies its SHA-256 digest, and continues with the normal path: schema validation, audit, cluster routing,
-  and your handler. Your handler sees one event with the full payload. The other parts never reach it.
+  and your handler. Your handler receives the full logical payload, never individual parts. Native stores retain
+  complete parts until processing succeeds, so a failed completing delivery can retry without replaying the earlier,
+  already acknowledged parts.
 - A logical event keeps the event id of part 1. `write()` returns that id, and a write without `fireAndForget` waits
   until every part is processed.
 - Batch writes work the same way. Only oversized items are expanded, and the returned array still has one id per input
@@ -918,15 +967,37 @@ const pathways = new PathwaysBuilder({
     createPostgresPathwayChunkStore({
       connectionString,
       statePrefix: "my_service", // optional, see State Prefix
-      ttlMs: 60 * 60 * 1000, // optional, parts of an incomplete chunk expire after 1 hour
+      ttlMs: 60 * 60 * 1000, // optional, incomplete and failed complete chunks expire after 1 hour
       cleanupIntervalMs: 60 * 1000, // optional, expired parts are swept at most once per minute
+      lockTimeoutMs: 5_000, // optional, positive bounded PostgreSQL lock wait (cannot disable with 0)
     }),
   )
 ```
 
 The PostgreSQL store creates the `pathway_chunks` table on first use. Parts are collected under a per-chunk advisory
-lock, so exactly one instance reassembles a given event. An exact replay of a part is accepted. A part with the same
-number but different bytes is rejected as a conflict.
+lock. Exactly one call reports initial completion; subsequent identical deliveries return the retained complete parts
+for recovery. Logical processing uses a transaction-scoped advisory lock and checks the shared processed receipt under
+that lock. A concurrent delivery waits and skips the handler if another consumer succeeded. Failure leaves the logical
+event and its completing part unprocessed and retains the parts. A consumer process exiting releases its database lock,
+allowing another instance to retry. A part with the same number but different bytes is rejected as a conflict.
+
+The processing lock holds one chunk-store connection for the entire handler/retry duration. Use a **separate pool** for
+handler queries and pathway state; do not call the chunk store from the handler or a `withChunkLock` callback. Cleanup
+runs after releasing the lock, including with a one-connection chunk-store pool. Size the pool and handler timeout for
+your deployment. PostgreSQL assembly and processing lock acquisition time out after `lockTimeoutMs` (default 5 seconds),
+rollback, return the waiter's connection and throw for delivery retry; timeout never acknowledges or deletes the parts.
+This bounds the database lock wait after a connection is acquired, not pool checkout or handler execution. A hung lock
+owner still needs application handler/downstream deadlines and operational recovery; size/bound request concurrency so
+the pool queue cannot grow indefinitely. This is **at-least-once delivery**, not exactly-once side effects: a crash or
+lost database connection after an external effect but before the processed receipt can run that effect again. Handlers
+must be idempotent.
+
+Custom stores keep their existing interface. To support recovery, they must return ordered `parts` and `partEventIds` on
+duplicates of retained complete chunks and implement `withChunkLock`, serializing processing across consumers. Native
+stores implement both. Recovery guarantees do not apply to custom stores that implement only initial assembly.
+
+Chunk-store slices are **plaintext after decryption**. Protect the chunk database, backups and access permissions just
+as you protect the projected data; encryption on the Flowcore wire does not encrypt this table.
 
 #### Wire format
 
@@ -957,8 +1028,11 @@ Pathways get the original event.
 - The `eventTime` and `validTime` write options apply to every part of a batch. A key-based override (`eventTimeKey`)
   cannot be resolved for a chunked or encrypted item, because the server reads the key from the wire payload, which does
   not carry your fields.
-- Parts of a chunk that never completes stay in the store until `ttlMs` expires, then they are removed on the next
-  write.
+- Incomplete and failed complete chunks are retained only until `ttlMs` expires, then removed on the next write. Set
+  this retention longer than the recovery window you need. If previously acknowledged parts have expired, retrying only
+  the completing delivery cannot reconstruct the event; recover by replaying all its parts from retained history. An
+  acknowledged part arriving at an incomplete chunk logs a content-free warning. This can also be normal replay; it
+  signals a possible recovery gap, not proof of TTL expiry. If receipt retention also expired, that hint is absent.
 
 ### Session Pathways
 

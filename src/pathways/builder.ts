@@ -99,7 +99,9 @@ import {
   createPathwayEncryptionProvider,
   decryptPayloadEnvelope,
   encryptPayloadEnvelope,
+  getPathwayEncryptionKeyId,
   PATHWAY_ENCRYPTED_METADATA_KEY,
+  PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY,
   PATHWAY_ENCRYPTION_SCHEME,
   PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY,
   type PathwayEncryptionConfig,
@@ -777,8 +779,8 @@ export class PathwaysBuilder<
     }
 
     // Oversized events arrive as part events. Collect them; only the call that completes the
-    // chunk continues with the reassembled logical event. Reassembly happens before cluster
-    // routing, so a worker always receives a plain event.
+    // chunk (or retries its retained complete parts) continues with the logical event.
+    // Reassembly happens before cluster routing, so a worker receives a plain event.
     if (hasChunkedMetadata(data.metadata)) {
       const envelope = parseChunkEnvelope(data.payload)
       if (envelope) {
@@ -786,11 +788,21 @@ export class PathwaysBuilder<
         if (!completed) {
           return
         }
-        try {
-          await this.processResolvedEvent(pathway, data)
-        } finally {
-          await this.finishChunk(completed.chunkId, completed.partEventIds)
+        const processChunk = async () => {
+          // Check under the lock: another delivery may have completed while this
+          // consumer waited. Keep ordinary, non-chunked processing semantics unchanged.
+          if (!await this.pathwayState.isProcessed(data.eventId)) {
+            await this.processResolvedEvent(pathway, data)
+          }
         }
+        if (this.chunkStore?.withChunkLock) {
+          await this.chunkStore.withChunkLock(completed.chunkId, processChunk)
+        } else {
+          await processChunk()
+        }
+        // Never acknowledge the completing part or delete retained parts on failure.
+        // Cleanup runs outside the store lock to also support a one-connection pool.
+        await this.finishChunk(completed.chunkId, completed.partEventIds)
         return
       }
     }
@@ -815,7 +827,7 @@ export class PathwaysBuilder<
 
     let slice = envelope.data
     if (this.shouldDecryptPathwayPayload(pathway, data.metadata)) {
-      slice = this.decryptChunkSlice(pathway, slice)
+      slice = this.decryptChunkSlice(pathway, slice, data.metadata)
     }
 
     this.logger.debug(`Collecting pathway chunk part`, {
@@ -842,7 +854,21 @@ export class PathwaysBuilder<
       eventId: data.eventId,
     })
 
-    if (result.status !== "complete") {
+    const retainedComplete = result.status === "duplicate" &&
+      result.parts?.length === header.totalParts && result.partEventIds?.length === header.totalParts
+    if (result.status !== "complete" && !retainedComplete) {
+      if (await this.pathwayState.isProcessed(data.eventId)) {
+        // This may be ordinary replay of an incomplete/completed chunk, or loss of
+        // retained parts after TTL. Do not claim expiry without a durable tombstone.
+        this.logger.warn("Acknowledged pathway chunk replay is incomplete; remaining parts may need history replay", {
+          pathway: pathwayStr,
+          eventId: data.eventId,
+          chunkId: header.id,
+          part: header.part,
+          totalParts: header.totalParts,
+          storeStatus: result.status,
+        })
+      }
       // Part 1 carries the logical event id that writers wait on. It stays unprocessed until the
       // whole chunk has been handled, so a `write()` without fireAndForget blocks correctly.
       if (header.part !== 1) {
@@ -883,13 +909,13 @@ export class PathwaysBuilder<
     }
   }
 
-  private decryptChunkSlice(pathway: keyof TPathway, slice: string): string {
+  private decryptChunkSlice(pathway: keyof TPathway, slice: string, metadata: unknown): string {
     if (!this.encryptionProvider) {
       throw new Error(
         `Pathway ${String(pathway)} received encrypted chunk part but no symmetric encryption key is configured`,
       )
     }
-    return this.encryptionProvider.decrypt(slice)
+    return this.encryptionProvider.decrypt(slice, getPathwayEncryptionKeyId(metadata))
   }
 
   /**
@@ -900,7 +926,7 @@ export class PathwaysBuilder<
     const pathwayStr = String(pathway)
 
     if (this.shouldDecryptPathwayPayload(pathway, data.metadata)) {
-      data.payload = this.decryptPathwayPayload(pathway, data.payload)
+      data.payload = this.decryptPathwayPayload(pathway, data.payload, data.metadata)
       // Drop the encryption markers once the payload is plaintext. Cluster mode hands this same
       // event back to process() through the cluster event handler; a stale marker would make the
       // second pass try to decrypt an already-decrypted payload and throw.
@@ -1023,15 +1049,16 @@ export class PathwaysBuilder<
             continue
           }
 
-          // If we've exhausted retries, mark as processed to avoid hanging
-          this.logger.warn(`Max retries exceeded for pathway event, marking as processed`, {
+          // Keep the event unprocessed after terminal handler failure. Marking it processed here
+          // lets a local write() waiter report success even though the projection failed, and it
+          // prevents the delivery layer from retrying the retained event.
+          this.logger.warn(`Max retries exceeded for pathway event; leaving it unprocessed for retry`, {
             pathway: pathwayStr,
             eventId: data.eventId,
             retryCount,
             maxRetries,
           })
 
-          await this.pathwayState.setProcessed(data.eventId)
           throw error
         }
       }
@@ -1465,6 +1492,8 @@ export class PathwaysBuilder<
     if (encrypted) {
       finalMetadata[PATHWAY_ENCRYPTED_METADATA_KEY] = "true"
       finalMetadata[PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY] = PATHWAY_ENCRYPTION_SCHEME
+      const keyId = this.encryptionProvider?.activeKeyId
+      if (keyId) finalMetadata[PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY] = keyId
     }
 
     const chunkPlan = this.planChunkedWrite(path, data, eventData, Boolean(batch), encrypted)
@@ -1672,6 +1701,7 @@ export class PathwaysBuilder<
   private decryptPathwayPayload<TPath extends keyof TPathway>(
     path: TPath,
     payload: unknown,
+    metadata: unknown,
   ): unknown {
     if (!this.encryptionProvider) {
       throw new Error(
@@ -1679,7 +1709,7 @@ export class PathwaysBuilder<
       )
     }
 
-    return decryptPayloadEnvelope(payload, this.encryptionProvider)
+    return decryptPayloadEnvelope(payload, this.encryptionProvider, getPathwayEncryptionKeyId(metadata))
   }
 
   private hasEncryptedPayloadMetadata(metadata: unknown): boolean {

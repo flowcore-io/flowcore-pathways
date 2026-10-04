@@ -1,14 +1,22 @@
 // @ts-nocheck
-import { assertEquals, assertExists, assertNotEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts"
+import {
+  assertEquals,
+  assertExists,
+  assertNotEquals,
+  assertRejects,
+  assertThrows,
+} from "https://deno.land/std@0.224.0/assert/mod.ts"
 import { Buffer } from "node:buffer"
 import { z } from "zod"
 import {
   aesGcmDecrypt,
   aesGcmEncrypt,
+  createPathwayEncryptionProvider,
   deriveEncryptionKey,
   ENCRYPTED_PAYLOAD_FIELD,
   FlowcoreEvent,
   PATHWAY_ENCRYPTED_METADATA_KEY,
+  PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY,
   PATHWAY_ENCRYPTION_SCHEME,
   PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY,
   PathwayRouter,
@@ -18,6 +26,81 @@ import { createTestServer } from "./helpers/test-server.ts"
 
 const ENCRYPTION_KEY = "pathway-encryption-test-key-32-chars-ok"
 const OTHER_KEY = "pathway-encryption-other-key-32-chars-ok"
+
+Deno.test("JS keyring callers receive explicit active ID and redacted resolver diagnostics", () => {
+  for (const activeKeyId of [undefined, null, 1, {}, []]) {
+    assertThrows(
+      () => createPathwayEncryptionProvider({ keyring: { activeKeyId, keys: { v2: OTHER_KEY } } }),
+      Error,
+      "activeKeyId must be a non-empty string",
+    )
+  }
+  const resolver = () => {
+    throw new Error("synthetic-secret-provider-detail")
+  }
+  const startup = assertThrows(() =>
+    createPathwayEncryptionProvider({ keyring: { activeKeyId: "v2", resolveKey: resolver } })
+  )
+  assertEquals(startup.message, "Failed to resolve pathway encryption key ID: v2")
+  assertEquals(startup.cause, undefined)
+  const provider = createPathwayEncryptionProvider({
+    keyring: { activeKeyId: "v2", keys: { v2: OTHER_KEY }, resolveKey: resolver },
+  })!
+  const retained = assertThrows(() => provider.decrypt("irrelevant", "v1"))
+  assertEquals(retained.message, "Failed to resolve pathway encryption key ID: v1")
+  assertEquals(retained.cause, undefined)
+})
+
+Deno.test("active resolver key is cached while retained lookups observe caller refresh and revocation", () => {
+  const lookups: string[] = []
+  let retained: string | undefined = ENCRYPTION_KEY
+  const provider = createPathwayEncryptionProvider({
+    keyring: {
+      activeKeyId: "v2",
+      resolveKey: (keyId) => {
+        lookups.push(keyId)
+        return keyId === "v2" ? OTHER_KEY : retained
+      },
+    },
+  })!
+  provider.encrypt("one")
+  provider.encrypt("two")
+  const ciphertext = aesGcmEncrypt("old history", deriveEncryptionKey(ENCRYPTION_KEY))
+  assertEquals(provider.decrypt(ciphertext, "v1"), "old history")
+  assertEquals(provider.decrypt(ciphertext, "v1"), "old history")
+  retained = undefined
+  assertThrows(() => provider.decrypt(ciphertext, "v1"), Error, "Unknown encryption key ID: v1")
+  assertEquals(lookups, ["v2", "v1", "v1", "v1"])
+})
+
+Deno.test("keyring opaque IDs cannot overwrite the markerless legacy fallback", () => {
+  const provider = createPathwayEncryptionProvider({
+    key: ENCRYPTION_KEY,
+    keyring: { activeKeyId: "__legacy__", keys: { __legacy__: OTHER_KEY } },
+  })!
+  const oldCiphertext = aesGcmEncrypt("old history", deriveEncryptionKey(ENCRYPTION_KEY))
+  assertEquals(provider.decrypt(oldCiphertext), "old history")
+  assertEquals(provider.decrypt(provider.encrypt("new event"), "__legacy__"), "new event")
+})
+
+Deno.test("keyring rejects assigning two different keys to the same explicit legacy ID", () => {
+  assertThrows(
+    () =>
+      createPathwayEncryptionProvider({
+        key: ENCRYPTION_KEY,
+        keyId: "v1",
+        keyring: { activeKeyId: "v1", keys: { v1: OTHER_KEY } },
+      }),
+    Error,
+    "Conflicting encryption key material for key ID v1",
+  )
+  const provider = createPathwayEncryptionProvider({
+    key: ENCRYPTION_KEY,
+    keyId: "v1",
+    keyring: { activeKeyId: "v1", keys: { v1: ENCRYPTION_KEY } },
+  })!
+  assertEquals(provider.decrypt(provider.encrypt("same key"), "v1"), "same key")
+})
 
 const eventSchema = z.object({
   id: z.string(),
@@ -210,6 +293,125 @@ Deno.test("encryption config defaults to symmetric when only key is provided", a
   assertExists(captured)
   assertEquals(Object.keys(captured), [ENCRYPTED_PAYLOAD_FIELD])
   assertEquals(decryptEnvelope(captured), plaintext)
+})
+
+Deno.test("keyring writes with the active key and stamps only its opaque ID", async () => {
+  const builder = new PathwaysBuilder({
+    baseUrl: "http://localhost:8020",
+    tenant: "test-tenant",
+    dataCore: "test-data-core",
+    apiKey: "test-api-key",
+    encryption: {
+      keyring: {
+        activeKeyId: "v2",
+        keys: { v1: ENCRYPTION_KEY, v2: OTHER_KEY },
+      },
+    },
+  })
+
+  const pathway = builder.register({
+    flowType: "encrypted-flow",
+    eventType: "created",
+    schema: eventSchema,
+    encrypted: true,
+  })
+
+  let capturedPayload: Record<string, unknown> | undefined
+  let capturedMetadata: Record<string, unknown> | undefined
+  pathway["writers"]["encrypted-flow/created"] = async (payload, metadata) => {
+    capturedPayload = payload
+    capturedMetadata = metadata
+    return "event-1"
+  }
+
+  const plaintext = {
+    id: "fragment-1",
+    title: "Rotated",
+    content: "Encrypted with the active key",
+    workspaceId: "workspace-1",
+  }
+  await pathway.write("encrypted-flow/created", { data: plaintext, options: { fireAndForget: true } })
+
+  assertExists(capturedPayload)
+  assertExists(capturedMetadata)
+  assertEquals(capturedMetadata[PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY], "v2")
+  assertEquals(decryptEnvelope(capturedPayload, OTHER_KEY), plaintext)
+  assertEquals(capturedMetadata["v1"], undefined)
+  assertEquals(capturedMetadata["v2"], undefined)
+})
+
+Deno.test({
+  name: "keyring decrypts retained keys and fails closed for unknown IDs",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const builder = new PathwaysBuilder({
+      baseUrl: "http://localhost:8021",
+      tenant: "test-tenant",
+      dataCore: "test-data-core",
+      apiKey: "test-api-key",
+      encryption: {
+        keyring: {
+          activeKeyId: "v2",
+          resolveKey: (keyId) => ({ v1: ENCRYPTION_KEY, v2: OTHER_KEY })[keyId],
+        },
+      },
+    })
+
+    const pathway = builder.register({
+      flowType: "encrypted-flow",
+      eventType: "created",
+      schema: eventSchema,
+      encrypted: true,
+    })
+
+    let handledPayload: Record<string, unknown> | undefined
+    pathway.handle("encrypted-flow/created", (event) => {
+      handledPayload = event.payload as Record<string, unknown>
+    })
+
+    const plaintext = {
+      id: "fragment-1",
+      title: "Historical",
+      content: "Retained ciphertext remains readable",
+      workspaceId: "workspace-1",
+    }
+    const oldMetadata = {
+      [PATHWAY_ENCRYPTED_METADATA_KEY]: "true",
+      [PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY]: "v1",
+    }
+    await pathway.process(
+      "encrypted-flow/created",
+      createEvent({ [ENCRYPTED_PAYLOAD_FIELD]: encryptedPayload(plaintext, ENCRYPTION_KEY) }, oldMetadata),
+    )
+    assertEquals(handledPayload, plaintext)
+
+    await assertRejects(
+      () =>
+        pathway.process(
+          "encrypted-flow/created",
+          createEvent(
+            { [ENCRYPTED_PAYLOAD_FIELD]: encryptedPayload(plaintext, ENCRYPTION_KEY) },
+            { [PATHWAY_ENCRYPTED_METADATA_KEY]: "true" },
+          ),
+        ),
+      Error,
+      "missing its encryption key ID",
+    )
+
+    await assertRejects(
+      () =>
+        pathway.process(
+          "encrypted-flow/created",
+          createEvent(
+            { [ENCRYPTED_PAYLOAD_FIELD]: encryptedPayload(plaintext, ENCRYPTION_KEY) },
+            { ...oldMetadata, [PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY]: "retired-unknown" },
+          ),
+        ),
+      Error,
+      "Unknown encryption key ID",
+    )
+  },
 })
 
 Deno.test({

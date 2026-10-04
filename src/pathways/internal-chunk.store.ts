@@ -26,6 +26,7 @@ export class InternalPathwayChunkStore implements PathwayChunkStore {
   private static readonly DEFAULT_TTL_MS = 60 * 60 * 1000
 
   private readonly chunks = new Map<string, StoredChunk>()
+  private readonly locks = new Map<string, Promise<void>>()
   private readonly ttlMs: number
 
   constructor(options?: { ttlMs?: number }) {
@@ -61,24 +62,38 @@ export class InternalPathwayChunkStore implements PathwayChunkStore {
           new Error(`Conflicting pathway chunk part ${input.part} for chunk ${input.chunkId}`),
         )
       }
-      if (chunk.assembled) {
-        return Promise.resolve({ status: "duplicate" })
-      }
     } else {
       chunk.parts.set(input.part, { data: input.data, dataHash, eventId: input.eventId })
     }
 
-    if (chunk.assembled || chunk.parts.size < chunk.totalParts) {
+    if (chunk.parts.size < chunk.totalParts) {
       return Promise.resolve({ status: existing ? "duplicate" : "stored" })
     }
 
+    const status = chunk.assembled ? "duplicate" : "complete"
     chunk.assembled = true
     const ordered = Array.from({ length: chunk.totalParts }, (_, index) => chunk!.parts.get(index + 1)!)
     return Promise.resolve({
-      status: "complete",
+      status,
       parts: ordered.map((part) => part.data),
       partEventIds: ordered.map((part) => part.eventId),
     })
+  }
+
+  async withChunkLock<T>(chunkId: string, action: () => Promise<T>): Promise<T> {
+    const previous = this.locks.get(chunkId) ?? Promise.resolve()
+    let release!: () => void
+    const current = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    this.locks.set(chunkId, current)
+    await previous
+    try {
+      return await action()
+    } finally {
+      release()
+      if (this.locks.get(chunkId) === current) this.locks.delete(chunkId)
+    }
   }
 
   deleteChunk(chunkId: string): Promise<void> {

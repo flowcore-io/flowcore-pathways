@@ -24,6 +24,7 @@ import {
   PATHWAY_CHUNK_SCHEME,
   PATHWAY_CHUNKED_METADATA_KEY,
   PATHWAY_ENCRYPTED_METADATA_KEY,
+  PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY,
   PATHWAY_ENCRYPTION_SCHEME,
   PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY,
   PathwaysBuilder,
@@ -474,6 +475,43 @@ Deno.test({
   },
 })
 
+Deno.test({
+  name: "process decrypts retained-key chunk parts using the event key ID",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async () => {
+    const oldKey = ENCRYPTION_KEY
+    const activeKey = "pathway-chunking-active-key-32-chars-ok"
+    const pathway = createBuilder({
+      encryption: {
+        keyring: {
+          activeKeyId: "v2",
+          keys: { v1: oldKey, v2: activeKey },
+        },
+      },
+      encrypted: true,
+    })
+    const data = { id: "retained", title: "historical", content: largeContent(100_000), workspaceId: "w" }
+    const parts = buildChunkParts(data, 45_000, (slice) => aesGcmEncrypt(slice, deriveEncryptionKey(oldKey)))
+    const handled: FlowcoreEvent[] = []
+    pathway.handle("big-flow/created", async (event) => {
+      handled.push(event)
+    })
+    const meta = () => ({
+      [PATHWAY_CHUNKED_METADATA_KEY]: "true",
+      [PATHWAY_ENCRYPTED_METADATA_KEY]: "true",
+      [PATHWAY_ENCRYPTION_SCHEME_METADATA_KEY]: PATHWAY_ENCRYPTION_SCHEME,
+      [PATHWAY_ENCRYPTION_KEY_ID_METADATA_KEY]: "v1",
+    })
+    for (const [index, part] of parts.entries()) {
+      await pathway.process("big-flow/created", createEvent(part, meta(), `retained-${index + 1}`))
+    }
+    assertEquals(handled.length, 1)
+    assertEquals(handled[0].payload, data)
+    assertEquals(handled[0].metadata, {})
+  },
+})
+
 Deno.test("InternalPathwayChunkStore reports exactly one completion and expires stale chunks", async () => {
   const store = new InternalPathwayChunkStore({ ttlMs: 20 })
   const base = { chunkId: crypto.randomUUID(), totalParts: 2, digest: "d" }
@@ -506,4 +544,113 @@ Deno.test("InternalPathwayChunkStore reports exactly one completion and expires 
   await new Promise((resolve) => setTimeout(resolve, 30))
   // Cleanup runs on the next write; the stale part is gone so this chunk starts over.
   assertEquals((await store.storePart({ ...stale, part: 2, data: "b", eventId: "e2" })).status, "stored")
+})
+
+Deno.test({
+  name: "failed assembled chunks replay from retained parts after the retry budget is exhausted",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const pathway = createBuilder()
+    pathway.maxRetries["big-flow/created"] = 0
+    const payload = { id: "retry", title: "review", content: largeContent(100_000), workspaceId: "workspace" }
+    const parts = buildChunkParts(payload, 45_000)
+    const wire = parts.map((part, i) =>
+      createEvent(part, { [PATHWAY_CHUNKED_METADATA_KEY]: "true" }, `retry-part-${i}`)
+    )
+    let attempts = 0
+    pathway.handle("big-flow/created", (event) => {
+      assertEquals(event.payload, payload)
+      if (++attempts === 1) throw new Error("projection unavailable")
+    })
+    for (const part of wire.slice(0, -1)) await pathway.process("big-flow/created", structuredClone(part))
+    const completing = wire.at(-1)!
+    await assertRejects(
+      () => pathway.process("big-flow/created", structuredClone(completing)),
+      Error,
+      "projection unavailable",
+    )
+    assertEquals(await pathway.pathwayState.isProcessed(wire[0].eventId), false)
+    assertEquals(await pathway.pathwayState.isProcessed(completing.eventId), false)
+    // Only the failing HTTP delivery is redelivered; the earlier parts were acknowledged.
+    await pathway.process("big-flow/created", structuredClone(completing))
+    assertEquals(attempts, 2)
+    for (const part of wire) assertEquals(await pathway.pathwayState.isProcessed(part.eventId), true)
+  },
+})
+
+Deno.test({
+  name: "acknowledged-part replay after retained-part expiry warns without logging payload content",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const pathway = createBuilder().withPathwayChunkStore(new InternalPathwayChunkStore({ ttlMs: 10 }))
+    const payload = { id: "expiry", title: "private", content: largeContent(100_000), workspaceId: "workspace" }
+    const parts = buildChunkParts(payload, 45_000)
+    const wire = parts.map((part) => createEvent(part, { [PATHWAY_CHUNKED_METADATA_KEY]: "true" }))
+    const warnings: unknown[] = []
+    pathway.logger.warn = (...args) => {
+      warnings.push(args)
+    }
+    await pathway.process("big-flow/created", structuredClone(wire[1]))
+    assertEquals(warnings.length, 0)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await pathway.process("big-flow/created", structuredClone(wire[1]))
+    assertEquals(warnings.length, 1)
+    assertEquals(warnings[0][1].storeStatus, "stored")
+    assertEquals(warnings[0][1].part, 2)
+    assertEquals(JSON.stringify(warnings).includes("æøå"), false)
+    assertEquals(await pathway.pathwayState.isProcessed(wire[0].eventId), false)
+  },
+})
+
+Deno.test({
+  name: "concurrent complete-chunk redeliveries wait for a failed handler before retrying",
+  sanitizeOps: false,
+  sanitizeResources: false,
+  fn: async () => {
+    const pathway = createBuilder()
+    pathway.maxRetries["big-flow/created"] = 0
+    const payload = { id: "concurrent", title: "review", content: largeContent(100_000), workspaceId: "workspace" }
+    const parts = buildChunkParts(payload, 45_000)
+    const wire = parts.map((part, i) =>
+      createEvent(part, { [PATHWAY_CHUNKED_METADATA_KEY]: "true" }, `concurrent-part-${i}`)
+    )
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    let release!: () => void
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let attempts = 0
+    pathway.handle("big-flow/created", async (received) => {
+      assertEquals(received.payload, payload)
+      if (++attempts === 1) {
+        entered()
+        await blocked
+        throw new Error("first delivery failed")
+      }
+    })
+    for (const part of wire.slice(0, -1)) await pathway.process("big-flow/created", structuredClone(part))
+    const completing = wire.at(-1)!
+    const first = assertRejects(
+      () => pathway.process("big-flow/created", structuredClone(completing)),
+      Error,
+      "first delivery failed",
+    )
+    await started
+    const second = pathway.process("big-flow/created", structuredClone(completing))
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      assertEquals(attempts, 1)
+      assertEquals(await pathway.pathwayState.isProcessed(completing.eventId), false)
+    } finally {
+      release()
+      await Promise.all([first, second])
+    }
+    assertEquals(attempts, 2)
+    for (const part of wire) assertEquals(await pathway.pathwayState.isProcessed(part.eventId), true)
+  },
 })

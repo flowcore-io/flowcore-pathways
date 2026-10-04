@@ -59,8 +59,11 @@ Deno.test({
       assertEquals(complete.parts, ["a", "b", "c"])
       assertEquals(complete.partEventIds, ["e1", "e2", "e3"])
 
-      // Replays after assembly never complete a second time.
-      assertEquals((await store.storePart({ ...base, part: 2, data: "b", eventId: "e2" })).status, "duplicate")
+      // The status still reports a duplicate, but retains the complete data for recovery.
+      const replay = await store.storePart({ ...base, part: 2, data: "b", eventId: "e2" })
+      assertEquals(replay.status, "duplicate")
+      assertEquals(replay.parts, complete.parts)
+      assertEquals(replay.partEventIds, complete.partEventIds)
 
       await store.deleteChunk(base.chunkId)
       assertEquals((await store.storePart({ ...base, part: 1, data: "a", eventId: "e1" })).status, "stored")

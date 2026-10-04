@@ -21,13 +21,15 @@ export interface PostgresPathwayChunkStoreConnectionStringConfig extends StatePr
 
   /** Explicit table name. Overrides `statePrefix`. Default: `"pathway_chunks"`. */
   tableName?: string
-  /** Time-to-live in milliseconds for parts of an incomplete chunk (default: 1 hour) */
+  /** Time-to-live in milliseconds for incomplete or failed complete chunks (default: 1 hour) */
   ttlMs?: number
   /**
    * Minimum time between two sweeps of expired rows, in milliseconds.
    * Defaults to 60 000. `0` sweeps on every `storePart` call (the pre-2.10.1 behaviour).
    */
   cleanupIntervalMs?: number
+  /** Positive finite advisory-lock wait timeout in milliseconds (default: 5 seconds). */
+  lockTimeoutMs?: number
   /** Connection pool configuration */
   pool?: PostgresPoolConfig
 }
@@ -54,13 +56,15 @@ export interface PostgresPathwayChunkStoreParametersConfig extends StatePrefixCo
 
   /** Explicit table name. Overrides `statePrefix`. Default: `"pathway_chunks"`. */
   tableName?: string
-  /** Time-to-live in milliseconds for parts of an incomplete chunk (default: 1 hour) */
+  /** Time-to-live in milliseconds for incomplete or failed complete chunks (default: 1 hour) */
   ttlMs?: number
   /**
    * Minimum time between two sweeps of expired rows, in milliseconds.
    * Defaults to 60 000. `0` sweeps on every `storePart` call (the pre-2.10.1 behaviour).
    */
   cleanupIntervalMs?: number
+  /** Positive finite advisory-lock wait timeout in milliseconds (default: 5 seconds). */
+  lockTimeoutMs?: number
   /** Connection pool configuration */
   pool?: PostgresPoolConfig
 }
@@ -112,6 +116,7 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
   private readonly tableName: string
   private readonly ttlMs: number
   private readonly cleanupIntervalMs: number
+  private readonly lockTimeoutMs: number
   private lastCleanupAt = 0
   private initialized = false
 
@@ -120,6 +125,10 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
       prefixStateName(config.statePrefix, PostgresPathwayChunkStore.DEFAULT_TABLE_NAME)
     this.ttlMs = config.ttlMs || PostgresPathwayChunkStore.DEFAULT_TTL_MS
     this.cleanupIntervalMs = config.cleanupIntervalMs ?? PostgresPathwayChunkStore.DEFAULT_CLEANUP_INTERVAL_MS
+    this.lockTimeoutMs = config.lockTimeoutMs ?? 5_000
+    if (!Number.isInteger(this.lockTimeoutMs) || this.lockTimeoutMs < 1 || this.lockTimeoutMs > 2_147_483_647) {
+      throw new Error("PostgresPathwayChunkStore lockTimeoutMs must be a positive integer up to 2147483647")
+    }
   }
 
   /** The resolved table name */
@@ -191,7 +200,7 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
 
     return await postgres.transaction!(async (tx) => {
       // 64-bit hash: collisions only serialize unrelated chunks, but fewer is better.
-      await tx.execute(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [input.chunkId])
+      await this.acquireChunkLock(tx, input.chunkId)
 
       // Expired parts of this chunk never count toward completion, whether or not the
       // table-wide sweep has run yet. This is a primary-key range delete, so it is cheap.
@@ -234,20 +243,46 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
         )
       }
 
-      if (rows.some((row) => row.assembled_at !== null)) {
-        return { status: "duplicate" }
-      }
       if (rows.length < input.totalParts) {
         return { status: duplicate ? "duplicate" : "stored" }
       }
 
-      await tx.execute(`UPDATE ${this.tableName} SET assembled_at = NOW() WHERE chunk_id = $1`, [input.chunkId])
+      const assembled = rows.some((row) => row.assembled_at !== null)
+      if (!assembled) {
+        await tx.execute(`UPDATE ${this.tableName} SET assembled_at = NOW() WHERE chunk_id = $1`, [input.chunkId])
+      }
       return {
-        status: "complete",
+        status: assembled ? "duplicate" : "complete",
         parts: rows.map((row) => row.data),
         partEventIds: rows.map((row) => row.event_id),
       }
     })
+  }
+
+  /**
+   * Serializes logical processing, including retries after assembly. PostgreSQL
+   * releases the lock on rollback or connection loss; no persistent lease or schema
+   * change is needed. Store operations must run outside the callback, so a one-connection
+   * pool cannot deadlock waiting for its own transaction.
+   */
+  async withChunkLock<T>(chunkId: string, action: () => Promise<T>): Promise<T> {
+    const postgres = await this.initialize()
+    return await postgres.transaction!(async (tx) => {
+      await this.acquireChunkLock(tx, chunkId)
+      return await action()
+    })
+  }
+
+  private async acquireChunkLock(tx: PostgresAdapter, chunkId: string): Promise<void> {
+    await tx.execute("SELECT set_config('lock_timeout', $1, true)", [`${this.lockTimeoutMs}ms`])
+    try {
+      await tx.execute(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [chunkId])
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "55P03") {
+        throw new Error(`Timed out acquiring pathway chunk lock after ${this.lockTimeoutMs}ms`)
+      }
+      throw error
+    }
   }
 
   /**
