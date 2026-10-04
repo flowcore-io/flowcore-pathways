@@ -210,7 +210,7 @@ Deno.test({
 })
 
 async function deadline(action: () => Promise<unknown>): Promise<void> {
-  let timeout!: number
+  let timeout!: ReturnType<typeof setTimeout>
   try {
     await Promise.race([
       action(),
