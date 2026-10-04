@@ -107,8 +107,9 @@ export function createPathwayEncryptionProvider(
   if (config?.keyId !== undefined && !legacyKeyId) {
     throw new Error("Pathways symmetric encryption keyId must not be empty")
   }
-  if (legacySecret) {
-    keys.set(legacyKeyId ?? "__legacy__", validateSecret(legacySecret, legacyKeyId ?? "legacy key"))
+  const legacyKey = legacySecret ? validateSecret(legacySecret, legacyKeyId ?? "legacy key") : undefined
+  if (legacyKey && legacyKeyId) {
+    keys.set(legacyKeyId, legacyKey)
   }
 
   let activeKeyId = legacyKeyId
@@ -131,7 +132,12 @@ export function createPathwayEncryptionProvider(
       if (typeof secret !== "string") {
         throw new Error(`Pathways symmetric encryption keyring value for ${keyId} must be a string`)
       }
-      keys.set(keyId, validateSecret(secret, `key ID ${keyId}`))
+      const key = validateSecret(secret, `key ID ${keyId}`)
+      const existing = keys.get(keyId)
+      if (existing && !existing.equals(key)) {
+        throw new Error(`Conflicting encryption key material for key ID ${keyId}`)
+      }
+      keys.set(keyId, key)
     }
     if (!keys.has(configuredActiveKeyId) && typeof keyring.resolveKey === "function") {
       const resolved = keyring.resolveKey(configuredActiveKeyId)
@@ -147,7 +153,7 @@ export function createPathwayEncryptionProvider(
 
   const resolveKey = (keyId?: string): Buffer => {
     if (!keyId) {
-      if (legacySecret) return keys.get(legacyKeyId ?? "__legacy__") as Buffer
+      if (legacyKey) return legacyKey
       throw new Error("Encrypted pathway payload is missing its encryption key ID")
     }
     const key = keys.get(keyId)

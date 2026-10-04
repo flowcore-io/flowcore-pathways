@@ -1,10 +1,17 @@
 // @ts-nocheck
-import { assertEquals, assertExists, assertNotEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts"
+import {
+  assertEquals,
+  assertExists,
+  assertNotEquals,
+  assertRejects,
+  assertThrows,
+} from "https://deno.land/std@0.224.0/assert/mod.ts"
 import { Buffer } from "node:buffer"
 import { z } from "zod"
 import {
   aesGcmDecrypt,
   aesGcmEncrypt,
+  createPathwayEncryptionProvider,
   deriveEncryptionKey,
   ENCRYPTED_PAYLOAD_FIELD,
   FlowcoreEvent,
@@ -19,6 +26,35 @@ import { createTestServer } from "./helpers/test-server.ts"
 
 const ENCRYPTION_KEY = "pathway-encryption-test-key-32-chars-ok"
 const OTHER_KEY = "pathway-encryption-other-key-32-chars-ok"
+
+Deno.test("keyring opaque IDs cannot overwrite the markerless legacy fallback", () => {
+  const provider = createPathwayEncryptionProvider({
+    key: ENCRYPTION_KEY,
+    keyring: { activeKeyId: "__legacy__", keys: { __legacy__: OTHER_KEY } },
+  })!
+  const oldCiphertext = aesGcmEncrypt("old history", deriveEncryptionKey(ENCRYPTION_KEY))
+  assertEquals(provider.decrypt(oldCiphertext), "old history")
+  assertEquals(provider.decrypt(provider.encrypt("new event"), "__legacy__"), "new event")
+})
+
+Deno.test("keyring rejects assigning two different keys to the same explicit legacy ID", () => {
+  assertThrows(
+    () =>
+      createPathwayEncryptionProvider({
+        key: ENCRYPTION_KEY,
+        keyId: "v1",
+        keyring: { activeKeyId: "v1", keys: { v1: OTHER_KEY } },
+      }),
+    Error,
+    "Conflicting encryption key material for key ID v1",
+  )
+  const provider = createPathwayEncryptionProvider({
+    key: ENCRYPTION_KEY,
+    keyId: "v1",
+    keyring: { activeKeyId: "v1", keys: { v1: ENCRYPTION_KEY } },
+  })!
+  assertEquals(provider.decrypt(provider.encrypt("same key"), "v1"), "same key")
+})
 
 const eventSchema = z.object({
   id: z.string(),

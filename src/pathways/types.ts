@@ -279,9 +279,9 @@ export interface StorePathwayChunkPartInput {
  */
 export interface PathwayChunkStoreResult {
   status: "stored" | "duplicate" | "complete"
-  /** Ordered plaintext slices, present only when `status` is `complete` */
+  /** Ordered plaintext slices, present on completion and on replays of a retained complete chunk */
   parts?: string[]
-  /** Ordered part event ids, present only when `status` is `complete` */
+  /** Ordered part event ids, present together with `parts` */
   partEventIds?: string[]
 }
 
@@ -299,6 +299,15 @@ export type PathwayChunkStore = {
    * @param input The part to record
    */
   storePart: (input: StorePathwayChunkPartInput) => Promise<PathwayChunkStoreResult>
+
+  /**
+   * Serializes logical processing of a complete chunk across consumers. The callback
+   * must not call this store: the PostgreSQL implementation holds a pooled connection
+   * and a transaction-scoped advisory lock until the callback resolves or rejects.
+   * Native stores implement this together with complete-part replay. Custom stores
+   * should implement both to support recovery after a handler or consumer fails.
+   */
+  withChunkLock?: <T>(chunkId: string, action: () => Promise<T>) => Promise<T>
 
   /**
    * Removes every part of a chunk after the logical event has been handled

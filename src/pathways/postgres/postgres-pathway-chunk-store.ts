@@ -21,7 +21,7 @@ export interface PostgresPathwayChunkStoreConnectionStringConfig extends StatePr
 
   /** Explicit table name. Overrides `statePrefix`. Default: `"pathway_chunks"`. */
   tableName?: string
-  /** Time-to-live in milliseconds for parts of an incomplete chunk (default: 1 hour) */
+  /** Time-to-live in milliseconds for incomplete or failed complete chunks (default: 1 hour) */
   ttlMs?: number
   /**
    * Minimum time between two sweeps of expired rows, in milliseconds.
@@ -54,7 +54,7 @@ export interface PostgresPathwayChunkStoreParametersConfig extends StatePrefixCo
 
   /** Explicit table name. Overrides `statePrefix`. Default: `"pathway_chunks"`. */
   tableName?: string
-  /** Time-to-live in milliseconds for parts of an incomplete chunk (default: 1 hour) */
+  /** Time-to-live in milliseconds for incomplete or failed complete chunks (default: 1 hour) */
   ttlMs?: number
   /**
    * Minimum time between two sweeps of expired rows, in milliseconds.
@@ -234,19 +234,33 @@ export class PostgresPathwayChunkStore implements PathwayChunkStore {
         )
       }
 
-      if (rows.some((row) => row.assembled_at !== null)) {
-        return { status: "duplicate" }
-      }
       if (rows.length < input.totalParts) {
         return { status: duplicate ? "duplicate" : "stored" }
       }
 
-      await tx.execute(`UPDATE ${this.tableName} SET assembled_at = NOW() WHERE chunk_id = $1`, [input.chunkId])
+      const assembled = rows.some((row) => row.assembled_at !== null)
+      if (!assembled) {
+        await tx.execute(`UPDATE ${this.tableName} SET assembled_at = NOW() WHERE chunk_id = $1`, [input.chunkId])
+      }
       return {
-        status: "complete",
+        status: assembled ? "duplicate" : "complete",
         parts: rows.map((row) => row.data),
         partEventIds: rows.map((row) => row.event_id),
       }
+    })
+  }
+
+  /**
+   * Serializes logical processing, including retries after assembly. PostgreSQL
+   * releases the lock on rollback or connection loss; no persistent lease or schema
+   * change is needed. Store operations must run outside the callback, so a one-connection
+   * pool cannot deadlock waiting for its own transaction.
+   */
+  async withChunkLock<T>(chunkId: string, action: () => Promise<T>): Promise<T> {
+    const postgres = await this.initialize()
+    return await postgres.transaction!(async (tx) => {
+      await tx.execute(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [chunkId])
+      return await action()
     })
   }
 

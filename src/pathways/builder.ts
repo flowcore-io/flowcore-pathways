@@ -779,8 +779,8 @@ export class PathwaysBuilder<
     }
 
     // Oversized events arrive as part events. Collect them; only the call that completes the
-    // chunk continues with the reassembled logical event. Reassembly happens before cluster
-    // routing, so a worker always receives a plain event.
+    // chunk (or retries its retained complete parts) continues with the logical event.
+    // Reassembly happens before cluster routing, so a worker receives a plain event.
     if (hasChunkedMetadata(data.metadata)) {
       const envelope = parseChunkEnvelope(data.payload)
       if (envelope) {
@@ -788,11 +788,21 @@ export class PathwaysBuilder<
         if (!completed) {
           return
         }
-        try {
-          await this.processResolvedEvent(pathway, data)
-        } finally {
-          await this.finishChunk(completed.chunkId, completed.partEventIds)
+        const processChunk = async () => {
+          // Check under the lock: another delivery may have completed while this
+          // consumer waited. Keep ordinary, non-chunked processing semantics unchanged.
+          if (!await this.pathwayState.isProcessed(data.eventId)) {
+            await this.processResolvedEvent(pathway, data)
+          }
         }
+        if (this.chunkStore?.withChunkLock) {
+          await this.chunkStore.withChunkLock(completed.chunkId, processChunk)
+        } else {
+          await processChunk()
+        }
+        // Never acknowledge the completing part or delete retained parts on failure.
+        // Cleanup runs outside the store lock to also support a one-connection pool.
+        await this.finishChunk(completed.chunkId, completed.partEventIds)
         return
       }
     }
@@ -844,7 +854,9 @@ export class PathwaysBuilder<
       eventId: data.eventId,
     })
 
-    if (result.status !== "complete") {
+    const retainedComplete = result.status === "duplicate" &&
+      result.parts?.length === header.totalParts && result.partEventIds?.length === header.totalParts
+    if (result.status !== "complete" && !retainedComplete) {
       // Part 1 carries the logical event id that writers wait on. It stays unprocessed until the
       // whole chunk has been handled, so a `write()` without fireAndForget blocks correctly.
       if (header.part !== 1) {
