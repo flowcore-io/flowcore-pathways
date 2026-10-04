@@ -30,8 +30,9 @@ export interface AutoProvisionConfig {
  *   2. `byFlowType[flowType]`
  *   3. `default` (or 1)
  *
- * NOTE: this resolves to `processor.concurrency` on `@flowcore/data-pump`, which is
- * the in-flight batch width — not parallel handler invocations.
+ * This resolves to `processor.concurrency` on `@flowcore/data-pump`. Pathways dispatches
+ * the reserved events concurrently, waits for every event to settle, and lets the data
+ * pump acknowledge the batch only when every event completes successfully.
  */
 export interface PumpConcurrencyConfig {
   /** Default concurrency applied to every pump. Default: 1. */

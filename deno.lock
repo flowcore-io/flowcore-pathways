@@ -22,7 +22,7 @@
     "jsr:@std/path@~0.225.2": "0.225.2",
     "jsr:@ts-morph/bootstrap@0.24": "0.24.0",
     "jsr:@ts-morph/common@0.24": "0.24.0",
-    "npm:@flowcore/data-pump@0.23": "0.23.0",
+    "npm:@flowcore/data-pump@~0.23.3": "0.23.3",
     "npm:@flowcore/sdk-transformer-core@^2.5.1": "2.5.1",
     "npm:@flowcore/sdk@^4.2.4": "4.2.4",
     "npm:bun-sqlite-key-value@^1.13.1": "1.13.1_typescript@5.9.3",
@@ -144,11 +144,11 @@
     "@date-fns/utc@2.1.1": {
       "integrity": "sha512-SlJDfG6RPeEX8wEVv6ZB3kak4MmbtyiI2qX/5zuKdordbrhB/iaJ58GVMZgJ6P1sJaM1gMgENFYYeg1JWrCFrA=="
     },
-    "@flowcore/data-pump@0.23.0": {
-      "integrity": "sha512-GWnY4E7q4OKXDqZowdZ/zoCeoYZ9NrDvV5jhWrfMc77GR8/iIsCmGt6tX5xL1Y7lmmqZ7VqAWZIki2s9MUGxGg==",
+    "@flowcore/data-pump@0.23.3": {
+      "integrity": "sha512-J31pnN9E9zcf1FkZFHuKfy/lW83eLVaGY9/Z8VPwb/7h2oeSv43SmXPueRL5FbhpXPgpPrRqfHXtbx/RerLM5w==",
       "dependencies": [
         "@date-fns/utc",
-        "@flowcore/sdk",
+        "@flowcore/sdk@6.1.0",
         "@flowcore/sdk-oidc-client",
         "@flowcore/time-uuid",
         "@sinclair/typebox",
@@ -170,6 +170,14 @@
     },
     "@flowcore/sdk@4.2.4": {
       "integrity": "sha512-ODsC54c0QY8y1iySU+1MeSUOjdnxc64b3atIx/Vif94++uJzYclNaV4uBJKbEgijP1g3qQD65z6lcA2YoVf1Gw==",
+      "dependencies": [
+        "@sinclair/typebox",
+        "rxjs",
+        "ws"
+      ]
+    },
+    "@flowcore/sdk@6.1.0": {
+      "integrity": "sha512-2GJnmi808c4A+jEH/UO/XJ6PoSRpDaJXVkW5MvpNGXxanaVDZDwZ6TvcoMglwAq6Hu7Q+1g6K+p4+p7KBYukUg==",
       "dependencies": [
         "@sinclair/typebox",
         "rxjs",
@@ -364,7 +372,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@deno/dnt@~0.41.3",
-      "npm:@flowcore/data-pump@0.23",
+      "npm:@flowcore/data-pump@~0.23.3",
       "npm:@flowcore/sdk-transformer-core@^2.5.1",
       "npm:@flowcore/sdk@^4.2.4",
       "npm:bun-sqlite-key-value@^1.13.1",

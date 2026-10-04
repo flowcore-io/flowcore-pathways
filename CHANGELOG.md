@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.10.4](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.3...v2.10.4) (2026-09-25)
+
+
+### Bug Fixes
+
+* dispatch pump batches concurrently ([8186332](https://github.com/flowcore-io/flowcore-pathways/commit/8186332fef2aeff7d32ea90fe6d15528404fb96c))
+* **pump:** dispatch reserved batches concurrently ([4405688](https://github.com/flowcore-io/flowcore-pathways/commit/4405688e88118960cb172deaa9e6cfe9b52ad572))
+
+## [2.10.3](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.2...v2.10.3) (2026-09-24)
+
+
+### Bug Fixes
+
+* forward base URL to data pump source ([3919e37](https://github.com/flowcore-io/flowcore-pathways/commit/3919e3717df6535a188badc0f3ee2c31567e0d12))
+
+## [2.10.2](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.1...v2.10.2) (2026-09-24)
+
+
+### Bug Fixes
+
+* **deps:** require data-pump 0.23.3 ([e2dedee](https://github.com/flowcore-io/flowcore-pathways/commit/e2dedee19af646da07297c27a12dfb0f965dd3ca))
+* **deps:** require data-pump 0.23.3 ([6bd6252](https://github.com/flowcore-io/flowcore-pathways/commit/6bd625231d8ca262adf36edc0758d38c2479adc5))
+
 ## [2.10.1](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.0...v2.10.1) (2026-09-17)
 
 
