@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.0.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.4...v3.0.0) (2026-10-04)
+
+
+### ⚠ BREAKING CHANGES
+
+* **pathways:** Handler failures no longer write processed receipts after maxRetries on any pathway. Consumers must define poison-event handling before upgrading.
+
+### Bug Fixes
+
+* **pathways:** address recovery compatibility and lock-wait review ([916bd3e](https://github.com/flowcore-io/flowcore-pathways/commit/916bd3e9d3b177d3ef110039350efb3c04159218))
+* **pathways:** recover failed chunks without false acknowledgements ([a6109d3](https://github.com/flowcore-io/flowcore-pathways/commit/a6109d3436992adff43abb2187597e235b8b246e))
+
 ## [2.10.4](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.3...v2.10.4) (2026-09-25)
 
 
