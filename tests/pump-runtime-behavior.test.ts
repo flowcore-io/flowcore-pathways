@@ -842,3 +842,116 @@ Deno.test({
     })
   },
 })
+
+function stubLeaderBootstrap(failingRegistrations: number) {
+  const pump = { starts: 0, stops: 0, registrations: 0 }
+  const stubs = [
+    stub(PathwayProvisioner.prototype, "provision", async () => {}),
+    stub(PathwayPump.prototype, "start", async function (this: PathwayPump) {
+      pump.starts++
+      ;(this as unknown as { running: boolean }).running = true
+    }),
+    stub(PathwayPump.prototype, "stop", async function (this: PathwayPump) {
+      if (!(this as unknown as { running: boolean }).running) return
+      pump.stops++
+      ;(this as unknown as { running: boolean }).running = false
+    }),
+    stub(PathwayPump.prototype, "setPulseConfig", async () => {}),
+    stub(CommandPoller.prototype, "start", () => {}),
+    stub(CommandPoller.prototype, "stop", () => {}),
+    stub(globalThis, "fetch", async (_input, init) => {
+      if (((init as RequestInit | undefined)?.method ?? "GET") === "GET") {
+        return new Response(JSON.stringify({ deliveryState: "active", deliveryPauseTargets: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      pump.registrations++
+      if (pump.registrations <= failingRegistrations) {
+        return new Response("<html>502 Bad Gateway</html>", { status: 502 })
+      }
+      return new Response(JSON.stringify({ pathwayId: crypto.randomUUID(), status: "created" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    }),
+  ]
+  return { pump, restore: () => stubs.forEach((s) => s.restore()) }
+}
+
+async function createFollowerBuilder() {
+  const builder = createBuilder({
+    runtimeEnv: "production",
+    pathwayName: "virtual-service",
+    pathwayMode: "virtual",
+    autoProvision: { pathway: true },
+    // One attempt per bootstrap so the counts below measure leader-level retries.
+    provisionRetry: { maxAttempts: 1 },
+  })
+  const clusterManager = { isRunning: true, isLeader: false }
+  const internals = builder as unknown as {
+    clusterManager: typeof clusterManager
+    leaderBootstrapRetryDelaysMs: number[]
+    handleLeadershipChange(isLeader: boolean): Promise<void>
+  }
+  internals.clusterManager = clusterManager
+  internals.leaderBootstrapRetryDelaysMs = [1, 1, 1]
+  await builder.startPump(createPumpOptions())
+  return { builder, clusterManager, internals }
+}
+
+Deno.test({
+  name: "PathwaysBuilder leader bootstrap retries",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn: async (t) => {
+    await t.step("a new leader retries a failed pathway registration until the pump runs", async () => {
+      const { pump, restore } = stubLeaderBootstrap(2)
+      try {
+        const { builder, clusterManager, internals } = await createFollowerBuilder()
+
+        clusterManager.isLeader = true
+        await internals.handleLeadershipChange(true)
+
+        assertEquals(pump.registrations, 3)
+        assertEquals(builder.pump?.isRunning, true)
+      } finally {
+        restore()
+      }
+    })
+
+    await t.step("retries stop once leadership is lost", async () => {
+      const { pump, restore } = stubLeaderBootstrap(Number.POSITIVE_INFINITY)
+      try {
+        const { builder, clusterManager, internals } = await createFollowerBuilder()
+
+        clusterManager.isLeader = true
+        const bootstrap = internals.handleLeadershipChange(true)
+        clusterManager.isLeader = false
+        await bootstrap
+
+        assertEquals(pump.registrations, 1)
+        assertEquals(builder.pump?.isRunning, false)
+      } finally {
+        restore()
+      }
+    })
+
+    await t.step("a superseded bootstrap stops retrying after leadership is regained", async () => {
+      const { pump, restore } = stubLeaderBootstrap(1)
+      try {
+        const { builder, clusterManager, internals } = await createFollowerBuilder()
+
+        clusterManager.isLeader = true
+        const first = internals.handleLeadershipChange(true)
+        const second = internals.handleLeadershipChange(true)
+        await Promise.all([first, second])
+
+        assertEquals(pump.registrations, 2)
+        assertEquals(builder.pump?.isRunning, true)
+      } finally {
+        restore()
+      }
+    })
+  },
+})
