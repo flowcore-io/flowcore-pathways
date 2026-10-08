@@ -515,6 +515,10 @@ export class PathwaysBuilder<
   private currentPumpProvisionsPathway = false
   private currentPumpUsesExplicitPulse = false
   private currentPumpUsesAutoPulse = false
+  // Bumped on every leadership change so a stale bootstrap retry loop stops.
+  private leadershipGeneration = 0
+  // Backoff between leader bootstrap attempts; the last delay repeats.
+  private leaderBootstrapRetryDelaysMs = [1_000, 2_000, 5_000, 10_000, 30_000]
 
   /**
    * Creates a new PathwaysBuilder instance
@@ -2230,18 +2234,48 @@ export class PathwaysBuilder<
   }
 
   private async handleLeadershipChange(isLeader: boolean): Promise<void> {
+    const generation = ++this.leadershipGeneration
+
     if (isLeader) {
       if (!this.pathwayPump) {
         return
       }
 
       this.logger.info("Became leader, bootstrapping pump")
-      await this.bootstrapLeaderPump()
+      await this.bootstrapLeaderPumpUntilReady(generation)
       return
     }
 
     this.logger.info("Lost leadership, stopping leader runtime")
     await this.stopLeaderRuntime()
+  }
+
+  /**
+   * Keeps retrying the leader bootstrap while this instance still holds the
+   * lease. Giving up would leave the lease held with no pump running, so no
+   * instance in the cluster would deliver events until a restart.
+   */
+  private async bootstrapLeaderPumpUntilReady(generation: number): Promise<void> {
+    const isCurrentLeader = () => generation === this.leadershipGeneration && this.clusterManager?.isLeader === true
+
+    for (let attempt = 1;; attempt++) {
+      try {
+        await this.bootstrapLeaderPump()
+        return
+      } catch (err) {
+        if (!isCurrentLeader()) return
+
+        const delays = this.leaderBootstrapRetryDelaysMs
+        const delayMs = delays[Math.min(attempt, delays.length) - 1]
+        this.logger.warn("Leader bootstrap failed, retrying", {
+          attempt,
+          delayMs,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+        if (!isCurrentLeader()) return
+      }
+    }
   }
 
   private buildRegistrations(): ProvisionerRegistration[] {
