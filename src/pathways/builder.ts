@@ -1004,7 +1004,7 @@ export class PathwaysBuilder<
           this.afterObservers[pathway].next(data)
           await this.pathwayState.setProcessed(data.eventId)
 
-          this.logger.info(`Successfully processed pathway event`, {
+          this.logger.debug(`Successfully processed pathway event`, {
             pathway: pathwayStr,
             eventId: data.eventId,
           })
