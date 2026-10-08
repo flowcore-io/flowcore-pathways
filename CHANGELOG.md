@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.0.2](https://github.com/flowcore-io/flowcore-pathways/compare/v3.0.1...v3.0.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* reclaim expired Bun completion markers and share KV initialization ([3169782](https://github.com/flowcore-io/flowcore-pathways/commit/3169782b54b0fc027823a6d5ea5357a43e49d62b))
+* reclaim expired Bun completion markers and share KV initialization ([6098547](https://github.com/flowcore-io/flowcore-pathways/commit/60985470d988e1a1ad54642ac6f246e2a7230712))
+
 ## [3.0.1](https://github.com/flowcore-io/flowcore-pathways/compare/v3.0.0...v3.0.1) (2026-10-08)
 
 
