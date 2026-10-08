@@ -12,6 +12,21 @@ export class BunKvAdapter implements KvAdapter {
    * @private
    */
   private store: BunSqliteKeyValue
+  private static readonly PURGE_INTERVAL_MS = 60_000
+  private lastPurgeAttempt = Date.now()
+
+  private purgeExpired(): void {
+    const now = Date.now()
+    if (now >= this.lastPurgeAttempt && now - this.lastPurgeAttempt < BunKvAdapter.PURGE_INTERVAL_MS) return
+    // Throttle attempts, including failures. Maintenance must not turn an already
+    // delivered event's completion write into a handler retry and duplicate delivery.
+    this.lastPurgeAttempt = now
+    try {
+      this.store.deleteExpired()
+    } catch {
+      // Best effort only; actual KV read/write errors still propagate below.
+    }
+  }
 
   /**
    * Creates a new in-memory Bun KV adapter
@@ -28,6 +43,7 @@ export class BunKvAdapter implements KvAdapter {
    * @returns The stored value or null if not found
    */
   get<T>(key: string): T | null {
+    this.purgeExpired()
     const value = this.store.get(key)
     return value as T | null
   }
@@ -40,6 +56,7 @@ export class BunKvAdapter implements KvAdapter {
    * @param ttlMs Time-to-live in milliseconds
    */
   set(key: string, value: unknown, ttlMs: number): void {
+    this.purgeExpired()
     this.store.set(key, value, ttlMs)
   }
 }
