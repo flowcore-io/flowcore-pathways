@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.0.1](https://github.com/flowcore-io/flowcore-pathways/compare/v3.0.0...v3.0.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **pathways:** log successful event processing at debug ([9b3da4a](https://github.com/flowcore-io/flowcore-pathways/commit/9b3da4ab8e8e4e73c34fcce724e6122f7680ad2b))
+* **pathways:** log successful event processing at debug ([2d5d5bd](https://github.com/flowcore-io/flowcore-pathways/commit/2d5d5bdc848bd177977afd59809312a470635e84))
+
 ## [3.0.0](https://github.com/flowcore-io/flowcore-pathways/compare/v2.10.4...v3.0.0) (2026-10-04)
 
 
