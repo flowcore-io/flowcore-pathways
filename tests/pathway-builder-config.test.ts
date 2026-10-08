@@ -1,4 +1,6 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts"
+import { stub } from "https://deno.land/std@0.224.0/testing/mock.ts"
+import { z } from "zod"
 import { PathwaysBuilder } from "../src/pathways/builder.ts"
 
 const baseOpts = {
@@ -82,6 +84,46 @@ Deno.test({
     await t.step("should work without pathwayName (backward compat)", () => {
       const builder = new PathwaysBuilder(baseOpts)
       assertEquals(typeof builder, "object")
+    })
+
+    await t.step("omitting baseUrl uses the hosted webhook for writes and SDK hosts for pump reads", async () => {
+      let writeUrl = ""
+      const fetchStub = stub(globalThis, "fetch", async (input) => {
+        writeUrl = String(input)
+        return new Response(JSON.stringify({ eventId: crypto.randomUUID() }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      })
+      try {
+        const builder = new PathwaysBuilder({
+          tenant: baseOpts.tenant,
+          dataCore: baseOpts.dataCore,
+          apiKey: baseOpts.apiKey,
+          runtimeEnv: "test",
+        }).register({ flowType: "sample", eventType: "created", schema: z.object({ id: z.string() }) })
+        await builder.write("sample/created", { data: { id: "one" }, options: { fireAndForget: true } })
+        assertEquals(writeUrl, "https://webhook.api.flowcore.io/event/test-tenant/test-dc/sample/created")
+
+        await builder.startPump({ stateManagerFactory: () => ({ getState: () => null, setState: () => {} }) })
+        try {
+          assertEquals((builder.pump as unknown as { baseUrl: string }).baseUrl, "")
+        } finally {
+          await builder.stopPump()
+        }
+      } finally {
+        fetchStub.restore()
+      }
+    })
+
+    await t.step("an explicit baseUrl keeps legacy single-host pump routing", async () => {
+      const builder = new PathwaysBuilder({ ...baseOpts, runtimeEnv: "test" })
+      await builder.startPump({ stateManagerFactory: () => ({ getState: () => null, setState: () => {} }) })
+      try {
+        assertEquals((builder.pump as unknown as { baseUrl?: string }).baseUrl, baseOpts.baseUrl)
+      } finally {
+        await builder.stopPump()
+      }
     })
 
     await t.step("should work with only pulseUrl/pulseIntervalMs (no pathwayName)", () => {

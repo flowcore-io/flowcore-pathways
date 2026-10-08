@@ -232,13 +232,13 @@ export class PathwayPump {
     tenant: string
     dataCore: string
     apiKey: string
-    baseUrl: string
+    baseUrl?: string
     processEvent: (pathway: string, event: FlowcoreEvent) => Promise<void>
   }): void {
     this.tenant = config.tenant
     this.dataCore = config.dataCore
     this.apiKey = config.apiKey
-    this.baseUrl = config.baseUrl
+    this.baseUrl = config.baseUrl ?? ""
     this.processEvent = config.processEvent
   }
 
