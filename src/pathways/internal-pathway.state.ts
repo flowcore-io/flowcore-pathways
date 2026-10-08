@@ -17,6 +17,7 @@ export class InternalPathwayState implements PathwayState {
    * @private
    */
   private kv: KvAdapter | null = null
+  private kvPromise?: Promise<KvAdapter>
 
   /**
    * Gets or initializes the KV adapter
@@ -25,10 +26,15 @@ export class InternalPathwayState implements PathwayState {
    * @returns The KV adapter instance
    */
   private async getKv(): Promise<KvAdapter> {
-    if (!this.kv) {
-      this.kv = await createKvAdapter()
+    if (this.kv) return this.kv
+    const pending = this.kvPromise ??= createKvAdapter()
+    try {
+      this.kv = await pending
+      return this.kv
+    } finally {
+      // Share initialization with all callers, but allow retry after rejection.
+      if (this.kvPromise === pending) this.kvPromise = undefined
     }
-    return this.kv
   }
 
   /**
