@@ -77,7 +77,6 @@ export interface KvAdapter {
  *
  * // Use with PathwaysBuilder for session user resolvers
  * const pathways = new PathwaysBuilder({
- *   baseUrl: "https://api.flowcore.io",
  *   tenant: "my-tenant",
  *   dataCore: "my-data-core",
  *   apiKey: "my-api-key",
