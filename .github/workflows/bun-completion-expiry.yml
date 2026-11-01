@@ -1,0 +1,25 @@
+name: Bun completion expiry
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  bun-completion-expiry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.13
+      - run: deno install --frozen-lockfile
+      - run: deno task build:npm
+      - run: bun test bun-tests/pathways-kv-expiry.test.ts

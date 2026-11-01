@@ -22,7 +22,7 @@
     "jsr:@std/path@~0.225.2": "0.225.2",
     "jsr:@ts-morph/bootstrap@0.24": "0.24.0",
     "jsr:@ts-morph/common@0.24": "0.24.0",
-    "npm:@flowcore/data-pump@~0.23.3": "0.23.3",
+    "npm:@flowcore/data-pump@~0.23.4": "0.23.4",
     "npm:@flowcore/sdk-transformer-core@^2.5.1": "2.5.1",
     "npm:@flowcore/sdk@^4.2.4": "4.2.4",
     "npm:bun-sqlite-key-value@^1.13.1": "1.13.1_typescript@5.9.3",
@@ -144,8 +144,8 @@
     "@date-fns/utc@2.1.1": {
       "integrity": "sha512-SlJDfG6RPeEX8wEVv6ZB3kak4MmbtyiI2qX/5zuKdordbrhB/iaJ58GVMZgJ6P1sJaM1gMgENFYYeg1JWrCFrA=="
     },
-    "@flowcore/data-pump@0.23.3": {
-      "integrity": "sha512-J31pnN9E9zcf1FkZFHuKfy/lW83eLVaGY9/Z8VPwb/7h2oeSv43SmXPueRL5FbhpXPgpPrRqfHXtbx/RerLM5w==",
+    "@flowcore/data-pump@0.23.4": {
+      "integrity": "sha512-qXRahSk7q8lm56+cLT7ZJF0QNjg2/lKX7btbzvoZiOXcRblor1Y5tFHm0Z0tXG0UwMa9URrC53RJIGZmmw+r0g==",
       "dependencies": [
         "@date-fns/utc",
         "@flowcore/sdk@6.1.0",
@@ -372,7 +372,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@deno/dnt@~0.41.3",
-      "npm:@flowcore/data-pump@~0.23.3",
+      "npm:@flowcore/data-pump@~0.23.4",
       "npm:@flowcore/sdk-transformer-core@^2.5.1",
       "npm:@flowcore/sdk@^4.2.4",
       "npm:bun-sqlite-key-value@^1.13.1",
