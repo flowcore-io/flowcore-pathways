@@ -281,7 +281,19 @@ export class PathwayPump {
 
     for (const meta of groups.values()) {
       this.groupMeta.set(groupKey(meta.flowType, meta.pumpGroup), meta)
-      await this.startPumpForGroup(meta)
+      try {
+        await this.startPumpForGroup(meta)
+      } catch (error) {
+        this.logger.error(
+          "Initial data pump startup failed; retrying",
+          error instanceof Error ? error : new Error(String(error)),
+          {
+            flowType: meta.flowType,
+            pumpGroup: meta.pumpGroup,
+          },
+        )
+        if (this.running) this.scheduleRestart(meta)
+      }
     }
   }
 
@@ -392,13 +404,26 @@ export class PathwayPump {
 
     this.pumps.set(key, pump)
 
-    await pump.start((error?: Error) => {
-      if (error) {
-        this.logger.error(`Data pump error`, error, { flowType, pumpGroup })
-        if (!this.running) return
-        this.scheduleRestart(meta)
+    try {
+      await pump.start((error?: Error) => {
+        if (error) {
+          this.logger.error(`Data pump error`, error, { flowType, pumpGroup })
+          if (!this.running) return
+          this.scheduleRestart(meta)
+        }
+      })
+    } catch (error) {
+      try {
+        await pump.stop()
+      } catch {
+        this.logger.warn("Failed to stop partially started pump", {
+          flowType,
+          pumpGroup,
+        })
       }
-    })
+      if (this.pumps.get(key) === pump) this.pumps.delete(key)
+      throw error
+    }
 
     // Successful start: reset the per-group attempt counter.
     this.restartAttempts.set(key, 0)
