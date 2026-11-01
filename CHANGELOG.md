@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.0.3](https://github.com/flowcore-io/flowcore-pathways/compare/v3.0.2...v3.0.3) (2026-11-01)
+
+
+### Bug Fixes
+
+* **pump:** recover partially started sources with bounded retries ([485e96f](https://github.com/flowcore-io/flowcore-pathways/commit/485e96f15435327c57f862cb8863c0d3db786fb6))
+* **pump:** retry leader and source bootstrap failures ([7c1a5f1](https://github.com/flowcore-io/flowcore-pathways/commit/7c1a5f1760701c9918aaab7c33aa265df2ab142a))
+
 ## [3.0.2](https://github.com/flowcore-io/flowcore-pathways/compare/v3.0.1...v3.0.2) (2026-10-08)
 
 
