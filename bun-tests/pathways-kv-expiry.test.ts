@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { resolve } from "node:path"
+import process from "node:process"
 import { z } from "../npm/node_modules/zod/index.js"
 
 // Exercise both published runtime paths, not a reimplementation of the adapter.
