@@ -1364,3 +1364,24 @@ await uploadDocument("./invoice.pdf", "invoice", "finance")
 ## API Reference
 
 For a complete API reference, please see the [API documentation](https://jsr.io/@flowcore/pathways).
+
+### Separate webhook writes from pump reads
+
+For a tenant-specific hosted webhook URL, retain `baseUrl` for ingestion and
+set `pumpBaseUrl: null` so pump reads use the SDK commands’ dedicated service
+hosts. A webhook endpoint does not serve the pump’s catalog or event-source API.
+
+```typescript
+const pathways = new PathwaysBuilder({
+  baseUrl: "https://tenant.webhook.flowcore.io",
+  pumpBaseUrl: null,
+  tenant: "your-tenant",
+  dataCore: "your-data-core",
+  apiKey: process.env.FLOWCORE_API_KEY!,
+})
+```
+
+Omitting `pumpBaseUrl` preserves the existing single-host routing through
+`baseUrl`, including local test fixtures and self-hosted proxies. A string
+selects a separate pump-read proxy. This option does not change webhook writes,
+provisioning, event identity, state tables or saved checkpoints.
