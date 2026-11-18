@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.1.0](https://github.com/flowcore-io/flowcore-pathways/compare/v3.0.3...v3.1.0) (2026-11-18)
+
+
+### Features
+
+* expose a source factory for pathway pumps ([5031dbe](https://github.com/flowcore-io/flowcore-pathways/commit/5031dbe6807e940065e7bcfff791dd065cd2bbca))
+* expose a source factory for pathway pumps ([637f2c8](https://github.com/flowcore-io/flowcore-pathways/commit/637f2c88ae3695410915e9b06144b39842269f34))
+
 ## [3.0.3](https://github.com/flowcore-io/flowcore-pathways/compare/v3.0.2...v3.0.3) (2026-11-01)
 
 
