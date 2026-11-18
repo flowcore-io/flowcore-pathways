@@ -177,6 +177,7 @@ interface GroupMeta {
  */
 export class PathwayPump {
   private readonly stateManagerFactory: PumpStateManagerFactory
+  private readonly dataSourceFactory: PathwayPumpOptions["dataSourceFactory"]
   private readonly notifier: PumpNotifierConfig
   private readonly bufferSize: number
   private readonly maxRedeliveryCount: number
@@ -216,6 +217,7 @@ export class PathwayPump {
 
   constructor(options: PathwayPumpOptions, logger?: Logger) {
     this.stateManagerFactory = options.stateManagerFactory
+    this.dataSourceFactory = options.dataSourceFactory
     this.stateManagerFactoryArity = options.stateManagerFactory.length
     this.notifier = options.notifier ?? { type: "websocket" }
     this.bufferSize = options.bufferSize ?? 1000
@@ -346,7 +348,7 @@ export class PathwayPump {
 
     const notifierOptions = this.buildNotifierOptions()
 
-    const pumpOptions: Record<string, unknown> = {
+    const sourceOptions = {
       auth: { apiKey: this.apiKey },
       dataSource: {
         tenant: this.tenant,
@@ -354,6 +356,10 @@ export class PathwayPump {
         flowType,
         eventTypes,
       },
+      baseUrlOverride: this.baseUrl,
+    }
+    const pumpOptions: Record<string, unknown> = {
+      ...sourceOptions,
       stateManager,
       processor: {
         concurrency: this.resolveConcurrency(flowType, pumpGroup),
@@ -366,7 +372,6 @@ export class PathwayPump {
           if (failure) throw failure.reason
         },
       },
-      baseUrlOverride: this.baseUrl,
       bufferSize: this.bufferSize,
       maxRedeliveryCount: this.maxRedeliveryCount,
       // Born paused when this group is paused, so a restart or a backoff recovery never
@@ -399,8 +404,9 @@ export class PathwayPump {
       }
     }
 
+    const source = this.dataSourceFactory?.(sourceOptions)
     // deno-lint-ignore no-explicit-any
-    const pump = await this.dataPumpConstructor.create(pumpOptions as any)
+    const pump = await this.dataPumpConstructor.create(pumpOptions as any, source)
 
     this.pumps.set(key, pump)
 

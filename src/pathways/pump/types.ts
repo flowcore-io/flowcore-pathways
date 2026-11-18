@@ -1,3 +1,4 @@
+import type { FlowcoreDataSource, FlowcoreDataSourceOptions } from "@flowcore/data-pump"
 import type { PostgresConfig } from "../postgres/index.ts"
 import type { StatePrefixConfig } from "../state-prefix.ts"
 
@@ -52,6 +53,8 @@ export interface PumpConcurrencyConfig {
  */
 export interface PathwayPumpOptions {
   stateManagerFactory: PumpStateManagerFactory
+  /** Creates a source per pump group on every start/restart. Omit to use the default SDK source. */
+  dataSourceFactory?: (options: FlowcoreDataSourceOptions) => FlowcoreDataSource
   notifier?: PumpNotifierConfig
   bufferSize?: number
   maxRedeliveryCount?: number
