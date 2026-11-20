@@ -237,6 +237,8 @@ export interface ManagedPathwayConfig {
 
 export interface PathwaysBuilderConfig {
   baseUrl: string
+  /** Pump read URL: omit to reuse baseUrl, null for SDK service hosts, or a separate proxy URL. */
+  pumpBaseUrl?: string | null
   tenant: string
   dataCore: string
   apiKey: string
@@ -479,6 +481,7 @@ export class PathwaysBuilder<
 
   // Configuration values needed for cloning
   private readonly baseUrl: string
+  private readonly pumpBaseUrl?: string | null
   private readonly tenant: string
   private readonly dataCore: string
   private readonly apiKey: string
@@ -536,6 +539,7 @@ export class PathwaysBuilder<
    */
   constructor({
     baseUrl,
+    pumpBaseUrl,
     tenant,
     dataCore,
     apiKey,
@@ -581,6 +585,7 @@ export class PathwaysBuilder<
 
     // Store configuration values for cloning
     this.baseUrl = baseUrl
+    this.pumpBaseUrl = pumpBaseUrl
     this.tenant = tenant
     this.dataCore = dataCore
     this.apiKey = apiKey
@@ -2651,7 +2656,7 @@ export class PathwaysBuilder<
         tenant: this.tenant,
         dataCore: this.dataCore,
         apiKey: this.apiKey,
-        baseUrl: this.baseUrl,
+        baseUrl: this.pumpBaseUrl === null ? "" : this.pumpBaseUrl ?? this.baseUrl,
         processEvent: async (pathway: string, event: FlowcoreEvent) => {
           await this.process(pathway as keyof TPathway, event)
         },
@@ -2664,7 +2669,7 @@ export class PathwaysBuilder<
       tenant: this.tenant,
       dataCore: this.dataCore,
       apiKey: this.apiKey,
-      baseUrl: this.baseUrl,
+      baseUrl: this.pumpBaseUrl === null ? "" : this.pumpBaseUrl ?? this.baseUrl,
       processEvent: async (pathway: string, event: FlowcoreEvent) => {
         await this.process(pathway as keyof TPathway, event)
       },
